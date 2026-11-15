@@ -56,6 +56,7 @@ private extension EnvironmentValues {
 struct SettingsView: View {
     @ObservedObject var model: SettingsModel
     @Environment(\.colorScheme) private var scheme
+    @AppStorage("settingsAppearance") private var appearance = "system"
 
     var body: some View {
         let palette = Palette(dark: scheme == .dark)
@@ -78,6 +79,8 @@ struct SettingsView: View {
             .overlay(alignment: .bottom) { ToastView(model: model) }
         }
         .environment(\.palette, palette)
+        .preferredColorScheme(appearance == "light" ? .light
+                              : appearance == "dark" ? .dark : nil)
         .frame(minWidth: 640, minHeight: 460)
         .ignoresSafeArea()
     }
@@ -231,6 +234,7 @@ private let systemKeyNote = "\n\n系统的快捷键（比如 Control+空格）�
 
 private struct GeneralPage: View {
     @ObservedObject var model: SettingsModel
+    @AppStorage("settingsAppearance") private var appearance = "system"
 
     var body: some View {
         PrefGroup("候选词") {
@@ -257,6 +261,9 @@ private struct GeneralPage: View {
             }
         }
         PrefGroup("外观") {
+            PickerRow(title: "界面主题", selection: $appearance,
+                      options: [("跟随系统", "system"), ("浅色", "light"), ("深色", "dark")])
+            RowDivider()
             StepperRow(title: "候选字号", value: $model.config.candidateFontSize, range: 10...40)
         }
         PrefGroup("帮助") {

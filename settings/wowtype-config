@@ -4194,8 +4194,14 @@ class SettingsWindow(Adw.ApplicationWindow):
         page.add(cands)
 
         look = Adw.PreferencesGroup(title="外观")
+        self.look_row = Adw.ComboRow(
+            title="界面主题", model=Gtk.StringList.new(["跟随系统", "浅色", "深色"]))
+        self.look_row.set_selected(
+            {"system": 0, "light": 1, "dark": 2}.get(read_state().get("theme", "system"), 0))
+        self.look_row.connect("notify::selected", self.on_look_changed)
+        look.add(self.look_row)
         self.theme_row = SwitchRow(
-            title="WowType 绿色主题", subtitle="选中的词是 WowType 绿，深色模式自动换深色版")
+            title="WowType 蓝色主题", subtitle="选中的词是 WowType 蓝，深色模式自动换深色版")
         self.theme_row.set_sensitive(False)  # 读到 fcitx5 的当前主题再打开
         self.theme_handler = self.theme_row.connect("notify::active", self.on_theme_toggled)
         look.add(self.theme_row)
@@ -4693,6 +4699,16 @@ class SettingsWindow(Adw.ApplicationWindow):
             self.kimpanel.set_string(
                 "font", font_with_size(self.kimpanel.get_string("font") or KIMPANEL_DEFAULT_FONT, size))
         log(f"候选字号改成 {size:g}")
+
+    def on_look_changed(self, row, _param):
+        values = ("system", "light", "dark")
+        index = row.get_selected()
+        if index >= len(values):
+            return
+        update_state(theme=values[index])
+        app = self.get_application()
+        if app is not None:
+            app.update_style_css()
 
     def on_theme_toggled(self, row, _param):
         on = row.get_active()
@@ -6077,8 +6093,14 @@ class SettingsApp(Adw.Application):
         settings = Gtk.Settings.get_default()
         theme_name = (settings.props.gtk_theme_name or "").lower() if settings else ""
         env_theme = os.environ.get("GTK_THEME", "").lower()
-        dark = (Adw.StyleManager.get_default().get_dark()
-                or "dark" in theme_name or "dark" in env_theme)
+        preference = read_state().get("theme", "system")
+        if preference == "light":
+            dark = False
+        elif preference == "dark":
+            dark = True
+        else:
+            dark = (Adw.StyleManager.get_default().get_dark()
+                    or "dark" in theme_name or "dark" in env_theme)
         # 主题可能在启动之后才加载：变了重新算一次
         if settings is not None and not getattr(self, "theme_watch", False):
             self.theme_watch = True
