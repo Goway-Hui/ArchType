@@ -23,7 +23,7 @@ const STATE_RECOGNIZING = 2;
 const STATE_DONE = 3;
 const STATE_ERROR = 4;
 
-const GREEN = [14 / 255, 175 / 255, 118 / 255];
+const GREEN = [47 / 255, 111 / 255, 237 / 255];
 
 // 浮条里的尺寸（逻辑像素，跟着 GNOME 的缩放走）
 const MIC_SIZE = 46;          // 话筒那块的宽高

@@ -22,12 +22,12 @@ struct CandidateTheme {
 
     static let light = CandidateTheme(
         background: .rgb(0xFFFFFF), border: .rgb(0xDCE3DF), text: .rgb(0x1D2321), label: .rgb(0x7A8580),
-        highlight: .rgb(0x0EAF76), highlightText: .rgb(0xFFFFFF), arrow: .rgb(0x0EAF76),
-        row: .rgb(0x0EAF76, alpha: 0.12))
+        highlight: .rgb(0x2F6FED), highlightText: .rgb(0xFFFFFF), arrow: .rgb(0x2F6FED),
+        row: .rgb(0x2F6FED, alpha: 0.12))
     static let dark = CandidateTheme(
         background: .rgb(0x25292B), border: .rgb(0x3B4144), text: .rgb(0xE6EAE8), label: .rgb(0x8E9894),
-        highlight: .rgb(0x13B57C), highlightText: .rgb(0xFFFFFF), arrow: .rgb(0x3CCB93),
-        row: .rgb(0x13B57C, alpha: 0.2))
+        highlight: .rgb(0x4C86F7), highlightText: .rgb(0xFFFFFF), arrow: .rgb(0x8BB8FF),
+        row: .rgb(0x4C86F7, alpha: 0.2))
 
     static func matching(_ appearance: NSAppearance) -> CandidateTheme {
         appearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua ? dark : light

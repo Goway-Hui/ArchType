@@ -21,14 +21,14 @@ private extension Color {
 
 private struct Palette {
     let dark: Bool
-    static let green = Color(hex: 0x0EAF76)
+    static let accent = Color(hex: 0x2F6FED)
 
     var sidebar: LinearGradient {
         let stops: [Gradient.Stop] = dark
-            ? [.init(color: Color(hex: 0x17332A), location: 0), .init(color: Color(hex: 0x1C2A25), location: 0.45),
-               .init(color: Color(hex: 0x202523), location: 1)]
-            : [.init(color: Color(hex: 0xD9F3E6), location: 0), .init(color: Color(hex: 0xE9F8F0), location: 0.4),
-               .init(color: Color(hex: 0xF5FBF8), location: 1)]
+            ? [.init(color: Color(hex: 0x151F33), location: 0), .init(color: Color(hex: 0x1A263D), location: 0.45),
+               .init(color: Color(hex: 0x202A3A), location: 1)]
+            : [.init(color: Color(hex: 0xE2ECFC), location: 0), .init(color: Color(hex: 0xEFF5FE), location: 0.4),
+               .init(color: Color(hex: 0xF8FBFF), location: 1)]
         return LinearGradient(gradient: Gradient(stops: stops), startPoint: .top, endPoint: .bottom)
     }
     var content: Color { dark ? Color(hex: 0x1D201F) : Color(hex: 0xF5F7F6) }
@@ -36,7 +36,7 @@ private struct Palette {
     var cardBorder: Color { dark ? Color(hex: 0x3B4144) : Color(hex: 0xE6EAE8) }
     var nested: Color { dark ? Color.white.opacity(0.03) : Color.black.opacity(0.025) }
     var heading: Color { dark ? Color(hex: 0xA3ACA8) : Color(hex: 0x6B7570) }
-    var hover: Color { Palette.green.opacity(dark ? 0.12 : 0.10) }
+    var hover: Color { Palette.accent.opacity(dark ? 0.12 : 0.10) }
     var warning: Color { dark ? Color(hex: 0xF8C66D) : Color(hex: 0xB86E00) }
 }
 
@@ -179,7 +179,7 @@ private struct NavRow: View {
         .padding(.vertical, 9)
         .background(
             RoundedRectangle(cornerRadius: 10, style: .continuous)
-                .fill(selected ? Palette.green : (hovering ? palette.hover : .clear))
+                .fill(selected ? Palette.accent : (hovering ? palette.hover : .clear))
         )
         .contentShape(Rectangle())
         .onHover { hovering = $0 }
@@ -201,7 +201,7 @@ private struct ToastView: View {
                     if let title = toast.actionTitle {
                         Button(title) { model.runToastAction() }
                             .buttonStyle(.borderless)
-                            .foregroundColor(Color(hex: 0x3CCB93))
+                            .foregroundColor(Color(hex: 0x8BB8FF))
                             .font(.body.weight(.semibold))
                     }
                 }
@@ -756,7 +756,7 @@ private struct LocalModelRow: View {
                 Button("取消") { model.cancelLocalDownload() }
             } else if plan.ready {
                 Label("已就绪", systemImage: "checkmark.circle.fill")
-                    .foregroundColor(Palette.green)
+                    .foregroundColor(Palette.accent)
             } else if plan.canDownload {
                 Text("要下载 \(LocalModel.sizeText(plan.bytes))")
                     .foregroundColor(.secondary)
@@ -811,7 +811,7 @@ private struct WordsPage: View {
                         .font(.system(size: 13, weight: .bold))
                         .foregroundColor(.white)
                         .frame(width: 26, height: 26)
-                        .background(Circle().fill(model.canAddWord ? Palette.green : Color.gray.opacity(0.4)))
+                        .background(Circle().fill(model.canAddWord ? Palette.accent : Color.gray.opacity(0.4)))
                 }
                 .buttonStyle(.plain)
                 .disabled(!model.canAddWord)
@@ -1072,7 +1072,7 @@ private struct SwitchRow: View {
             Toggle("", isOn: $isOn)
                 .labelsHidden()
                 .toggleStyle(.switch)
-                .tint(Palette.green)
+                .tint(Palette.accent)
         }
         .rowPadding()
         .contentShape(Rectangle())
@@ -1137,7 +1137,7 @@ private struct RadioRow<Trailing: View>: View {
         HStack(spacing: 12) {
             Image(systemName: selected ? "largecircle.fill.circle" : "circle")
                 .font(.system(size: 16))
-                .foregroundColor(selected ? Palette.green : .secondary)
+                .foregroundColor(selected ? Palette.accent : .secondary)
             RowLabel(title: title, subtitle: subtitle, subtitleColor: subtitleColor)
             if let info { InfoButton(info) }
             trailing
@@ -1189,7 +1189,7 @@ private struct ExpanderRow<Content: View>: View {
                     }))
                     .labelsHidden()
                     .toggleStyle(.switch)
-                    .tint(Palette.green)
+                    .tint(Palette.accent)
                 }
                 Image(systemName: "chevron.right")
                     .font(.system(size: 12, weight: .semibold))
@@ -1354,7 +1354,7 @@ private struct StatsPage: View {
             HStack(alignment: .firstTextBaseline, spacing: 4) {
                 Text(value)
                     .font(.system(size: 22, weight: .semibold))
-                    .foregroundColor(Palette.green)
+                    .foregroundColor(Palette.accent)
                     .lineLimit(1)
                     .minimumScaleFactor(0.7)
                 if !unit.isEmpty {
@@ -1528,10 +1528,10 @@ private struct StatsPage: View {
     private func heatColor(_ level: Int) -> Color {
         switch level {
         case 0: return palette.dark ? Color.white.opacity(0.07) : Color.black.opacity(0.05)
-        case 1: return Palette.green.opacity(0.22)
-        case 2: return Palette.green.opacity(0.42)
-        case 3: return Palette.green.opacity(0.68)
-        default: return Palette.green
+        case 1: return Palette.accent.opacity(0.22)
+        case 2: return Palette.accent.opacity(0.42)
+        case 3: return Palette.accent.opacity(0.68)
+        default: return Palette.accent
         }
     }
 
@@ -1557,7 +1557,7 @@ private struct StatsPage: View {
                         let rect = CGRect(x: CGFloat(index) * (bar + gap),
                                           y: size.height - height,
                                           width: bar, height: height)
-                        context.fill(Path(rect), with: .color(Palette.green))
+                        context.fill(Path(rect), with: .color(Palette.accent))
                     }
                 }
                 .frame(height: 150)
@@ -1577,7 +1577,7 @@ private struct StatsPage: View {
     private var kindPage: some View {
         let totals = StatsStore.totals(document)
         let slices: [(String, Int, Color)] = [
-            ("汉字", totals.kinds["han"] ?? 0, Palette.green),
+            ("汉字", totals.kinds["han"] ?? 0, Palette.accent),
             ("字母", totals.kinds["latin"] ?? 0, Color(hex: 0x4C9AFF)),
             ("数字", totals.kinds["number"] ?? 0, Color(hex: 0xF5A623)),
             ("标点", totals.kinds["punct"] ?? 0, Color(hex: 0x8A93A6)),
@@ -1591,7 +1591,7 @@ private struct StatsPage: View {
         let totals = StatsStore.totals(document)
         let names = [("quanpin", "拼音"), ("shuangpin", "双拼"),
                      ("english", "英文"), ("translate", "互译")]
-        let colors: [Color] = [Palette.green, Color(hex: 0x4C9AFF),
+        let colors: [Color] = [Palette.accent, Color(hex: 0x4C9AFF),
                                Color(hex: 0xF5A623), Color(hex: 0xE86AA6)]
         var slices: [(String, Int, Color)] = []
         for (index, item) in names.enumerated() {

@@ -261,17 +261,16 @@ ENUMS = {
 }
 
 # 设置窗口的样式（照微信输入法：薄荷绿渐变侧栏、绿色选中块、白色圆角卡片）
-GREEN = "#0EAF76"
 STYLE_LIGHT = """
-.wt-sidebar { background-image: linear-gradient(180deg, #d9f3e6 0%, #e9f8f0 40%, #f5fbf8 100%); }
+.wt-sidebar { background-image: linear-gradient(180deg, #E2ECFC 0%, #EFF5FE 40%, #F8FBFF 100%); }
 .wt-sidebar label, .wt-sidebar image { color: #2a332f; }
 .wt-sidebar headerbar { background: transparent; box-shadow: none; }
 .wt-brand { margin: 4px 22px 18px 22px; }
 .wt-brand-name { font-weight: 800; font-size: 15pt; }
 .wt-nav, .wt-nav row { background: transparent; }
 .wt-nav row { border-radius: 10px; margin: 2px 12px; padding: 9px 12px; }
-.wt-nav row:hover { background: alpha(#0EAF76, 0.10); }
-.wt-nav row:selected { background: #0EAF76; color: white; }
+.wt-nav row:hover { background: alpha(#2F6FED, 0.10); }
+.wt-nav row:selected { background: #2F6FED; color: white; }
 .wt-nav row:selected image, .wt-nav row:selected label { color: white; }
 .wt-content, .wt-content headerbar { background: #f5f7f6; box-shadow: none; }
 .wt-page-title { font-weight: 800; font-size: 20pt; margin: -14px 0 -8px 0; }
@@ -280,10 +279,10 @@ STYLE_LIGHT = """
 .wt-stats-page { background-color: #f5f7f6; }
 .wt-stats-page .wt-page-title { color: #1f2724; }
 .wt-stats-page stackswitcher button { color: #59635e; }
-.wt-stats-page stackswitcher button:checked { color: #0EAF76; }
+.wt-stats-page stackswitcher button:checked { color: #2F6FED; }
 .wt-stats-card { background: white; border-radius: 12px; box-shadow: 0 0 0 1px #e6eae8; padding: 18px 20px; }
 .wt-stat-label { font-size: 9pt; color: #6b7570; }
-.wt-stat-value { font-size: 21pt; font-weight: 800; color: #0EAF76; }
+.wt-stat-value { font-size: 21pt; font-weight: 800; color: #2F6FED; }
 .wt-stat-unit { font-size: 9pt; color: #6b7570; }
 .wt-stat-note { font-size: 8pt; color: #8a938f; }
 .wt-stats-heading { font-weight: 700; font-size: 11pt; color: #3a453f; }
@@ -292,26 +291,26 @@ STYLE_LIGHT = """
 .wt-chip { border: 1px solid #dfe4e2; border-radius: 6px; padding: 3px 7px; }
 .wt-key { border-radius: 5px; font-size: 8pt; padding: 0 2px; }
 .wt-key-0 { background: #eef1f0; color: #6b7570; }
-.wt-key-1 { background: alpha(#0EAF76, 0.20); color: #0d6a4a; }
-.wt-key-2 { background: alpha(#0EAF76, 0.40); color: #0d6a4a; }
-.wt-key-3 { background: alpha(#0EAF76, 0.65); color: white; }
-.wt-key-4 { background: #0EAF76; color: white; }
+.wt-key-1 { background: alpha(#2F6FED, 0.20); color: #123B7A; }
+.wt-key-2 { background: alpha(#2F6FED, 0.40); color: #123B7A; }
+.wt-key-3 { background: alpha(#2F6FED, 0.65); color: white; }
+.wt-key-4 { background: #2F6FED; color: white; }
 .wt-swatch-0 { background: #eef1f0; }
-.wt-swatch-1 { background: alpha(#0EAF76, 0.20); }
-.wt-swatch-2 { background: alpha(#0EAF76, 0.40); }
-.wt-swatch-3 { background: alpha(#0EAF76, 0.65); }
-.wt-swatch-4 { background: #0EAF76; }
+.wt-swatch-1 { background: alpha(#2F6FED, 0.20); }
+.wt-swatch-2 { background: alpha(#2F6FED, 0.40); }
+.wt-swatch-3 { background: alpha(#2F6FED, 0.65); }
+.wt-swatch-4 { background: #2F6FED; }
 """
 STYLE_DARK = """
-.wt-sidebar { background-image: linear-gradient(180deg, #17332a 0%, #1c2a25 45%, #202523 100%); }
+.wt-sidebar { background-image: linear-gradient(180deg, #151F33 0%, #1A263D 45%, #202A3A 100%); }
 .wt-sidebar label, .wt-sidebar image { color: #e6ece9; }
 .wt-sidebar headerbar { background: transparent; box-shadow: none; }
 .wt-brand { margin: 4px 22px 18px 22px; }
 .wt-brand-name { font-weight: 800; font-size: 15pt; }
 .wt-nav, .wt-nav row { background: transparent; }
 .wt-nav row { border-radius: 10px; margin: 2px 12px; padding: 9px 12px; }
-.wt-nav row:hover { background: alpha(#3CCB93, 0.12); }
-.wt-nav row:selected { background: #0EAF76; color: white; }
+.wt-nav row:hover { background: alpha(#6EA8FE, 0.12); }
+.wt-nav row:selected { background: #2F6FED; color: white; }
 .wt-nav row:selected image, .wt-nav row:selected label { color: white; }
 .wt-content, .wt-content headerbar { background: #1d201f; box-shadow: none; }
 .wt-page-title { font-weight: 800; font-size: 20pt; margin: -14px 0 -8px 0; }
@@ -320,10 +319,10 @@ STYLE_DARK = """
 .wt-stats-page { background-color: #1d201f; }
 .wt-stats-page .wt-page-title { color: #e6ece9; }
 .wt-stats-page stackswitcher button { color: #b8c1bd; }
-.wt-stats-page stackswitcher button:checked { color: #3CCB93; }
+.wt-stats-page stackswitcher button:checked { color: #6EA8FE; }
 .wt-stats-card { background: #282c2a; border-radius: 12px; box-shadow: 0 0 0 1px #3b4144; padding: 18px 20px; }
 .wt-stat-label { font-size: 9pt; color: #a3aca8; }
-.wt-stat-value { font-size: 21pt; font-weight: 800; color: #3CCB93; }
+.wt-stat-value { font-size: 21pt; font-weight: 800; color: #6EA8FE; }
 .wt-stat-unit { font-size: 9pt; color: #a3aca8; }
 .wt-stat-note { font-size: 8pt; color: #8a938f; }
 .wt-stats-heading { font-weight: 700; font-size: 11pt; color: #e6ece9; }
@@ -332,25 +331,25 @@ STYLE_DARK = """
 .wt-chip { border: 1px solid #3b4144; border-radius: 6px; padding: 3px 7px; }
 .wt-key { border-radius: 5px; font-size: 8pt; padding: 0 2px; }
 .wt-key-0 { background: #343a37; color: #a3aca8; }
-.wt-key-1 { background: alpha(#3CCB93, 0.22); color: #bfe9d8; }
-.wt-key-2 { background: alpha(#3CCB93, 0.42); color: #e6f7ef; }
-.wt-key-3 { background: alpha(#3CCB93, 0.68); color: #10241c; }
-.wt-key-4 { background: #3CCB93; color: #10241c; }
+.wt-key-1 { background: alpha(#6EA8FE, 0.22); color: #CFE0FF; }
+.wt-key-2 { background: alpha(#6EA8FE, 0.42); color: #EAF1FF; }
+.wt-key-3 { background: alpha(#6EA8FE, 0.68); color: #0B1B33; }
+.wt-key-4 { background: #6EA8FE; color: #0B1B33; }
 .wt-swatch-0 { background: #343a37; }
-.wt-swatch-1 { background: alpha(#3CCB93, 0.22); }
-.wt-swatch-2 { background: alpha(#3CCB93, 0.42); }
-.wt-swatch-3 { background: alpha(#3CCB93, 0.68); }
-.wt-swatch-4 { background: #3CCB93; }
+.wt-swatch-1 { background: alpha(#6EA8FE, 0.22); }
+.wt-swatch-2 { background: alpha(#6EA8FE, 0.42); }
+.wt-swatch-3 { background: alpha(#6EA8FE, 0.68); }
+.wt-swatch-4 { background: #6EA8FE; }
 """
 # 开关、单选框、主按钮换成 WowType 绿（旧版 libadwaita 用命名颜色，1.6 起用 CSS 变量）
 STYLE_ACCENT = """
-@define-color accent_bg_color #0EAF76;
+@define-color accent_bg_color #2F6FED;
 @define-color accent_color %s;
 @define-color accent_fg_color #ffffff;
 .wt-warning .subtitle { color: @warning_color; }
 """
 STYLE_ACCENT_VARS = """
-:root { --accent-bg-color: #0EAF76; --accent-fg-color: #ffffff; --accent-color: %s; }
+:root { --accent-bg-color: #2F6FED; --accent-fg-color: #ffffff; --accent-color: %s; }
 """
 
 
@@ -6068,7 +6067,7 @@ class SettingsApp(Adw.Application):
         settings = Gtk.Settings.get_default()
         theme_name = (settings.props.gtk_theme_name or "").lower() if settings else ""
         dark = Adw.StyleManager.get_default().get_dark() or "dark" in theme_name
-        accent_text = "#3CCB93" if dark else "#0a8a5c"
+        accent_text = "#6EA8FE" if dark else "#1D4ED8"
         css = (STYLE_DARK if dark else STYLE_LIGHT) + STYLE_ACCENT % accent_text
         if (Gtk.get_major_version(), Gtk.get_minor_version()) >= (4, 16):
             css += STYLE_ACCENT_VARS % accent_text
