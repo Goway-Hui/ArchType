@@ -24,7 +24,7 @@
 </tr>
 <tr>
 <td align="center"><sub>介绍视频</sub></td>
-<td align="center"><sub>v0.3.12：互译、语音输入、macOS 版、日期时间、候选更准……</sub></td>
+<td align="center"><sub>v0.3.12：互译、语音输入、日期时间、候选更准……</sub></td>
 </tr>
 </table>
 
@@ -100,17 +100,16 @@
 - 有现成安装包的发行版：**Ubuntu 22.04 / 24.04 / 26.04、Debian 13、deepin 23 / 25**（deb）、**Arch Linux** 及 EndeavourOS / Garuda / CachyOS（pkg.tar.zst）、**Fedora**（[rpm](#fedora)）、**NixOS**（[flake](#nixos--nix)）。其他发行版请[从源码构建](docs/INSTALL.md)
 - Ubuntu 22.04 的 GNOME 是 42：绿色候选框主题和语音浮条（GNOME 扩展，要 GNOME 45+）用不了，见[安装说明](docs/INSTALL.md#ubuntu-2204fcitx5-50)
 - deepin 的安装包只有 x86_64
-- **macOS 12 或更新**（Apple 芯片和 Intel 都行），见下面的 [macOS](#macos)
 
 ### 一行命令安装（推荐）
 
-Ubuntu 22.04 / 24.04 / 26.04、Debian 13、deepin 23 / 25、Arch Linux（及衍生版）、Fedora、macOS 上，在终端里运行：
+Ubuntu 22.04 / 24.04 / 26.04、Debian 13、deepin 23 / 25、Arch Linux（及衍生版）、Fedora 上，在终端里运行：
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/Goway-Hui/WowType/main/install.sh | bash
 ```
 
-在 Linux 上它会（macOS 上见[下面](#macos)）：
+在 Linux 上它会：
 
 1. 下载和你系统对应的最新安装包（词库已经在包里，约 29 MB），按 `SHA256SUMS` 校验
 2. 用系统的包管理器（`apt-get`、`pacman`、`dnf`）装上，顺带装好 fcitx5 和设置界面要用的 GTK 4 / libadwaita。Arch 不会替你整机升级，提示依赖不满足时先 `sudo pacman -Syu`
@@ -126,37 +125,6 @@ curl -fsSL https://raw.githubusercontent.com/Goway-Hui/WowType/main/install.sh |
 > GNOME（Ubuntu 默认桌面）在 Wayland 下，建议再装 GNOME Shell 扩展
 > [Input Method Panel](https://extensions.gnome.org/extension/261/kimpanel/)，
 > 活动概览的搜索框等地方才能显示候选框。
-
-### macOS
-
-macOS 12 或更新，Apple 芯片和 Intel 都行。
-
-#### 一行命令安装（推荐）
-
-打开「终端」（启动台里搜「终端」，或按 `⌘空格` 输入 Terminal），粘贴下面这行，回车：
-
-```bash
-curl -fsSL https://raw.githubusercontent.com/Goway-Hui/WowType/main/install.sh | bash
-```
-
-它会下载最新的 `WowType-<版本>-macos.pkg`，按 `SHA256SUMS` 校验，然后只装给你自己（装到 `~/Library/Input Methods`），
-**不要管理员密码，也不用到「隐私与安全性」里放行**。装完自动加进输入法并切到 WowType，打 `nihao` 试试。
-以后再跑一遍同样的命令就是升级。
-
-#### 下载安装包
-
-不想用终端的话，到 [Releases](https://github.com/Goway-Hui/WowType/releases) 下载 `WowType-<版本>-macos.pkg`，双击安装。
-安装包**没有 Apple 开发者签名**，第一次打开时系统会说「无法验证」：点「完成」，打开「系统设置 → 隐私与安全性」，
-往下找到 WowType 那一条，点「仍要打开」，输入开机密码后安装器就会打开。之后升级还是同样的步骤。
-
-#### 装好以后
-
-- 菜单栏里没出现 WowType：「系统设置 → 键盘 → 输入法 → 编辑」，点左下角 `+`，在「简体中文」里添加 WowType；
-  还是没有就注销重新登录一次
-- 设置在菜单栏的输入法菜单里（切到 WowType 后点菜单栏的输入法图标），设置文件是
-  `~/Library/Application Support/WowType/wowtype.conf`，见 [docs/CONFIG.md](docs/CONFIG.md#macos)
-- 卸载：菜单栏的输入法里先换成别的输入法，在访达里按 `⇧⌘G` 打开 `~/Library/Input Methods`，把 WowType 拖到废纸篓，
-  再到「系统设置 → 键盘 → 输入法」里把它移除
 
 ### 手动安装
 
@@ -274,7 +242,7 @@ wowtype-show  --lexicon /usr/share/wowtype/lexicon.tsv nihao
 | 方向键的另一种用法 | 设置「常规 → 候选词 → 方向键」选「左右键移动光标」：`↑` `↓` 选词，`←` `→` 在打了一半的拼音里移动光标改字（打的字母插在光标处，退格删光标前一个，`Home` `End` `Delete` 也管用），翻页用 `PgUp` `PgDn` 和翻页键。竖排时上下键本来就选词，这一项只改左右键 |
 | 回车 | 把打的字母原样上屏 |
 | `Esc` | 清空正在打的内容 |
-| 点到别处、换窗口 | Linux 上和 `Esc` 一样丢掉打到一半的，文档里不会留下 `ni'hao` 这样的拼音（想留字母就先按回车）；macOS 上把打的字母原样上屏，和回车一样 |
+| 点到别处、换窗口 | Linux 上和 `Esc` 一样丢掉打到一半的，文档里不会留下 `ni'hao` 这样的拼音（想留字母就先按回车） |
 | 退格 | 选过词时先撤销最后一次选词（拼音回到编辑区）；没有选词时删一个字母 |
 | `Ctrl+Delete` | 忘掉光标所在的候选：学错的词（比如一段一段选出来、选一次就记住的词）从用户词库里删掉，选词记录也清掉；词库里本来就有的词回到原来的位置。正在打的拼音不动，候选马上刷新。`Ctrl+退格`、`Shift+Delete` 也行（Mac 上按 `Control+Delete`）。设置里加的自定义词不受影响 |
 | `'` | 分隔音节，比如 `xi'an` → 西安 |
@@ -303,16 +271,14 @@ wowtype-show  --lexicon /usr/share/wowtype/lexicon.tsv nihao
 
 ### 中英文切换
 
-两个平台的习惯不一样，默认跟着各自的习惯走，哪个应用里都至少有一种切法管用：
+fcitx5 上至少有一种切法管用：
 
-| | Linux | macOS |
-|---|---|---|
-| 系统自己的 | `Ctrl` + `空格` 在 WowType 和英文键盘之间切（fcitx5 的「切换启用/禁用输入法」） | 按 `中/英` 键（大写锁定键）在 WowType 和 ABC 之间切：在「系统设置 → 键盘 → 文字输入 → 输入法 → 编辑…」里打开「使用“中/英”键切换“ABC”输入法」，设置「输入」页有按钮直接打开键盘设置。不经过输入法，所有应用里都管用 |
-| 单按 `Shift` | 默认开着：WowType 自己的英文（字母直接上屏，不用换输入法） | 默认开着，和搜狗、微信输入法一样。个别应用（比如一些用 Electron 做的）里有时不灵，用 `中/英` 键或下面的快捷键 |
-| 另设一个切换键 | 设置「输入」页选，比如 `Ctrl` + `Shift` + `空格`；默认不用 | 同左（`Control` + `Shift` + `空格`） |
-| 互译的快捷键 | 设置「输入」页选，比如 `Ctrl` + `Shift` + `Y`：进「译」，再按回到原来的模式；设了以后单按 Shift 只切中英 | 同左（`Control` + `Shift` + `Y`） |
+- **系统自己的**：`Ctrl` + `空格` 在 WowType 和英文键盘之间切（fcitx5 的「切换启用/禁用输入法」）。
+- **单按 `Shift`**：默认开着，切到 WowType 自己的英文（字母直接上屏，不用换输入法）。
+- **另设一个切换键**：设置「输入」页选，比如 `Ctrl` + `Shift` + `空格`；默认不用。
+- **互译的快捷键**：设置「输入」页选，比如 `Ctrl` + `Shift` + `Y`：进「译」，再按回到原来的模式；设了以后单按 Shift 只切中英。
 
-设置文件里的键名两端一样（`ShiftToggle`、`ToggleKey`、`TranslateModeKey`，见 [docs/CONFIG.md](docs/CONFIG.md)）。系统自己的快捷键（fcitx5 的、macOS 的）先处理，设成它们 WowType 收不到。
+设置文件里的键名是 `ShiftToggle`、`ToggleKey`、`TranslateModeKey`，见 [docs/CONFIG.md](docs/CONFIG.md)。系统自己的快捷键（fcitx5 的）先处理，设成它们 WowType 收不到。
 
 #### Shift 被 fcitx5 占了
 
@@ -384,7 +350,6 @@ vim.api.nvim_create_autocmd("InsertEnter", { callback = function() wowtype("SetM
 
 换语音键（右 Ctrl、菜单键、F8–F10）或者关掉语音，在 [WowType 设置](#设置)的「语音」页里改。
 
-**macOS** 上一样用，语音键是右 `Option`（也能换成右 Control、F8–F10）：在设置窗口的「语音」页下载模型
 （和 Linux 同一个包，存在 `~/Library/Application Support/WowType/wtlocal/`），第一次说话时允许 WowType 使用麦克风。
 提示显示在候选框里（🎙 和字符画的波形）。
 

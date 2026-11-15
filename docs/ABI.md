@@ -1,6 +1,6 @@
 # C 接口（`core/include/wowtype_core.h`）
 
-外壳（fcitx5 插件，以后还有 macOS）通过这组 C 函数用 Rust 核心。这里写的是承诺：外壳按这些规则用，核心升级时不会悄悄改掉。
+fcitx5 插件通过这组 C 函数用 Rust 核心。这里写的是承诺：外壳按这些规则用，核心升级时不会悄悄改掉。
 
 ## 版本
 
@@ -8,7 +8,7 @@
 - 库里的 `wowtype_abi_version()` 返回 `主版本 * 1000 + 次版本`。外壳启动时比一下主版本，不一样就别用。
 - 同一个主版本里只会：加函数、在结构体末尾加字段（带 `size` 字段的结构体）、给原来返回 NULL 的情况加结果。次版本加一。
 - 删函数、改参数或返回值的含义、改结构体已有字段：主版本加一，CHANGELOG 里写清楚。
-- `scripts/abi-smoke.sh` 用 C 编译器直接链库跑一遍，Linux 和 macOS 的 CI 都跑。
+- `scripts/abi-smoke.sh` 用 C 编译器直接链库跑一遍，CI 跑。
 
 ### 版本记录
 
@@ -48,7 +48,7 @@
 
 ## 输入会话（`wowtype_session_*`，1.3 起，1.4 加候选，1.5 加选词，1.6 加选词键、翻页和展开面板，1.7 加 Ctrl+Delete 忘掉学错的词，1.10 加标点、自动空格、上文、中 / 英 / 译和单按 Shift、互译、工具栏和表情面板）
 
-输入行为都在会话里，两个外壳（fcitx5、macOS）只把平台的按键翻成键码交给会话、照 frame 画编辑区和候选框、上屏、读周围文字和系统剪贴板、排定时器（[PORTING.md](PORTING.md)）。
+输入行为都在会话里，fcitx5 外壳只把平台的按键翻成键码交给会话、照 frame 画编辑区和候选框、上屏、读周围文字和系统剪贴板、排定时器。
 
 - **1.10 删掉的过渡函数**：`wowtype_session_append`、`_set_context`（上文由会话自己记，表情面板的搜索词也在会话里）、`_last_choice`（学没学到词看 `frame->learned`，选了 emoji 由会话记进最近用过）。fcitx5 外壳和核心一起发版，不受影响。
 - **留着的读法**：`_input`、`_remaining`、`_selected_text`（外壳判断在不在打字、拼编辑区），以及整个候选列表 `_candidate_total`、`_candidate_info`、`_choose`、`_view`（fcitx5 的候选框 CommonCandidateList 要整个列表和页码、光标）。这些和别的会话函数一样按上面「只加不删」的规矩来。
@@ -59,9 +59,9 @@
 - **引擎**：候选和分音节要用引擎。`wowtype_session_new` 的 engine 可以传 NULL（词库在后台载入，载入好之前也要能打字，这时没有候选，编辑区是原始输入），载入好了用 `wowtype_session_set_engine` 补上。引擎要比会话活得久（或者先 `set_engine(NULL)`）。双拼开不开看引擎（`wowtype_engine_set_shuangpin`）；会话算候选时会把引擎的上文设成「已上屏的字 + 已选的词」的尾部。
 - **候选缓存**：候选用到的时候才算（`_key`、`_frame` 要分音节时，或读候选时），编辑区、上文、引擎、设置都没变就不重算。
 - **线程**：一个会话只在一个线程里用。
-- **键码**：`keysym` 是 XKB keysym 的子集，`modifiers` 是 `WOWTYPE_MOD_*`（取值和 X11 / fcitx5 的 KeyState 一样）。macOS 外壳把 `kVK_*` / `flagsChanged:` 翻成这个。
+- **键码**：`keysym` 是 XKB keysym 的子集，`modifiers` 是 `WOWTYPE_MOD_*`（取值和 X11 / fcitx5 的 KeyState 一样）。
 
-会话的行为（`core/tests/session_keys.rs` 测，和 `fcitx5-addon/test/key_harness.cpp`、`macos/Tests/main.swift` 里的同名用例对应）：
+会话的行为（`core/tests/session_keys.rs` 测，和 `fcitx5-addon/test/key_harness.cpp` 里的同名用例对应）：
 
 | 键 | 会话做什么 |
 |---|---|

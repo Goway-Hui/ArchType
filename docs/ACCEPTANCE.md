@@ -6,7 +6,6 @@
 
 | 项 | 值 |
 |---|---|
-| 系统 | macOS 27.2 / arm64（Darwin） |
 | 工具链 | rustc 1.86.0 / cargo 1.86.0 |
 | 提交 | `e6b4cf5` |
 | 词库 | rime-ice 全量 552,087 条（`/tmp/rime/lexicon.tsv`） |
@@ -99,7 +98,7 @@ wowtype-check --lexicon /tmp/rime/lexicon.tsv --s2t core/data/s2t.tsv
 
 ## 7. 未覆盖的部分
 
-以上都在 macOS 上完成。**以下没有任何验证**：
+以下没有任何验证：
 
 - fcitx5 插件编译（代码已写，API 已逐项核对，但从未过编译器）——**2026-11-07 已在 Ubuntu 26.04 上编译并通过按键测试**
 - Linux 的 X11 全局热键、cpal 麦克风采集
