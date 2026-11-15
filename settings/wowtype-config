@@ -2027,10 +2027,52 @@ def markdown_to_pango(md):
     return '<span lang="zh-cn">' + "\n".join(lines) + "</span>"
 
 
+def parse_release_assets(tag, assets_urls):
+    """从下载页 HTML 里挑出本版资产的下载地址（API 被限流时走这条）。"""
+    assets = {}
+    pattern = re.compile(r'href="(/[^"]+/releases/download/[^"]+|https://[^"]*?/releases/download/[^"]+)"')
+    for match in pattern.finditer(assets_urls):
+        href = match.group(1)
+        if href.startswith("/"):
+            href = "https://github.com" + href
+        name = href.rsplit("/", 1)[-1]
+        # 列表页每个文件出现多次（动作里嵌入的重复标记）；同一文件名取同一个地址
+        assets.setdefault(urllib.parse.unquote(name), href)
+    return {name: url for name, url in assets.items() if not name.endswith(".sig")}
+
+
+def fetch_latest_html():
+    """没有 API 配额的兜底：解析 releases/latest 下载页的资产链接。"""
+    with http_open(f"{HOMEPAGE}/releases/latest", timeout=20) as response:
+        body = response.read().decode("utf-8", "replace")
+    match = re.search(r'href="[^"]*/releases/tag/([^"]+)"', body)
+    if not match:
+        raise RuntimeError("下载页里没找到版本号")
+    tag = urllib.parse.unquote(match.group(1))
+    version = tag.lstrip("vV")
+    # expanded_assets 页把这一版的全部文件列出来
+    with http_open(f"{HOMEPAGE}/releases/expanded_assets/{tag}", timeout=20) as response:
+        body = response.read().decode("utf-8", "replace")
+    return {
+        "tag": tag,
+        "version": version,
+        "notes": "",
+        "url": f"{HOMEPAGE}/releases/tag/{tag}",
+        "assets": parse_release_assets(tag, body),
+    }
+
+
 def fetch_latest():
     """GitHub 上最新的正式版：{tag, version, notes, url, assets: {文件名: 下载地址}}。"""
-    with http_open(RELEASE_API, timeout=20) as response:
-        data = json.load(response)
+    try:
+        with http_open(RELEASE_API, timeout=20) as response:
+            data = json.load(response)
+    except urllib.error.HTTPError as e:
+        if e.code != 403:  # 只有 API 配额用完才走兜底，其他网络错误照旧报
+            raise
+        release = fetch_latest_html()
+        release["limited"] = True
+        return release
     return {
         "tag": data.get("tag_name", ""),
         "version": data.get("tag_name", "").lstrip("vV"),
@@ -5816,6 +5858,8 @@ class SettingsWindow(Adw.ApplicationWindow):
             self.latest_row.set_subtitle(GLib.markup_escape_text(f"连不上 GitHub：{error}"))
             self.install_row.set_visible(False)
             return GLib.SOURCE_REMOVE
+        if release.get("limited"):
+            self.latest_row.set_subtitle("GitHub 接口限流中，看的是下载页；过会儿再点一次能看更新说明")
         state = read_update_state()
         state["checked"] = time.time()
         write_update_state(state)

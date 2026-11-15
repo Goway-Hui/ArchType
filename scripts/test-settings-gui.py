@@ -91,7 +91,7 @@ def run(app):
         errors.append("设置窗口没打开")
         app.quit()
         return GLib.SOURCE_REMOVE
-    for page in ("general", "input", "emoji", "voice", "translate", "words", "update"):
+    for page in ("general", "input", "emoji", "voice", "translate", "words", "stats", "update"):
         step(f"打开「{page}」页", lambda p=page: win.show_page(p))
 
     def spin():

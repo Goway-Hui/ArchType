@@ -23,8 +23,9 @@ tree = ast.parse(source, filename=str(SCRIPT))
 functions = {
     "current_version", "development_build", "dpkg_version", "read_os_release", "update_platform",
     "package_version", "install_commands", "plan_update", "download_updates", "http_open",
+    "fetch_latest", "fetch_latest_html", "parse_release_assets",
 }
-constants = {"VERSION", "HOMEPAGE", "INSTALL_GUIDE", "REPO", "ENGINE_PKG"}
+constants = {"VERSION", "HOMEPAGE", "INSTALL_GUIDE", "REPO", "ENGINE_PKG", "RELEASE_API", "RELEASES_PAGE"}
 nodes = [node for node in tree.body if
          isinstance(node, ast.FunctionDef) and node.name in functions or
          isinstance(node, ast.Assign) and any(
@@ -32,6 +33,8 @@ nodes = [node for node in tree.body if
 window = next(node for node in tree.body if isinstance(node, ast.ClassDef) and node.name == "SettingsWindow")
 nodes.append(next(node for node in window.body if isinstance(node, ast.FunctionDef) and node.name == "run_installer"))
 updater = dict(hashlib=hashlib, os=os, re=re, shlex=shlex, subprocess=subprocess, urllib=urllib)
+import urllib.parse, urllib.error
+updater["urllib"] = SimpleNamespace(error=urllib.error, parse=urllib.parse)
 exec(compile(ast.Module(body=nodes, type_ignores=[]), str(SCRIPT), "exec"), updater)
 
 
@@ -261,3 +264,47 @@ class UpdateTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)
+
+    def test_api_403_falls_back_to_download_page(self):
+        # API 配额用完（403）就解析 releases/latest 下载页；别的错误照旧抛
+        tag_page = b'<a href="/Goway-Hui/WowType/releases/tag/v0.4.9">v0.4.9</a>'
+        assets_page = (b'<a href="/Goway-Hui/WowType/releases/download/v0.4.9/'
+                       b'wowtype-0.4.9-1-x86_64.pkg.tar.zst">pkg</a>'
+                       b'<a href="/Goway-Hui/WowType/releases/download/v0.4.9/SHA256SUMS">sums</a>')
+        class Response(io.BytesIO):
+            headers = {}
+        calls = []
+        def fetch(url, **_kwargs):
+            calls.append(url)
+            if url.endswith("/releases/latest"):
+                return Response(tag_page)
+            if "expanded_assets" in url:
+                return Response(assets_page)
+            if url.endswith("/releases/latest") is False and "api.github.com" in url:
+                class FakeError(Exception):
+                    pass
+            if "api.github.com" in url:
+                raise urllib.error.HTTPError(url, 403, "rate limit", {}, io.BytesIO())
+            raise RuntimeError("unexpected " + url)
+        with patch.dict(updater, HOMEPAGE="https://github.com/Goway-Hui/WowType",
+                        REPO="Goway-Hui/WowType", http_open=fetch):
+            release = updater["fetch_latest"]()
+            self.assertEqual(release["tag"], "v0.4.9")
+            self.assertEqual(release["version"], "0.4.9")
+            self.assertTrue(release.get("limited"))
+            self.assertIn("wowtype-0.4.9-1-x86_64.pkg.tar.zst", release["assets"])
+            self.assertEqual(release["assets"]["SHA256SUMS"],
+                             "https://github.com/Goway-Hui/WowType/releases/download/v0.4.9/SHA256SUMS")
+            self.assertEqual(calls[0].split("/")[2], "api.github.com")
+            # 下载地址能直接用（plan_update 只看 assets）
+            files, reason = updater["plan_update"](release)
+            self.assertEqual(reason, "")
+            self.assertEqual([name for name, _ in files],
+                             ["wowtype-0.4.9-1-x86_64.pkg.tar.zst"])
+
+    def test_other_http_errors_propagate(self):
+        def fetch(_url, **_kwargs):
+            raise urllib.error.HTTPError("x", 404, "nope", {}, io.BytesIO())
+        with patch.dict(updater, http_open=fetch):
+            with self.assertRaises(urllib.error.HTTPError):
+                updater["fetch_latest"]()
