@@ -1,8 +1,8 @@
 #!/usr/bin/python3
-"""WowType 设置：候选排列、模糊音、语音输入键、互译、自定义词、检查更新。
+"""ArchType 设置：候选排列、模糊音、语音输入键、互译、自定义词、检查更新。
 
-改的是 fcitx5 读的同一个配置文件（~/.config/fcitx5/conf/wowtype.conf）和自定义词文件
-（~/.local/share/wowtype/custom.tsv），改完经 D-Bus 让 fcitx5 重新读，立刻生效。
+改的是 fcitx5 读的同一个配置文件（~/.config/fcitx5/conf/archtype.conf）和自定义词文件
+（~/.local/share/archtype/custom.tsv），改完经 D-Bus 让 fcitx5 重新读，立刻生效。
 
 用系统的 python3（要 PyGObject、GTK 4.6+、libadwaita 1.1+；老版本上缺的控件用替身，见「旧版 GTK / libadwaita」）：
   Debian/Ubuntu: sudo apt install python3-gi gir1.2-gtk-4.0 gir1.2-adw-1
@@ -35,9 +35,14 @@ gi.require_version("Gtk", "4.0")
 gi.require_version("Adw", "1")
 from gi.repository import Adw, Gdk, Gio, GLib, GObject, Gtk, Pango  # noqa: E402
 
-APP_ID = "io.github.Gloridust.WowType.Config"
+APP_ID = "io.github.GowayHui.ArchType.Config"
+
+# 从旧品牌 WowType 升级：旧的 WOWTYPE_* 环境变量照旧生效（如 WOWTYPE_LEXICON、WOWTYPE_LOG）
+for _key, _value in list(os.environ.items()):
+    if _key.startswith("WOWTYPE_") and "ARCHTYPE_" + _key[len("WOWTYPE_"):] not in os.environ:
+        os.environ["ARCHTYPE_" + _key[len("WOWTYPE_"):]] = _value
 VERSION = "@VERSION@"
-HOMEPAGE = "https://github.com/Goway-Hui/WowType"
+HOMEPAGE = "https://github.com/Goway-Hui/ArchType"
 INSTALL_GUIDE = f"{HOMEPAGE}/blob/main/docs/INSTALL.md"
 
 
@@ -46,33 +51,117 @@ def _xdg(name, fallback):
     return value if value else os.path.expanduser(fallback)
 
 
-CONFIG_FILE = os.path.join(_xdg("XDG_CONFIG_HOME", "~/.config"), "fcitx5", "conf", "wowtype.conf")
-DATA_DIR = os.path.join(_xdg("XDG_DATA_HOME", "~/.local/share"), "wowtype")
-CUSTOM_FILE = os.environ.get("WOWTYPE_CUSTOM") or os.path.join(DATA_DIR, "custom.tsv")
+CONFIG_FILE = os.path.join(_xdg("XDG_CONFIG_HOME", "~/.config"), "fcitx5", "conf", "archtype.conf")
+DATA_DIR = os.path.join(_xdg("XDG_DATA_HOME", "~/.local/share"), "archtype")
+CUSTOM_FILE = os.environ.get("ARCHTYPE_CUSTOM") or os.path.join(DATA_DIR, "custom.tsv")
 # 打字统计：插件按天聚合写这里，设置界面只读（改开关、清空除外）
 STATS_FILE = os.path.join(DATA_DIR, "stats.json")
-VOICE_MODEL_DIR = os.environ.get("WOWTYPE_VOICE_MODEL_DIR") or os.path.join(DATA_DIR, "wtlocal")
-STATE_DIR = os.path.join(_xdg("XDG_STATE_HOME", "~/.local/state"), "wowtype")
-# 插件和设置界面共用的日志（插件那边见 fcitx5-addon/src/wowtype_log.h），不记打的字
-LOG_FILE = os.environ.get("WOWTYPE_LOG") or os.path.join(STATE_DIR, "wowtype.log")
+VOICE_MODEL_DIR = os.environ.get("ARCHTYPE_VOICE_MODEL_DIR") or os.path.join(DATA_DIR, "wtlocal")
+STATE_DIR = os.path.join(_xdg("XDG_STATE_HOME", "~/.local/state"), "archtype")
+# 插件和设置界面共用的日志（插件那边见 fcitx5-addon/src/archtype_log.h），不记打的字
+LOG_FILE = os.environ.get("ARCHTYPE_LOG") or os.path.join(STATE_DIR, "archtype.log")
 STATE_FILE = os.path.join(STATE_DIR, "state.json")
-# 互译用的 API Key 单独存一个只有自己能读的文件（wowtype.conf 别的程序也能读），插件每次请求时现读
-TRANSLATE_KEY_FILE = os.environ.get("WOWTYPE_TRANSLATE_KEY_FILE") or os.path.join(
-    _xdg("XDG_CONFIG_HOME", "~/.config"), "wowtype", "translate.key")
+# 互译用的 API Key 单独存一个只有自己能读的文件（archtype.conf 别的程序也能读），插件每次请求时现读
+TRANSLATE_KEY_FILE = os.environ.get("ARCHTYPE_TRANSLATE_KEY_FILE") or os.path.join(
+    _xdg("XDG_CONFIG_HOME", "~/.config"), "archtype", "translate.key")
+
+def _fcitx_running():
+    try:
+        return subprocess.run(["pgrep", "-x", "fcitx5"],
+                              stdout=subprocess.DEVNULL,
+                              stderr=subprocess.DEVNULL).returncode == 0
+    except OSError:
+        return False
+
+
+def migrate_legacy():
+    """从旧品牌 WowType 升级：复制旧的配置、数据、状态，并改掉配置里的旧名字。
+
+    只在目标不存在时复制，重复执行安全；旧目录保留，确认没问题后可手动删。
+    """
+    old_config = os.path.join(_xdg("XDG_CONFIG_HOME", "~/.config"), "fcitx5", "conf", "wowtype.conf")
+    old_key = os.path.join(_xdg("XDG_CONFIG_HOME", "~/.config"), "wowtype", "translate.key")
+    for old, new in ((old_config, CONFIG_FILE), (old_key, TRANSLATE_KEY_FILE)):
+        try:
+            if os.path.isfile(old) and not os.path.exists(new):
+                os.makedirs(os.path.dirname(new), exist_ok=True)
+                shutil.copy2(old, new)
+                log(f"迁移：{old} -> {new}")
+        except OSError as e:
+            log(f"迁移 {old} 失败：{e}")
+    for old_dir, new_dir in (
+        (os.path.join(_xdg("XDG_DATA_HOME", "~/.local/share"), "wowtype"), DATA_DIR),
+        (os.path.join(_xdg("XDG_STATE_HOME", "~/.local/state"), "wowtype"), STATE_DIR),
+    ):
+        try:
+            if os.path.isdir(old_dir) and not os.path.exists(new_dir):
+                os.makedirs(os.path.dirname(new_dir), exist_ok=True)
+                shutil.copytree(old_dir, new_dir)
+                log(f"迁移：{old_dir} -> {new_dir}")
+        except OSError as e:
+            log(f"迁移 {old_dir} 失败：{e}")
+
+    # 配置里存着旧目录的绝对路径（选过的词库），复制过来后要指向新目录
+    try:
+        with open(CONFIG_FILE, encoding="utf-8") as f:
+            text = f.read()
+        old_data = os.path.join(_xdg("XDG_DATA_HOME", "~/.local/share"), "wowtype")
+        old_state = os.path.join(_xdg("XDG_STATE_HOME", "~/.local/state"), "wowtype")
+        new_text = text.replace(old_data, DATA_DIR).replace(old_state, STATE_DIR)
+        if new_text != text:
+            write_atomic(CONFIG_FILE, new_text)
+            log("迁移：配置里的旧路径换成 archtype")
+    except OSError:
+        pass
+
+    # fcitx5 经典界面的主题名：目录已经从 wowtype 改成 archtype
+    classicui = os.path.join(_xdg("XDG_CONFIG_HOME", "~/.config"), "fcitx5", "conf", "classicui.conf")
+    try:
+        with open(classicui, encoding="utf-8") as f:
+            text = f.read()
+        new_text = text.replace("Theme=wowtype", "Theme=archtype")
+        if new_text != text:
+            with open(classicui + ".bak-archtype", "w", encoding="utf-8") as f:
+                f.write(text)
+            write_atomic(classicui, new_text)
+            log("迁移：经典界面主题名换成 archtype")
+    except OSError:
+        pass
+
+    # 输入法列表里还写着旧 addon 名；fcitx5 运行时会用内存里的内容覆盖 profile，
+    # 这时先不改，安装脚本的 --add-to-group / 设置页的「添加」会把它加进去。
+    if _fcitx_running():
+        return
+    profile = os.path.join(_xdg("XDG_CONFIG_HOME", "~/.config"), "fcitx5", "profile")
+    try:
+        with open(profile, encoding="utf-8") as f:
+            text = f.read()
+        if "Name=wowtype" in text or "DefaultIM=wowtype" in text:
+            with open(profile + ".bak-archtype", "w", encoding="utf-8") as f:
+                f.write(text)
+            write_atomic(profile, text.replace("Name=wowtype", "Name=archtype")
+                                       .replace("DefaultIM=wowtype", "DefaultIM=archtype"))
+            log(f"迁移：{profile} 里的输入法名换成 archtype")
+    except FileNotFoundError:
+        pass
+    except OSError as e:
+        log(f"迁移 {profile} 失败：{e}")
+
+
 ISSUES_URL = f"{HOMEPAGE}/issues/new"
 # 界面上的中文标点要用简体中文字体画，见 SettingsApp.update_font_css；装了哪个用哪个
 CJK_SC_FONTS = ["Noto Sans CJK SC", "Source Han Sans SC", "Source Han Sans CN",
                 "WenQuanYi Micro Hei", "WenQuanYi Zen Hei", "Droid Sans Fallback"]
 LEXICON_CANDIDATES = [
-    os.environ.get("WOWTYPE_LEXICON", ""),
+    os.environ.get("ARCHTYPE_LEXICON", ""),
     os.path.join(DATA_DIR, "lexicon.tsv"),
-    "/usr/share/wowtype/lexicon.tsv",
+    "/usr/share/archtype/lexicon.tsv",
 ]
 # 五笔码表，和插件找数据文件的顺序一样：环境变量、用户数据目录、系统目录
 WUBI_CANDIDATES = [
-    os.environ.get("WOWTYPE_WUBI", ""),
+    os.environ.get("ARCHTYPE_WUBI", ""),
     os.path.join(DATA_DIR, "wubi86.tsv"),
-    "/usr/share/wowtype/wubi86.tsv",
+    "/usr/share/archtype/wubi86.tsv",
 ]
 
 # 键名、默认值、范围、下面各选项列表以 spec/config.json 为准（设置契约，插件和 macOS 也对照它）；
@@ -149,7 +238,7 @@ RANGES = {
     "TranslateIdleMinutes": (0, 240),
 }
 
-# 互译语言（存盘名和插件的 WowtypeTranslateTarget、core/src/translate.rs 的 LANGUAGES 一致）
+# 互译语言（存盘名和插件的 ArchtypeTranslateTarget、core/src/translate.rs 的 LANGUAGES 一致）
 TRANSLATE_LANGUAGES = [
     ("英语", "en", "English"),
     ("日语", "ja", "Japanese"),
@@ -179,14 +268,14 @@ TRANSLATE_PROVIDERS = [
     ("其他（自己填地址）", "", ""),
 ]
 
-# 输入方案（存盘名和插件的 WowtypeInputScheme 一致）
+# 输入方案（存盘名和插件的 ArchtypeInputScheme 一致）
 INPUT_SCHEMES = [
     ("拼音输入", "Quanpin"),
     ("双拼输入", "Shuangpin"),
     ("五笔输入", "Wubi86"),
 ]
 
-# 双拼方案（存盘名和插件的 WowtypeShuangpinScheme 一致）
+# 双拼方案（存盘名和插件的 ArchtypeShuangpinScheme 一致）
 SHUANGPIN_SCHEMES = [
     ("自然码", "Ziranma"),
     ("小鹤双拼", "Xiaohe"),
@@ -197,7 +286,7 @@ SHUANGPIN_SCHEMES = [
     ("拼音加加", "PinyinJiajia"),
 ]
 
-# 模糊音分组（键名和插件的 WowtypeConfig 一致）
+# 模糊音分组（键名和插件的 ArchtypeConfig 一致）
 FUZZY_GROUPS = [
     ("FuzzyZh", "z = zh"),
     ("FuzzyCh", "c = ch"),
@@ -525,7 +614,7 @@ button.suggested-action:focus,
 button.suggested-action label,
 button.suggested-action image { color: #ffffff; }
 """
-# 开关、单选框、主按钮换成 WowType 蓝（旧版 libadwaita 用命名颜色，1.6 起用 CSS 变量）
+# 开关、单选框、主按钮换成 ArchType 蓝（旧版 libadwaita 用命名颜色，1.6 起用 CSS 变量）
 STYLE_ACCENT = """
 @define-color accent_bg_color #2F6FED;
 @define-color accent_color %s;
@@ -874,7 +963,7 @@ zhu zhua zhuai zhuan zhuang zhui zhun zhuo zi zong zou zu zuan zui zun zuo
 
 
 def unquote_value(value):
-    """两边有双引号的值去掉引号，再把反斜杠、引号、换行的转义还原（和 fcitx5 读 wowtype.conf 一样）。"""
+    """两边有双引号的值去掉引号，再把反斜杠、引号、换行的转义还原（和 fcitx5 读 archtype.conf 一样）。"""
     if len(value) < 2 or value[0] != '"' or value[-1] != '"':
         return value
     out, escaped = [], False
@@ -907,7 +996,7 @@ def normalize_value(key, value):
 
 
 def read_config():
-    """读 wowtype.conf，返回 (值, 原文里不认识的行)。
+    """读 archtype.conf，返回 (值, 原文里不认识的行)。
 
     [分组]（fcitx5 的 [Hotkey] 等）下面的行不是设置项，原样放进「不认识的行」，写回时留着。"""
     values = dict(DEFAULTS)
@@ -1046,8 +1135,8 @@ def merge_custom_words(words, incoming):
 
 
 def write_custom_words(words, path=None):
-    out = ["# WowType 自定义词：编码<TAB>词。编码是拼音（空格分开音节），也可以是 mail 这类字母；",
-           "# 词里写 \\n 表示换行。由 WowType 设置维护，也可以手动编辑。"]
+    out = ["# ArchType 自定义词：编码<TAB>词。编码是拼音（空格分开音节），也可以是 mail 这类字母；",
+           "# 词里写 \\n 表示换行。由 ArchType 设置维护，也可以手动编辑。"]
     out += [f"{pinyin}\t{word}" for pinyin, word in words]
     write_atomic(path or CUSTOM_FILE, "\n".join(out) + "\n")
 
@@ -1193,7 +1282,7 @@ class Fcitx:
                       Gio.DBusCallFlags.NO_AUTO_START, 2000, None, finished)
 
     def reload(self):
-        self.call("ReloadAddonConfig", GLib.Variant("(s)", ("wowtype",)))
+        self.call("ReloadAddonConfig", GLib.Variant("(s)", ("archtype",)))
 
     def restart(self, done=None):
         if not kwin_input_method():
@@ -1230,7 +1319,7 @@ class Fcitx:
                   done=lambda value: done and done(value is not None))
 
     def add_to_group(self, group, layout, items, done):
-        items = list(items) + [("wowtype", "")]
+        items = list(items) + [("archtype", "")]
         self.call("SetInputMethodGroupInfo", GLib.Variant("(ssa(ss))", (group, layout, items)),
                   done=lambda value: done(value is not None))
 
@@ -1245,7 +1334,7 @@ class Fcitx:
 # ---------------------------------------------------------------- 和 fcitx5 抢 Shift
 #
 # fcitx5 默认把左 Shift 设成「临时切换输入法」（在当前输入法和排第一的键盘之间来回切），
-# 它先拿到这一下，WowType 就收不到，单按左 Shift 切不了中英文和「译」。
+# 它先拿到这一下，ArchType 就收不到，单按左 Shift 切不了中英文和「译」。
 # fcitx5 全局快捷键里每一项都是这样（instance.cpp 的 keyHandlers），所以几项都要看。
 
 GLOBAL_URI = "fcitx://config/global"
@@ -1297,7 +1386,7 @@ def bare_shift(key):
 
 
 def shift_conflicts(hotkey, toggle):
-    """fcitx5 快捷键里占着 WowType 要用的 Shift 的：[(选项, 按键)…]。"""
+    """fcitx5 快捷键里占着 ArchType 要用的 Shift 的：[(选项, 按键)…]。"""
     sides = SHIFT_SIDES.get(toggle, SHIFT_SIDES["Both"])
     found = []
     for option in FCITX_SHIFT_OPTIONS:
@@ -1308,7 +1397,7 @@ def shift_conflicts(hotkey, toggle):
 
 
 def without_shift(hotkey, toggle):
-    """去掉 WowType 要用的 Shift：返回要写回的 {选项: [按键…]} 和去掉了的 [(选项, 按键)…]。"""
+    """去掉 ArchType 要用的 Shift：返回要写回的 {选项: [按键…]} 和去掉了的 [(选项, 按键)…]。"""
     conflicts = shift_conflicts(hotkey, toggle)
     lists = {}
     for option, key in conflicts:
@@ -1416,7 +1505,7 @@ def same_key(a, b):
 
 
 def fcitx_hotkey_taking(key, hotkey=None):
-    """fcitx5 哪个全局快捷键也是这个键（fcitx5 先处理，WowType 收不到）；没有返回 None。"""
+    """fcitx5 哪个全局快捷键也是这个键（fcitx5 先处理，ArchType 收不到）；没有返回 None。"""
     if not key:
         return None
     hotkey = saved_fcitx_hotkey()[0] if hotkey is None else hotkey
@@ -1430,9 +1519,9 @@ def fcitx_hotkey_taking(key, hotkey=None):
 # ---------------------------------------------------------------- 主题
 
 CLASSICUI_URI = "fcitx://config/addon/classicui"
-THEME_LIGHT = "wowtype"
-THEME_DARK = "wowtype-dark"
-GNOME_THEME_EXT = "wowtype-theme@gloridust.github.io"
+THEME_LIGHT = "archtype"
+THEME_DARK = "archtype-dark"
+GNOME_THEME_EXT = "archtype-theme@goway-hui.github.io"
 KIMPANEL_EXT = "kimpanel@kde.org"
 GNOME_EXT_OUT_OF_DATE = 4  # GNOME Shell 的 ExtensionState.OUT_OF_DATE：扩展不支持这个 GNOME 版本
 
@@ -1537,12 +1626,12 @@ def fcitx_call_sync(method, params=None, reply=None):
 PROFILE_FILE = os.path.join(_xdg("XDG_CONFIG_HOME", "~/.config"), "fcitx5", "profile")
 
 
-def fcitx_knows_wowtype():
-    """fcitx5 在跑并且认得 WowType 返回 True，在跑但不认得（装完还没重启）False，没在跑 None。"""
+def fcitx_knows_archtype():
+    """fcitx5 在跑并且认得 ArchType 返回 True，在跑但不认得（装完还没重启）False，没在跑 None。"""
     value = fcitx_call_sync("AvailableInputMethods", None, "(a(ssssssb))")
     if value is None:
         return None
-    return any(item[0] == "wowtype" for item in value.unpack()[0])
+    return any(item[0] == "archtype" for item in value.unpack()[0])
 
 
 KWINRC_FILE = os.path.join(_xdg("XDG_CONFIG_HOME", "~/.config"), "kwinrc")
@@ -1648,10 +1737,10 @@ def system_keyboard_layout():
     return f"{layout}-{variant}" if variant else layout
 
 
-def profile_add_wowtype(path=PROFILE_FILE):
-    """fcitx5 没在跑时直接改它的配置文件 profile，把 WowType 加进第一个分组。
+def profile_add_archtype(path=PROFILE_FILE):
+    """fcitx5 没在跑时直接改它的配置文件 profile，把 ArchType 加进第一个分组。
 
-    没有 profile（fcitx5 还没运行过）就新建一个：系统键盘布局 + WowType。
+    没有 profile（fcitx5 还没运行过）就新建一个：系统键盘布局 + ArchType。
     fcitx5 退出时会把内存里的分组写回 profile，所以只能在它没在跑时改。返回说明文字。
     """
     try:
@@ -1661,11 +1750,11 @@ def profile_add_wowtype(path=PROFILE_FILE):
         layout = system_keyboard_layout()
         os.makedirs(os.path.dirname(path), exist_ok=True)
         with open(path, "w", encoding="utf-8") as f:
-            f.write(f"[Groups/0]\nName=Default\nDefault Layout={layout}\nDefaultIM=wowtype\n\n"
+            f.write(f"[Groups/0]\nName=Default\nDefault Layout={layout}\nDefaultIM=archtype\n\n"
                     f"[Groups/0/Items/0]\nName=keyboard-{layout}\nLayout=\n\n"
-                    "[Groups/0/Items/1]\nName=wowtype\nLayout=\n\n"
+                    "[Groups/0/Items/1]\nName=archtype\nLayout=\n\n"
                     "[GroupOrder]\n0=Default\n")
-        return f"新建了 fcitx5 输入法列表：键盘 {layout} + WowType"
+        return f"新建了 fcitx5 输入法列表：键盘 {layout} + ArchType"
     sections, current = {}, None
     for line in text.splitlines():
         line = line.strip()
@@ -1679,54 +1768,54 @@ def profile_add_wowtype(path=PROFILE_FILE):
     index = next((name.split("/")[1] for name, keys in sections.items()
                   if re.fullmatch(r"Groups/\d+", name) and keys.get("Name") == first), None)
     if index is None:
-        raise RuntimeError(f"看不懂 {path}，请在 fcitx5 配置里手动添加 WowType")
+        raise RuntimeError(f"看不懂 {path}，请在 fcitx5 配置里手动添加 ArchType")
     items = [keys.get("Name") for name, keys in sections.items()
              if re.fullmatch(rf"Groups/{index}/Items/\d+", name)]
-    if "wowtype" in items:
-        return f"WowType 已经在输入法列表「{first}」里"
-    with open(path + ".bak-wowtype", "w", encoding="utf-8") as f:
+    if "archtype" in items:
+        return f"ArchType 已经在输入法列表「{first}」里"
+    with open(path + ".bak-archtype", "w", encoding="utf-8") as f:
         f.write(text)
     with open(path, "w", encoding="utf-8") as f:
-        f.write(text.rstrip("\n") + f"\n\n[Groups/{index}/Items/{len(items)}]\nName=wowtype\nLayout=\n")
-    return f"已把 WowType 加进输入法列表「{first}」（原来的存成 profile.bak-wowtype）"
+        f.write(text.rstrip("\n") + f"\n\n[Groups/{index}/Items/{len(items)}]\nName=archtype\nLayout=\n")
+    return f"已把 ArchType 加进输入法列表「{first}」（原来的存成 profile.bak-archtype）"
 
 
 def add_to_group_cli(restart):
-    """安装脚本用（wowtype-config --add-to-group [--restart]）：把 WowType 加进当前输入法分组。
+    """安装脚本用（archtype-config --add-to-group [--restart]）：把 ArchType 加进当前输入法分组。
 
-    fcitx5 在跑：认得 WowType 就经 D-Bus 加；不认得（刚装完）时带 --restart 先让它重启，
+    fcitx5 在跑：认得 ArchType 就经 D-Bus 加；不认得（刚装完）时带 --restart 先让它重启，
     否则返回 3。fcitx5 没在跑：直接改 profile。成功（含本来就在）返回 0。
     """
-    known = fcitx_knows_wowtype()
+    known = fcitx_knows_archtype()
     if known is None:
-        print(profile_add_wowtype())
+        print(profile_add_archtype())
         return 0
     if not known:
         if not restart:
-            print("fcitx5 还没载入 WowType，要先重启 fcitx5")
+            print("fcitx5 还没载入 ArchType，要先重启 fcitx5")
             return 3
         restart_fcitx_sync()
         for _ in range(60):  # 最多等 15 秒
             time.sleep(0.25)
-            known = fcitx_knows_wowtype()
+            known = fcitx_knows_archtype()
             if known:
                 break
         if not known:
-            print("重启 fcitx5 以后还是找不到 WowType，请注销重新登录后在 fcitx5 配置里添加")
+            print("重启 fcitx5 以后还是找不到 ArchType，请注销重新登录后在 fcitx5 配置里添加")
             return 1
         print("已重启 fcitx5")
     group = fcitx_call_sync("CurrentInputMethodGroup", None, "(s)").unpack()[0]
     info = fcitx_call_sync("InputMethodGroupInfo", GLib.Variant("(s)", (group,)), "(sa(ss))")
     layout, items = info.unpack()
-    if any(name == "wowtype" for name, _ in items):
-        print(f"WowType 已经在输入法列表「{group}」里")
+    if any(name == "archtype" for name, _ in items):
+        print(f"ArchType 已经在输入法列表「{group}」里")
         return 0
-    items = list(items) + [("wowtype", "")]
+    items = list(items) + [("archtype", "")]
     if fcitx_call_sync("SetInputMethodGroupInfo",
                        GLib.Variant("(ssa(ss))", (group, layout, items))) is None:
-        print("添加失败，请在 fcitx5 配置里手动添加 WowType")
+        print("添加失败，请在 fcitx5 配置里手动添加 ArchType")
         return 1
-    print(f"已把 WowType 加进输入法列表「{group}」")
+    print(f"已把 ArchType 加进输入法列表「{group}」")
     return 0
 
 
@@ -1747,7 +1836,7 @@ def apply_gnome_theme(on):
         return None
     # GNOME 44 及以前（比如 Ubuntu 22.04 的 GNOME 42）扫到这个扩展也只标「版本不符」，不加载
     if on and int(gnome_extension_info(GNOME_THEME_EXT).get("state", 0)) == GNOME_EXT_OUT_OF_DATE:
-        return "这个 GNOME 太旧，候选框换不了色（WowType 主题扩展要 GNOME 45 以上）"
+        return "这个 GNOME 太旧，候选框换不了色（ArchType 主题扩展要 GNOME 45 以上）"
     set_gnome_extension(shell, GNOME_THEME_EXT, on)
     if not on:
         return "已换回默认配色"
@@ -1755,11 +1844,11 @@ def apply_gnome_theme(on):
         return "GNOME 上要先装并启用 Input Method Panel 扩展，候选框才会用这个主题"
     if not gnome_extension_loaded(GNOME_THEME_EXT):
         return "注销并重新登录一次后生效（GNOME 新装的扩展要重新登录才加载）"
-    return "已换成 WowType 主题"
+    return "已换成 ArchType 主题"
 
 
 def init_default_theme():
-    """第一次用 WowType 时把蓝色主题打开（只做一次，之后听用户的）。
+    """第一次用 ArchType 时把蓝色主题打开（只做一次，之后听用户的）。
 
     不覆盖用户自己选的别的 fcitx5 主题；GNOME 上用户关过这个扩展的也不动。
     fcitx5 还没起来时什么都不做，下次再试。
@@ -1773,7 +1862,7 @@ def init_default_theme():
     shell = gnome_shell_settings()
     if shell is not None and GNOME_THEME_EXT in shell.get_strv("disabled-extensions"):
         update_state(theme_default_done=True)
-        log("默认主题：用户在 GNOME 里关过 WowType 主题，不动")
+        log("默认主题：用户在 GNOME 里关过 ArchType 主题，不动")
         return
     current = value.unpack()[0].get("Theme", "default")
     if current in ("default", "", THEME_LIGHT):
@@ -1789,7 +1878,7 @@ def init_default_theme():
 
 
 def startup_tasks():
-    """插件切到 WowType 时在后台叫（wowtype-config --startup），最多一小时一次。"""
+    """插件切到 ArchType 时在后台叫（archtype-config --startup），最多一小时一次。"""
     try:
         init_default_theme()
     except Exception as e:  # 主题弄不好也别耽误检查更新
@@ -1851,7 +1940,7 @@ def collect_diagnostics():
     """
     out = []
     add = out.append
-    add("# WowType 诊断信息")
+    add("# ArchType 诊断信息")
     add(f"导出时间：{time.strftime('%Y-%m-%d %H:%M:%S %z')}")
     add("不含你打过的字、自定义词和输入习惯的内容（只有条数和大小）。")
     add("")
@@ -1911,7 +2000,7 @@ def collect_diagnostics():
             add(f"GNOME 扩展 {uuid}：{'已启用' if uuid in enabled else '没启用'}，{state}{error}")
     add("")
 
-    add("## WowType 设置（wowtype.conf）")
+    add("## ArchType 设置（archtype.conf）")
     values, _extra = read_config()
     values["TranslateBaseUrl"] = mask_url(values["TranslateBaseUrl"])
     add(", ".join(f"{k}={v}" for k, v in values.items()))
@@ -1924,9 +2013,9 @@ def collect_diagnostics():
     add(f"  词库：{label}" + (f"，{path}" if path else ""))
     add(f"  万象词库包：{lexicon_pack_version() or '没装'}")
     for path in [*LEXICON_CANDIDATES, WANXIANG_LEXICON, WANXIANG_LEXICON + ".wcache",
-                 os.path.join(DATA_DIR, "english.txt"), "/usr/share/wowtype/english.txt",
-                 os.environ.get("WOWTYPE_LM", ""),
-                 os.path.join(DATA_DIR, "words.lm"), "/usr/share/wowtype/words.lm",
+                 os.path.join(DATA_DIR, "english.txt"), "/usr/share/archtype/english.txt",
+                 os.environ.get("ARCHTYPE_LM", ""),
+                 os.path.join(DATA_DIR, "words.lm"), "/usr/share/archtype/words.lm",
                  *WUBI_CANDIDATES,
                  os.path.join(DATA_DIR, "lexicon.tsv.wcache"),
                  os.path.join(DATA_DIR, "wetype", "nlrgpt2_nnlm.bin"),
@@ -1941,9 +2030,9 @@ def collect_diagnostics():
         add(f"  {label}：{'没有' if count is None else f'{count} 条'}")
     add("")
 
-    add("## WowType 日志（最近 400 行）")
+    add("## ArchType 日志（最近 400 行）")
     lines = _tail(LOG_FILE + ".1", 400) + _tail(LOG_FILE, 400)
-    out.extend(lines[-400:] or ["（还没有日志：要用新版的 WowType 打过一次字才会有）"])
+    out.extend(lines[-400:] or ["（还没有日志：要用新版的 ArchType 打过一次字才会有）"])
     add("")
 
     add("## fcitx5 日志（这次开机，最近 300 行）")
@@ -1953,7 +2042,7 @@ def collect_diagnostics():
 
 
 def default_log_name():
-    return time.strftime("wowtype-log-%Y%m%d-%H%M%S.txt")
+    return time.strftime("archtype-log-%Y%m%d-%H%M%S.txt")
 
 
 def export_diagnostics(path):
@@ -1964,16 +2053,16 @@ def export_diagnostics(path):
 
 # ---------------------------------------------------------------- 更新
 
-REPO = "Goway-Hui/WowType"
+REPO = "Goway-Hui/ArchType"
 RELEASE_API = f"https://api.github.com/repos/{REPO}/releases/latest"
 RELEASES_PAGE = f"{HOMEPAGE}/releases"
-CACHE_DIR = os.path.join(_xdg("XDG_CACHE_HOME", "~/.cache"), "wowtype")
+CACHE_DIR = os.path.join(_xdg("XDG_CACHE_HOME", "~/.cache"), "archtype")
 UPDATE_DIR = os.path.join(CACHE_DIR, "updates")
 UPDATE_STATE = os.path.join(CACHE_DIR, "update-check.json")
-ENGINE_PKG = "wowtype"
+ENGINE_PKG = "archtype"
 # 0.3.3 及以前词库是单独的包，0.3.4 起打进了安装包（新包会把旧词库包替换掉）
-DATA_PKG = "wowtype-data-rime-ice"
-DATA_VERSION_FILE = "/usr/share/doc/wowtype/DATA-VERSION"
+DATA_PKG = "archtype-data-rime-ice"
+DATA_VERSION_FILE = "/usr/share/doc/archtype/DATA-VERSION"
 # 自动检查最多这么久一次（插件一小时叫一次，这里留几分钟余量，免得正好差几秒被跳过）
 CHECK_INTERVAL = 55 * 60
 
@@ -2118,7 +2207,7 @@ def install_commands(manager, paths):
 
 def http_open(url, timeout=30):
     request = urllib.request.Request(url, headers={
-        "User-Agent": f"WowType-Updater/{current_version()}",
+        "User-Agent": f"ArchType-Updater/{current_version()}",
         "Accept": "application/vnd.github+json" if "api.github.com" in url else "*/*",
     })
     return urllib.request.urlopen(request, timeout=timeout)
@@ -2266,16 +2355,16 @@ def plan_update(release):
     if reason:
         return [], reason
     if package_version(manager) is None:
-        return [], f"当前未通过 {manager} 安装 WowType，请按安装说明更新源码或系统配置"
+        return [], f"当前未通过 {manager} 安装 ArchType，请按安装说明更新源码或系统配置"
     version = release["version"]
     if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._+~^-]*", version):
         return [], "发布版本号格式无效，请到下载页检查"
     if manager == "apt-get":
-        name = f"wowtype_{version}_{distro}_{arch}.deb"
+        name = f"archtype_{version}_{distro}_{arch}.deb"
     elif manager == "pacman":
-        name = f"wowtype-{version}-1-{arch}.pkg.tar.zst"
+        name = f"archtype-{version}-1-{arch}.pkg.tar.zst"
     else:
-        name = f"wowtype-{version}-1.{distro}.{arch}.rpm"
+        name = f"archtype-{version}-1.{distro}.{arch}.rpm"
     if name not in release["assets"]:
         return [], f"这一版没有 {distro} {arch} 的安装包，请按安装说明从源码构建，不混用其他发行版的包"
     if "SHA256SUMS" not in release["assets"]:
@@ -2345,7 +2434,7 @@ def write_update_state(state):
 
 
 def background_check():
-    """fcitx5 切到 WowType 时在后台跑（wowtype-config --check-update）。
+    """fcitx5 切到 ArchType 时在后台跑（archtype-config --check-update）。
 
     最多一小时查一次；有新版本就发一条桌面通知（同一版本只提醒一次），点开进设置的「更新」页。
     """
@@ -2371,9 +2460,9 @@ def background_check():
     hint = "一键安装" if one_click else "看怎么更新"
     try:
         chosen = subprocess.run(
-            ["notify-send", "--app-name=WowType", "--icon=wowtype",
+            ["notify-send", "--app-name=ArchType", "--icon=archtype",
              "--action=open=查看更新", "--action=default=查看更新",
-             f"WowType {release['version']} 可以更新了",
+             f"ArchType {release['version']} 可以更新了",
              f"当前是 {current_version()}。打开设置可以看更新内容，{hint}。"],
             capture_output=True, text=True, timeout=24 * 3600).stdout.strip()
     except (OSError, subprocess.SubprocessError):
@@ -2385,12 +2474,12 @@ def background_check():
 # ---------------------------------------------------------------- 词库
 
 # 默认词库是雾凇（rime-ice），在安装包里。万象拼音（rime_wanxiang）是可选词库包：
-# 每次发版时 CI 用 scripts/make-wanxiang.sh 打成 wowtype-data-wanxiang-<版本>.tar.gz 放在 Release 上，
-# 这里下载、按 SHA256SUMS 校验后解到 DICTS_DIR/wanxiang/，再把 Lexicon= 写进 wowtype.conf
+# 每次发版时 CI 用 scripts/make-wanxiang.sh 打成 archtype-data-wanxiang-<版本>.tar.gz 放在 Release 上，
+# 这里下载、按 SHA256SUMS 校验后解到 DICTS_DIR/wanxiang/，再把 Lexicon= 写进 archtype.conf
 DICTS_DIR = os.path.join(DATA_DIR, "dicts")
 WANXIANG_DIR = os.path.join(DICTS_DIR, "wanxiang")
 WANXIANG_LEXICON = os.path.join(WANXIANG_DIR, "lexicon.tsv")
-WANXIANG_ASSET = re.compile(r"wowtype-data-wanxiang-([0-9][0-9A-Za-z.]*)\.tar\.gz")
+WANXIANG_ASSET = re.compile(r"archtype-data-wanxiang-([0-9][0-9A-Za-z.]*)\.tar\.gz")
 WANXIANG_PAGE = "https://github.com/amzxyz/rime_wanxiang"
 LEXICON_PACK_FILES = ("lexicon.tsv", "LICENSE", "SOURCE.txt", "VERSION")
 # 包里至少这么多条才算像样的词库（防止下到一个坏包把输入法弄得没词）
@@ -2492,10 +2581,10 @@ def install_lexicon_cli(args):
     values, extra = read_config()
     if args[0] == "--use-lexicon":
         if args[1:] != ["rime-ice"] and args[1:] != ["wanxiang"]:
-            print("用法：wowtype-config --use-lexicon rime-ice|wanxiang")
+            print("用法：archtype-config --use-lexicon rime-ice|wanxiang")
             return 2
         if args[1] == "wanxiang" and not lexicon_pack_version():
-            print("还没装万象词库，先运行 wowtype-config --install-lexicon wanxiang")
+            print("还没装万象词库，先运行 archtype-config --install-lexicon wanxiang")
             return 1
         values["Lexicon"] = WANXIANG_LEXICON if args[1] == "wanxiang" else ""
     else:
@@ -2522,7 +2611,7 @@ def install_lexicon_cli(args):
         values["Lexicon"] = WANXIANG_LEXICON
     write_config(values, extra)
     log(f"词库改为 {active_lexicon(values)[0]}（命令行）")
-    running = fcitx_call_sync("ReloadAddonConfig", GLib.Variant("(s)", ("wowtype",))) is not None
+    running = fcitx_call_sync("ReloadAddonConfig", GLib.Variant("(s)", ("archtype",))) is not None
     print("已切到" + ("万象拼音" if values["Lexicon"] else "雾凇拼音（默认）") +
           ("，fcitx5 正在后台换词库，过几秒生效" if running else "，fcitx5 下次启动时生效"))
     return 0
@@ -2533,13 +2622,13 @@ def lexicon_self_test():
     import io
     import tarfile
     import tempfile
-    release = {"assets": {"wowtype-data-rime-ice-2026.10.31.2.tar.gz": "u0",
-                          "wowtype-data-wanxiang-2026.11.10.0.tar.gz": "u1",
-                          "wowtype-data-wanxiang-2026.11.9.3.tar.gz": "u2",
-                          "wowtype_0.3.10_ubuntu24.04_amd64.deb": "u3"}}
-    assert find_lexicon_asset(release) == ("wowtype-data-wanxiang-2026.11.10.0.tar.gz", "u1",
+    release = {"assets": {"archtype-data-rime-ice-2026.10.31.2.tar.gz": "u0",
+                          "archtype-data-wanxiang-2026.11.10.0.tar.gz": "u1",
+                          "archtype-data-wanxiang-2026.11.9.3.tar.gz": "u2",
+                          "archtype_0.3.10_ubuntu24.04_amd64.deb": "u3"}}
+    assert find_lexicon_asset(release) == ("archtype-data-wanxiang-2026.11.10.0.tar.gz", "u1",
                                            "2026.11.10.0")
-    assert find_lexicon_asset({"assets": {"wowtype-data-rime-ice-1.tar.gz": "x"}}) is None
+    assert find_lexicon_asset({"assets": {"archtype-data-rime-ice-1.tar.gz": "x"}}) is None
     assert find_lexicon_asset(None) is None
 
     def make_pack(path, files):
@@ -2592,7 +2681,7 @@ def lexicon_self_test():
 
         # 从发布页下载：本机起一个假的 Release，按 SHA256SUMS 校验后装上
         from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-        name = "wowtype-data-wanxiang-2026.11.12.0.tar.gz"
+        name = "archtype-data-wanxiang-2026.11.12.0.tar.gz"
         make_pack(pack, {**good, "VERSION": "2026.11.12.0"})
         with open(pack, "rb") as f:
             files = {name: f.read()}
@@ -2638,17 +2727,17 @@ def lexicon_self_test():
 # ---------------------------------------------------------------- 互译
 
 
-# 本地翻译模型：腾讯混元 HY-MT 1.5 1.8B（GGUF，Q4_K_M）。不随 WowType 分发，用户确认许可后下载
+# 本地翻译模型：腾讯混元 HY-MT 1.5 1.8B（GGUF，Q4_K_M）。不随 ArchType 分发，用户确认许可后下载
 LOCAL_MODEL_FILE = "HY-MT1.5-1.8B-Q4_K_M.gguf"
-LOCAL_MODEL_URL = os.environ.get("WOWTYPE_LOCAL_MODEL_URL") or (
+LOCAL_MODEL_URL = os.environ.get("ARCHTYPE_LOCAL_MODEL_URL") or (
     "https://huggingface.co/tencent/HY-MT1.5-1.8B-GGUF/resolve/main/" + LOCAL_MODEL_FILE)
-LOCAL_MODEL_SHA256 = os.environ.get("WOWTYPE_LOCAL_MODEL_SHA256") or (
+LOCAL_MODEL_SHA256 = os.environ.get("ARCHTYPE_LOCAL_MODEL_SHA256") or (
     "4383ac0c3c8e476de98ff979c2a3f069f8c4fb385e7860cf2d28da896cc477c7")
 LOCAL_MODEL_SIZE = 1133080512
 LOCAL_MODEL_PAGE = "https://huggingface.co/tencent/HY-MT1.5-1.8B-GGUF"
 LOCAL_MODEL_LICENSE = LOCAL_MODEL_PAGE + "/blob/main/License.txt"
 LOCAL_MODEL_TERMS = ("模型属于腾讯，用的是《腾讯混元社区许可协议》：不适用于欧盟、英国和韩国境内，"
-                     "月活超过 1 亿的产品要另外向腾讯申请。模型从 Hugging Face 下载，WowType 不分发它。")
+                     "月活超过 1 亿的产品要另外向腾讯申请。模型从 Hugging Face 下载，ArchType 不分发它。")
 MODELS_DIR = os.path.join(DATA_DIR, "models")
 
 
@@ -2673,7 +2762,7 @@ LLAMA_ASSETS = {
                 "4758b51335e37b4346251f2687d64841ff1c07ecb27fc46323945bb2ec9c44d2"),
 }
 LLAMA_PAGE = "https://github.com/ggml-org/llama.cpp"
-# 和核心 llama::downloaded_server 对着：$XDG_DATA_HOME/wowtype/llama/llama-server
+# 和核心 llama::downloaded_server 对着：$XDG_DATA_HOME/archtype/llama/llama-server
 LLAMA_DIR = os.path.join(DATA_DIR, "llama")
 
 
@@ -2686,9 +2775,9 @@ def llama_asset(machine=None, nixos=None):
     if nixos or machine not in LLAMA_ASSETS:
         return None
     name, size, sha256 = LLAMA_ASSETS[machine]
-    url = os.environ.get("WOWTYPE_LLAMA_URL") or (
+    url = os.environ.get("ARCHTYPE_LLAMA_URL") or (
         f"{LLAMA_PAGE}/releases/download/{LLAMA_BUILD}/llama-{LLAMA_BUILD}-bin-{name}.tar.gz")
-    return url, size, os.environ.get("WOWTYPE_LLAMA_SHA256") or sha256
+    return url, size, os.environ.get("ARCHTYPE_LLAMA_SHA256") or sha256
 
 
 def downloaded_llama_server(root=None):
@@ -2799,7 +2888,7 @@ def download_model(dest, url=None, sha256=None, progress=None, cancelled=None, t
     os.makedirs(os.path.dirname(dest), exist_ok=True)
     part = dest + ".part"
     have = os.path.getsize(part) if os.path.exists(part) else 0
-    request = urllib.request.Request(url, headers={"User-Agent": f"WowType/{current_version()}"})
+    request = urllib.request.Request(url, headers={"User-Agent": f"ArchType/{current_version()}"})
     if have:
         request.add_header("Range", f"bytes={have}-")
     try:
@@ -2952,10 +3041,10 @@ def llama_self_test():
             pass
         assert downloaded_llama_server(fresh) is None
     assert llama_asset("x86_64", False)[0].endswith(f"llama-{LLAMA_BUILD}-bin-ubuntu-x64.tar.gz") \
-        or os.environ.get("WOWTYPE_LLAMA_URL")
+        or os.environ.get("ARCHTYPE_LLAMA_URL")
     assert llama_asset("x86_64", True) is None and llama_asset("riscv64", False) is None
     assert llama_asset("aarch64", False)[2] == (
-        os.environ.get("WOWTYPE_LLAMA_SHA256") or LLAMA_ASSETS["aarch64"][2])
+        os.environ.get("ARCHTYPE_LLAMA_SHA256") or LLAMA_ASSETS["aarch64"][2])
 
 
 def translate_engine_self_test():
@@ -2964,7 +3053,7 @@ def translate_engine_self_test():
     import tempfile
     saved = CONFIG_FILE
     with tempfile.TemporaryDirectory() as tmp:
-        CONFIG_FILE = os.path.join(tmp, "wowtype.conf")
+        CONFIG_FILE = os.path.join(tmp, "archtype.conf")
         try:
             assert read_config()[0]["TranslateLocal"] == "True"  # 没有配置文件
             for text, local in (("Translate=True\nTranslateBaseUrl=https://api.example.com/v1\n", "False"),
@@ -3043,21 +3132,21 @@ def download_self_test():
 # ---------------------------------------------------------------- 语音模型
 
 
-# 语音识别模型：微信输入法的离线语音包（腾讯的，不随 WowType 分发），用户在「语音」页点下载。
+# 语音识别模型：微信输入法的离线语音包（腾讯的，不随 ArchType 分发），用户在「语音」页点下载。
 # 地址、大小、MD5 和 voice/src/wtlocal/pack.rs 一致（那边有测试对这三个值）
-VOICE_MODEL_URL = os.environ.get("WOWTYPE_VOICE_MODEL_URL") or "https://download.z.weixin.qq.com/publish_words/v1/ime_asr_decoder_model/20260710220526250_ime_asr_decoder_model.apk"  # noqa: E501
+VOICE_MODEL_URL = os.environ.get("ARCHTYPE_VOICE_MODEL_URL") or "https://download.z.weixin.qq.com/publish_words/v1/ime_asr_decoder_model/20260710220526250_ime_asr_decoder_model.apk"  # noqa: E501
 VOICE_MODEL_SIZE = 102920639
 VOICE_MODEL_MD5 = "28386481eb94ff73b28ee3949c0cf690"
 # 测试用：换成本机的假服务和假包
-if os.environ.get("WOWTYPE_VOICE_MODEL_MD5"):
-    VOICE_MODEL_MD5 = os.environ["WOWTYPE_VOICE_MODEL_MD5"]
-    VOICE_MODEL_SIZE = int(os.environ.get("WOWTYPE_VOICE_MODEL_SIZE") or 0)
+if os.environ.get("ARCHTYPE_VOICE_MODEL_MD5"):
+    VOICE_MODEL_MD5 = os.environ["ARCHTYPE_VOICE_MODEL_MD5"]
+    VOICE_MODEL_SIZE = int(os.environ.get("ARCHTYPE_VOICE_MODEL_SIZE") or 0)
 # 解开后模型和词表大约多大（界面上提示用）
 VOICE_MODEL_DISK = 130 * 1000 * 1000
 # 语音包（.apk 其实是 zip）里套着的模型包，只要里面的 *.xnet 和词表
 VOICE_MODEL_INNER = "ime_asr_decoder_model.zip"
 VOICE_MODEL_DICT = "dict.decoder.utf8.txt"
-VOICE_MODEL_NOTE = ("语音模型是微信输入法的离线语音包，属于腾讯，从腾讯的服务器下载，WowType 不分发它；"
+VOICE_MODEL_NOTE = ("语音模型是微信输入法的离线语音包，属于腾讯，从腾讯的服务器下载，ArchType 不分发它；"
                     "和这台电脑装没装微信输入法无关。")
 
 
@@ -3183,7 +3272,7 @@ def voice_model_cli(args):
             log("语音模型装好了（命令行）")
         values["Voice"] = "True"
     write_config(values, extra)
-    running = fcitx_call_sync("ReloadAddonConfig", GLib.Variant("(s)", ("wowtype",))) is not None
+    running = fcitx_call_sync("ReloadAddonConfig", GLib.Variant("(s)", ("archtype",))) is not None
     on = values["Voice"] == "True"
     print(("语音输入已打开，按语音键（默认右 Alt）说话" if on else "语音输入已关闭") +
           ("" if running else "，fcitx5 下次启动时生效"))
@@ -3238,7 +3327,7 @@ def voice_model_self_test():
     md5 = hashlib.md5(good).hexdigest()
     try:
         with tempfile.TemporaryDirectory() as tmp:
-            parent = os.path.join(tmp, "wowtype")
+            parent = os.path.join(tmp, "archtype")
             folder = os.path.join(parent, "wtlocal")
             args = {"folder": folder, "url": url, "md5": md5, "size": len(good)}
             assert not voice_model_ready(folder)
@@ -3255,7 +3344,7 @@ def voice_model_self_test():
             assert voice_model_ready(folder)
             assert sorted(os.listdir(folder)) == sorted(["encoder.xnet", "decoder.xnet",
                                                          "evil.xnet", VOICE_MODEL_DICT])
-            assert os.listdir(parent) == ["wtlocal"] and sorted(os.listdir(tmp)) == ["wowtype"]
+            assert os.listdir(parent) == ["wtlocal"] and sorted(os.listdir(tmp)) == ["archtype"]
             assert seen and seen[-1] == len(good)
             # MD5 不对：报错，坏包删掉，装好的那份不动
             for bad_args in ({"md5": "0" * 32}, {"size": len(good) + 1}):
@@ -3383,7 +3472,7 @@ class TranslateError(Exception):
 
 def api_request(url, key, body=None, timeout=20):
     """调一次 OpenAI 格式的接口，返回解析好的 JSON；出错抛 TranslateError（给人看的话，抹掉了 Key）。"""
-    headers = {"User-Agent": f"WowType/{current_version()}", "Accept": "application/json"}
+    headers = {"User-Agent": f"ArchType/{current_version()}", "Accept": "application/json"}
     if key:
         headers["Authorization"] = f"Bearer {key}"
     data = None
@@ -3511,7 +3600,7 @@ def launch_file(window, path):
 
 class _ToolbarView(Gtk.Box):
     """Adw.ToolbarView（1.4）：上面一排栏，下面内容。"""
-    __gtype_name__ = "WowTypeToolbarView"
+    __gtype_name__ = "ArchTypeToolbarView"
 
     def __init__(self, **kwargs):
         super().__init__(orientation=Gtk.Orientation.VERTICAL, **kwargs)
@@ -3532,7 +3621,7 @@ class _ToolbarView(Gtk.Box):
 
 class _SwitchRow(Adw.ActionRow):
     """Adw.SwitchRow（1.4）：后缀一个开关，active 属性跟着它。"""
-    __gtype_name__ = "WowTypeSwitchRow"
+    __gtype_name__ = "ArchTypeSwitchRow"
     active = GObject.Property(type=bool, default=False)
 
     def __init__(self, active=False, **kwargs):
@@ -3553,7 +3642,7 @@ class _SwitchRow(Adw.ActionRow):
 
 class _SpinRow(Adw.ActionRow):
     """Adw.SpinRow（1.4）：后缀一个数字框，value 属性跟着它。"""
-    __gtype_name__ = "WowTypeSpinRow"
+    __gtype_name__ = "ArchTypeSpinRow"
     value = GObject.Property(type=float, default=0)
 
     def __init__(self, **kwargs):
@@ -3583,7 +3672,7 @@ class _ComboRow(Adw.ActionRow):
 
     model 用 Gtk.StringList；selected 属性、notify::selected、set_selected/get_selected 与原生一致。
     """
-    __gtype_name__ = "WowTypeComboRow"
+    __gtype_name__ = "ArchTypeComboRow"
     selected = GObject.Property(type=GObject.TYPE_UINT, default=0)
 
     def __init__(self, title="", subtitle=None, model=None, **kwargs):
@@ -3742,7 +3831,7 @@ class _ComboRow(Adw.ActionRow):
 
 class _EntryRow(Adw.ActionRow):
     """Adw.EntryRow（1.2）：标题在左，输入框在右。changed、entry-activated 跟原生的一样从这一行发出。"""
-    __gtype_name__ = "WowTypeEntryRow"
+    __gtype_name__ = "ArchTypeEntryRow"
     __gsignals__ = {"changed": (GObject.SignalFlags.RUN_FIRST, None, ()),
                     "entry-activated": (GObject.SignalFlags.RUN_FIRST, None, ())}
 
@@ -3780,7 +3869,7 @@ class _EntryRow(Adw.ActionRow):
 
 
 class _PasswordEntryRow(_EntryRow):
-    __gtype_name__ = "WowTypePasswordEntryRow"
+    __gtype_name__ = "ArchTypePasswordEntryRow"
 
     def make_entry(self):
         return Gtk.PasswordEntry(show_peek_icon=True, width_chars=24)
@@ -3906,7 +3995,7 @@ FileDialog = getattr(Gtk, "FileDialog", _FileDialog)
 
 class SettingsWindow(Adw.ApplicationWindow):
     def __init__(self, app, page=None):
-        super().__init__(application=app, title="WowType 设置")
+        super().__init__(application=app, title="ArchType 设置")
         self.fcitx = Fcitx()
         self.guesser = PinyinGuesser()
         self.values, self.extra = read_config()
@@ -3929,7 +4018,7 @@ class SettingsWindow(Adw.ApplicationWindow):
             ("voice", "语音", "audio-input-microphone-symbolic", self.build_voice),
             ("translate", "翻译", "preferences-desktop-locale-symbolic", self.build_translate),
             ("words", "自定义词", "accessories-dictionary-symbolic", self.build_words),
-            ("stats", "统计", "wowtype-stats-symbolic", self.build_stats),
+            ("stats", "统计", "archtype-stats-symbolic", self.build_stats),
             ("update", "更新", "software-update-available-symbolic", self.build_update),
         )
         self.switches = {}
@@ -3953,9 +4042,9 @@ class SettingsWindow(Adw.ApplicationWindow):
         # 左边：图标、名字、导航
         brand = Gtk.Box(spacing=10)
         brand.add_css_class("wt-brand")
-        brand.append(Gtk.Image(icon_name="wowtype", pixel_size=36))
+        brand.append(Gtk.Image(icon_name="archtype", pixel_size=36))
         names = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, valign=Gtk.Align.CENTER)
-        name_label = Gtk.Label(label="WowType", xalign=0)
+        name_label = Gtk.Label(label="ArchType", xalign=0)
         name_label.add_css_class("wt-brand-name")
         names.append(name_label)
         version_label = Gtk.Label(label="设置", xalign=0)
@@ -3981,7 +4070,7 @@ class SettingsWindow(Adw.ApplicationWindow):
         menu.append("用文本编辑器打开自定义词", "win.open-custom")
         menu.append("导出日志…", "win.export-log")
         menu.append("恢复默认设置", "win.reset")
-        menu.append("关于 WowType", "win.about")
+        menu.append("关于 ArchType", "win.about")
         header.pack_end(Gtk.MenuButton(icon_name="open-menu-symbolic", menu_model=menu,
                                        tooltip_text="菜单"))
         for name, handler in (("open-custom", self.on_open_custom), ("reset", self.on_reset),
@@ -3999,7 +4088,8 @@ class SettingsWindow(Adw.ApplicationWindow):
 
         split = Gtk.Box()
         split.append(sidebar)
-        split.append(Gtk.Separator(orientation=Gtk.Orientation.VERTICAL))
+        # 侧栏和内容区靠背景色区分，不再画分隔线：Gtk.Separator 用的是系统主题的边框色，
+        # 深色 GTK 主题下在浅色页面里会是一根黑线。
         split.append(content)
         self.set_content(split)
         self.set_size_request(640, 460)
@@ -4242,7 +4332,7 @@ class SettingsWindow(Adw.ApplicationWindow):
         note.add_css_class("wt-stats-note")
         if total == 0:
             card.append(note)
-            card.append(self.stats_empty("还没有按键记录。用 WowType 打几个字，再回来看。"))
+            card.append(self.stats_empty("还没有按键记录。用 ArchType 打几个字，再回来看。"))
             page.append(card)
             return
         card.append(note)
@@ -4583,7 +4673,7 @@ class SettingsWindow(Adw.ApplicationWindow):
         self.look_row.connect("notify::selected", self.on_look_changed)
         look.add(self.look_row)
         self.theme_row = SwitchRow(
-            title="WowType 蓝色主题", subtitle="选中的词是 WowType 蓝，深色模式自动换深色版")
+            title="ArchType 蓝色主题", subtitle="选中的词是 ArchType 蓝，深色模式自动换深色版")
         self.theme_row.set_sensitive(False)  # 读到 fcitx5 的当前主题再打开
         self.theme_handler = self.theme_row.connect("notify::active", self.on_theme_toggled)
         look.add(self.theme_row)
@@ -4629,7 +4719,7 @@ class SettingsWindow(Adw.ApplicationWindow):
         group = Adw.PreferencesGroup(title="词库")
         group.set_header_suffix(self.info_button(
             "换词库几秒后生效，自定义词和学到的习惯都会保留。\n\n"
-            "雾凇拼音在安装包里，跟着 WowType 一起更新。\n\n"
+            "雾凇拼音在安装包里，跟着 ArchType 一起更新。\n\n"
             "万象拼音词更多，比雾凇多占约 300 MB 内存；从 amzxyz/rime_wanxiang（CC BY 4.0）转换，只用了它的词条。"
             f"装在 {_home(WANXIANG_DIR)}。",
             [("万象拼音项目主页", WANXIANG_PAGE)]))
@@ -4651,7 +4741,7 @@ class SettingsWindow(Adw.ApplicationWindow):
         self.lexicon_button.connect("clicked", lambda _b: self.start_lexicon_install())
         self.wanxiang_row.add_suffix(self.lexicon_button)
         self.lexicon_file = Gtk.Button(icon_name="document-open-symbolic", valign=Gtk.Align.CENTER,
-                                       tooltip_text="从文件安装（wowtype-data-wanxiang-*.tar.gz）")
+                                       tooltip_text="从文件安装（archtype-data-wanxiang-*.tar.gz）")
         self.lexicon_file.add_css_class("flat")
         self.lexicon_file.connect("clicked", self.on_lexicon_from_file)
         self.wanxiang_row.add_suffix(self.lexicon_file)
@@ -4662,7 +4752,7 @@ class SettingsWindow(Adw.ApplicationWindow):
         self.wanxiang_row.add_suffix(self.lexicon_delete)
         group.add(self.wanxiang_row)
 
-        # wowtype.conf 的 Lexicon 指向别的词库文件时才显示（这里不能选文件，和 macOS 的「自定义词库」同名）
+        # archtype.conf 的 Lexicon 指向别的词库文件时才显示（这里不能选文件，和 macOS 的「自定义词库」同名）
         self.custom_lexicon_row = Adw.ActionRow(title="自定义词库", visible=False)
         self.custom_lexicon_row.add_prefix(self.custom_lexicon_check)
         self.custom_lexicon_row.set_activatable_widget(self.custom_lexicon_check)
@@ -4769,7 +4859,7 @@ class SettingsWindow(Adw.ApplicationWindow):
 
     def on_lexicon_from_file(self, _button):
         dialog = FileDialog(title="安装万象词库包")
-        patterns = Gtk.FileFilter(name="WowType 词库包（*.tar.gz）")
+        patterns = Gtk.FileFilter(name="ArchType 词库包（*.tar.gz）")
         patterns.add_pattern("*.tar.gz")
         filters = Gio.ListStore.new(Gtk.FileFilter)
         filters.append(patterns)
@@ -4801,7 +4891,7 @@ class SettingsWindow(Adw.ApplicationWindow):
         has_wubi = find_wubi_table() is not None
         subtitles = {"Quanpin": "全拼，也能只打声母", "Shuangpin": "每个字打两个键",
                      "Wubi86": "86 版，z 键临时打拼音" if has_wubi
-                     else "没有找到五笔码表 wubi86.tsv，重新安装 WowType 可以修好"}
+                     else "没有找到五笔码表 wubi86.tsv，重新安装 ArchType 可以修好"}
         self.scheme_names = [name for _, name in SHUANGPIN_SCHEMES]
         self.scheme_row = ComboRow(
             title="双拼方案", model=Gtk.StringList.new([label for label, _ in SHUANGPIN_SCHEMES]))
@@ -4845,7 +4935,7 @@ class SettingsWindow(Adw.ApplicationWindow):
             self.shift_names.index(current) if current in self.shift_names else 0)
         self.shift_row.connect("notify::selected", self.on_shift_toggle_changed)
         switch.add(self.shift_row)
-        fcitx_note = "\n\nfcitx5 自己的快捷键（比如 Ctrl+空格）先处理，设成它们 WowType 收不到，这一行会提示。"
+        fcitx_note = "\n\nfcitx5 自己的快捷键（比如 Ctrl+空格）先处理，设成它们 ArchType 收不到，这一行会提示。"
         self.key_rows = {
             "ToggleKey": self.make_key_row("ToggleKey", "另设一个切换键", TOGGLE_KEYS, TOGGLE_KEY_INFO + fcitx_note),
             "TranslateModeKey": self.make_key_row("TranslateModeKey", "互译的快捷键", TRANSLATE_MODE_KEYS,
@@ -4855,7 +4945,7 @@ class SettingsWindow(Adw.ApplicationWindow):
             switch.add(row)
         self.initial_names = [name for _, name in INITIAL_MODES]
         self.initial_row = ComboRow(
-            title="切到 WowType 时",
+            title="切到 ArchType 时",
             subtitle="从别的输入法切过来、开机后第一次用时；换窗口不变",
             model=Gtk.StringList.new([label for label, _ in INITIAL_MODES]))
         current = self.values.get("InitialMode", "Chinese")
@@ -4864,8 +4954,8 @@ class SettingsWindow(Adw.ApplicationWindow):
         self.initial_row.connect("notify::selected", lambda r, _p: self.set_value(
             "InitialMode", self.initial_names[r.get_selected()]))
         switch.add(self.initial_row)
-        # fcitx5 自己也用 Shift 切输入法时提示，并能一键让给 WowType（再一键还回去）
-        self.shift_free_row = SwitchRow(title="Shift 只给 WowType 用", visible=False)
+        # fcitx5 自己也用 Shift 切输入法时提示，并能一键让给 ArchType（再一键还回去）
+        self.shift_free_row = SwitchRow(title="Shift 只给 ArchType 用", visible=False)
         self.shift_free_info = self.add_info(self.shift_free_row, "").info_label
         self.shift_free_handler = self.shift_free_row.connect(
             "notify::active", self.on_shift_free_toggled)
@@ -5104,17 +5194,17 @@ class SettingsWindow(Adw.ApplicationWindow):
     def on_theme_toggled(self, row, _param):
         on = row.get_active()
         self.fcitx.set_config(CLASSICUI_URI, classicui_theme_values(on))
-        update_state(theme_default_done=True, wowtype_theme="True" if on else "False")
+        update_state(theme_default_done=True, archtype_theme="True" if on else "False")
         # 界面主题如果钉了浅色/深色，候选框深浅判定跟着钉住（system 才跟随系统）
         preference = read_state().get("theme", "system")
         if on and preference == "light":
             self.fcitx.set_config(CLASSICUI_URI, {"UseDarkTheme": "False"})
         elif on and preference == "dark":
             self.fcitx.set_config(CLASSICUI_URI, {"UseDarkTheme": "True"})
-        log(f"用户{'打开' if on else '关掉'}了 WowType 主题")
+        log(f"用户{'打开' if on else '关掉'}了 ArchType 主题")
         message = apply_gnome_theme(on)
         if message is None:
-            message = "已换成 WowType 主题" if on else "已换回 fcitx5 默认主题"
+            message = "已换成 ArchType 主题" if on else "已换回 fcitx5 默认主题"
         self.toast(message)
 
     def on_shift_toggle_changed(self, row, _param):
@@ -5141,14 +5231,14 @@ class SettingsWindow(Adw.ApplicationWindow):
         self.refresh_translate_status()
 
     def refresh_key_hints(self):
-        """快捷键也是 fcitx5 的全局快捷键时（Ctrl+空格默认就是）说一声：fcitx5 先拿走，WowType 收不到。
+        """快捷键也是 fcitx5 的全局快捷键时（Ctrl+空格默认就是）说一声：fcitx5 先拿走，ArchType 收不到。
         互译键设了、互译却没开时也说一声。"""
         for key, row in self.key_rows.items():
             value = self.values.get(key, "")
             taken = fcitx_hotkey_taking(value, getattr(self, "fcitx_hotkey", None))
             if taken:
                 row.set_subtitle(f"fcitx5 也用 {key_label(value)} {FCITX_OPTION_NAMES[taken]}，"
-                                 "WowType 收不到，先在 Fcitx 5 配置里删掉它")
+                                 "ArchType 收不到，先在 Fcitx 5 配置里删掉它")
                 row.add_css_class("wt-warning")
                 continue
             idle = key == "TranslateModeKey" and value and not self.translate_on()
@@ -5156,7 +5246,7 @@ class SettingsWindow(Adw.ApplicationWindow):
             row.remove_css_class("wt-warning")
 
     def refresh_shift_conflict(self):
-        """看 fcitx5 有没有用 WowType 要的 Shift 切输入法，更新「输入」「翻译」两页的提示。"""
+        """看 fcitx5 有没有用 ArchType 要的 Shift 切输入法，更新「输入」「翻译」两页的提示。"""
         toggle = self.values.get("ShiftToggle", "Both")
 
         def done(config):
@@ -5177,10 +5267,10 @@ class SettingsWindow(Adw.ApplicationWindow):
             if conflicts:
                 option = FCITX_OPTION_NAMES[conflicts[0][0]]
                 side = shift_side_names(conflicts)
-                row.set_subtitle(f"{side} 被 fcitx5 用来「{option}」，打开就让给 WowType")
+                row.set_subtitle(f"{side} 被 fcitx5 用来「{option}」，打开就让给 ArchType")
                 self.shift_free_info.set_text(
-                    f"fcitx5 用{side}来「{option}」（比如切到 en 键盘），WowType 收不到，"
-                    f"单按{side} 切不到英文和「译」。打开这个开关就让给 WowType，关掉再还给 fcitx5。")
+                    f"fcitx5 用{side}来「{option}」（比如切到 en 键盘），ArchType 收不到，"
+                    f"单按{side} 切不到英文和「译」。打开这个开关就让给 ArchType，关掉再还给 fcitx5。")
                 row.add_css_class("wt-warning")
             elif unsaved:
                 row.set_subtitle("只在这次有效，下次启动 fcitx5 又会拿走")
@@ -5212,14 +5302,14 @@ class SettingsWindow(Adw.ApplicationWindow):
             def done(ok):
                 if ok:
                     update_state(fcitx_shift_freed=[list(k) for k in keep])
-                    log(f"把 fcitx5 的 {', '.join(f'{o}={k}' for o, k in taken)} 让给 WowType")
+                    log(f"把 fcitx5 的 {', '.join(f'{o}={k}' for o, k in taken)} 让给 ArchType")
                     saved, path = saved_fcitx_hotkey()
                     if shift_conflicts(saved, self.values.get("ShiftToggle", "Both")):
                         # SetConfig 存文件失败也不报错，只改了 fcitx5 内存里的（dbusmodule.cpp）
                         log(f"fcitx5 没存进配置文件，下次启动读的是 {path or '默认值'}")
                         self.toast("只在这次有效：fcitx5 存不了配置文件")
                     else:
-                        self.toast(f"{shift_side_names(taken)} 已经让给 WowType")
+                        self.toast(f"{shift_side_names(taken)} 已经让给 ArchType")
                 else:
                     self.toast("没改成：fcitx5 没响应")
                 self.refresh_shift_conflict()
@@ -5291,12 +5381,12 @@ class SettingsWindow(Adw.ApplicationWindow):
                 return
             group, layout, items = info
             self.group_info = info
-            if any(name == "wowtype" for name, _ in items):
-                self.status_row.set_title("WowType 已在输入法列表里")
-                self.status_row.set_subtitle("用 Ctrl+空格（或你设的快捷键）切换到 WowType")
+            if any(name == "archtype" for name, _ in items):
+                self.status_row.set_title("ArchType 已在输入法列表里")
+                self.status_row.set_subtitle("用 Ctrl+空格（或你设的快捷键）切换到 ArchType")
                 self.status_button.set_visible(False)
             else:
-                self.status_row.set_title("WowType 还没加到输入法列表")
+                self.status_row.set_title("ArchType 还没加到输入法列表")
                 self.status_row.set_subtitle(
                     GLib.markup_escape_text(f"加到「{group}」里就能切换过去用"))
                 self.status_button.set_visible(True)
@@ -5308,7 +5398,7 @@ class SettingsWindow(Adw.ApplicationWindow):
         group, layout, items = self.group_info
 
         def done(ok):
-            self.toast("已添加，可以切换到 WowType 了" if ok else "添加失败")
+            self.toast("已添加，可以切换到 ArchType 了" if ok else "添加失败")
             self.refresh_status()
         self.fcitx.add_to_group(group, layout, items, done)
 
@@ -5497,7 +5587,7 @@ class SettingsWindow(Adw.ApplicationWindow):
         service.set_header_suffix(self.info_button(
             "选一家服务商，填它给你的 Key，再挑一个模型。翻译要等服务回话，"
             "名字里带 mini、flash、turbo 的小模型更快。\n\n"
-            "隐私：只在切到「译」时把打的字发给你选的服务，密码框里不翻译；WowType 自己不经手、不收集。"
+            "隐私：只在切到「译」时把打的字发给你选的服务，密码框里不翻译；ArchType 自己不经手、不收集。"
             f"Key 只存在这台电脑上（{_home(TRANSLATE_KEY_FILE)}）。"))
         self.provider_row = ComboRow(
             title="服务商", model=Gtk.StringList.new([name for name, _, _ in TRANSLATE_PROVIDERS]))
@@ -5731,7 +5821,7 @@ class SettingsWindow(Adw.ApplicationWindow):
         self.refresh_local_translate()
 
     def on_local_delete(self, _button):
-        """删掉下载的模型和 WowType 自己下载的 llama-server（系统里装的不动）。"""
+        """删掉下载的模型和 ArchType 自己下载的 llama-server（系统里装的不动）。"""
         path = local_model_path(self.values)
         freed = os.path.getsize(path) if os.path.isfile(path) else 0
         try:
@@ -5909,7 +5999,7 @@ class SettingsWindow(Adw.ApplicationWindow):
             taken = shift_side_names(conflicts)
             self.translate_row.set_subtitle(
                 f"{taken} 被 fcitx5 占着；" + (f"用{'、'.join(usable)}，" if usable else "")
-                + "或到「输入」页让给 WowType")
+                + "或到「输入」页让给 ArchType")
         else:
             self.translate_row.set_subtitle("单按 Shift：中 → 英 → 译 → 中")
 
@@ -6111,7 +6201,7 @@ class SettingsWindow(Adw.ApplicationWindow):
         dialog.open(self, None, chosen)
 
     def on_export_words(self, *_args):
-        dialog = FileDialog(title="导出自定义词", initial_name="wowtype-custom-words.tsv")
+        dialog = FileDialog(title="导出自定义词", initial_name="archtype-custom-words.tsv")
 
         def chosen(dialog, result):
             try:
@@ -6183,7 +6273,7 @@ class SettingsWindow(Adw.ApplicationWindow):
 
         auto = Adw.PreferencesGroup()
         check = self.make_switch("CheckUpdate", "自动检查更新", "有新版本时发通知")
-        self.add_info(check, "切到 WowType 时在后台检查，最多一小时一次。")
+        self.add_info(check, "切到 ArchType 时在后台检查，最多一小时一次。")
         auto.add(check)
         page.add(auto)
         return page
@@ -6299,7 +6389,7 @@ class SettingsWindow(Adw.ApplicationWindow):
                     return
                 code = proc.get_exit_status()
                 if code == 0 and index + 1 < len(commands):
-                    self.progress.set_text("系统已更新，正在安装 WowType…")
+                    self.progress.set_text("系统已更新，正在安装 ArchType…")
                     launch(index + 1)
                 elif code == 0:
                     self.progress.set_visible(False)
@@ -6407,8 +6497,8 @@ class SettingsWindow(Adw.ApplicationWindow):
 
     def on_about(self, *_args):
         about = AboutDialog(
-            application_name="WowType",
-            application_icon="wowtype",
+            application_name="ArchType",
+            application_icon="archtype",
             developer_name="Gloridust",
             version=VERSION if not VERSION.startswith("@") else "dev",
             website=HOMEPAGE,
@@ -6416,7 +6506,7 @@ class SettingsWindow(Adw.ApplicationWindow):
             license_type=Gtk.License.CUSTOM,
             license="代码按 MIT 或 Apache-2.0 双许可证发布。\n"
                     "词库数据来自 rime-ice（GPL-3.0）。\n"
-                    "语音模型属于腾讯微信输入法，在设置的「语音」页从腾讯服务器下载，不随 WowType 分发。",
+                    "语音模型属于腾讯微信输入法，在设置的「语音」页从腾讯服务器下载，不随 ArchType 分发。",
             comments="好用的拼音输入法：整句、简拼、按错键纠正、语音输入。")
         about.present(self)
 
@@ -6435,15 +6525,15 @@ class OldSystemApp(Adw.Application):
         self.add_main_option("page", 0, GLib.OptionFlags.NONE, GLib.OptionArg.STRING, "", "")
 
     def do_activate(self):
-        window = Adw.ApplicationWindow(application=self, title="WowType 设置",
+        window = Adw.ApplicationWindow(application=self, title="ArchType 设置",
                                        default_width=520, default_height=380)
         box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
         box.append(Adw.HeaderBar())
         box.append(Adw.StatusPage(
-            icon_name="wowtype", vexpand=True, title="这个系统上打不开设置界面",
-            description=(f"WowType 设置要 GTK 4.6、libadwaita 1.1 以上，这台电脑是 GTK "
+            icon_name="archtype", vexpand=True, title="这个系统上打不开设置界面",
+            description=(f"ArchType 设置要 GTK 4.6、libadwaita 1.1 以上，这台电脑是 GTK "
                          f"4.{Gtk.get_minor_version()}、libadwaita 1.{Adw.get_minor_version()}。\n"
-                         "打字不受影响。设置可以在「Fcitx 5 配置」里改（输入法列表里选 WowType）。")))
+                         "打字不受影响。设置可以在「Fcitx 5 配置」里改（输入法列表里选 ArchType）。")))
         window.set_content(box)
         window.present()
 
@@ -6527,7 +6617,7 @@ class SettingsApp(Adw.Application):
         return 0
 
     def do_activate(self):
-        Gtk.Window.set_default_icon_name("wowtype")
+        Gtk.Window.set_default_icon_name("archtype")
         window = self.props.active_window
         if not window:
             window = SettingsWindow(self, self.page)
@@ -6539,6 +6629,7 @@ class SettingsApp(Adw.Application):
 
 
 if __name__ == "__main__":
+    migrate_legacy()
     if "--startup" in sys.argv:
         sys.exit(startup_tasks())
     if "--check-update" in sys.argv:  # 旧版插件叫的是这个
@@ -6642,17 +6733,17 @@ if __name__ == "__main__":
         import tempfile
         with tempfile.TemporaryDirectory() as tmp:
             profile = os.path.join(tmp, "profile")
-            assert "新建" in profile_add_wowtype(profile)
-            assert "已经在" in profile_add_wowtype(profile)
+            assert "新建" in profile_add_archtype(profile)
+            assert "已经在" in profile_add_archtype(profile)
             with open(profile, "w", encoding="utf-8") as f:
                 f.write("[Groups/0]\n# Group Name\nName=Default\nDefault Layout=us\nDefaultIM=rime\n\n"
                         "[Groups/0/Items/0]\nName=keyboard-us\nLayout=\n\n"
                         "[Groups/0/Items/1]\nName=rime\nLayout=\n\n[GroupOrder]\n0=Default\n")
-            assert "已把" in profile_add_wowtype(profile)
+            assert "已把" in profile_add_archtype(profile)
             with open(profile, encoding="utf-8") as f:
-                assert f.read().endswith("[Groups/0/Items/2]\nName=wowtype\nLayout=\n")
-            assert "已经在" in profile_add_wowtype(profile)
-            assert os.path.exists(profile + ".bak-wowtype")
+                assert f.read().endswith("[Groups/0/Items/2]\nName=archtype\nLayout=\n")
+            assert "已经在" in profile_add_archtype(profile)
+            assert os.path.exists(profile + ".bak-archtype")
         # 互译：Key 文件、地址、调用 OpenAI 格式接口（本机起一个假服务）
         assert chat_endpoint("https://x/v1/") == "https://x/v1/chat/completions"
         assert chat_endpoint("https://x/v1/chat/completions") == "https://x/v1/chat/completions"
@@ -6665,7 +6756,7 @@ if __name__ == "__main__":
         assert [code for _, code, _ in TRANSLATE_LANGUAGES][:3] == ["en", "ja", "ko"]
         assert strip_think("<think>嗯</think>Hello") == "Hello"
         with tempfile.TemporaryDirectory() as tmp:
-            key_file = os.path.join(tmp, "wowtype", "translate.key")
+            key_file = os.path.join(tmp, "archtype", "translate.key")
             write_translate_key(" sk-test \n", key_file)
             assert read_translate_key(key_file) == "sk-test"
             assert os.stat(key_file).st_mode & 0o777 == 0o600

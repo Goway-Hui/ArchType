@@ -6,7 +6,7 @@
 #include <sys/wait.h>
 #include <unistd.h>
 
-namespace wowtype {
+namespace archtype {
 
 namespace {
 
@@ -77,4 +77,4 @@ bool copyToClipboard(const std::string &text) {
     return ok;
 }
 
-} // namespace wowtype
+} // namespace archtype

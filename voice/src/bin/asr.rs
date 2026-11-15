@@ -1,15 +1,15 @@
 //! 直接转写一个 WAV 文件（16kHz 单声道），用于在没有麦克风/热键的环境里验证离线引擎。
 //!
 //! ```
-//! wowtype-asr --download audio.wav          # 首次会下载约 100MB 模型
-//! wowtype-asr --dir ~/.local/share/wowtype/wtlocal audio.wav
+//! archtype-asr --download audio.wav          # 首次会下载约 100MB 模型
+//! archtype-asr --dir ~/.local/share/archtype/wtlocal audio.wav
 //! ```
 
 use std::path::PathBuf;
 
-use wowtype_voice::asr::AsrChannel;
-use wowtype_voice::wav;
-use wowtype_voice::wtlocal::{download, WtLocalChannel};
+use archtype_voice::asr::AsrChannel;
+use archtype_voice::wav;
+use archtype_voice::wtlocal::{download, WtLocalChannel};
 
 fn fail(msg: &str) -> ! {
     eprintln!("{msg}");
@@ -33,7 +33,7 @@ fn main() {
             "--download" => force_download = true,
             "--partial" => show_partial = true,
             "-h" | "--help" => {
-                println!("wowtype-asr [--dir 模型目录] [--download] [--partial] <文件.wav>");
+                println!("archtype-asr [--dir 模型目录] [--download] [--partial] <文件.wav>");
                 return;
             }
             other => wav_path = Some(other.to_string()),

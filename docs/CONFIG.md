@@ -4,7 +4,7 @@
 
 加进去的词总是排在候选第一个，简拼也能打：加了「字节跳动」（`zi jie tiao dong`），打 `zijietiaodong` 或者 `zjtd` 都能出来。
 
-自定义词存在 `~/.local/share/wowtype/custom.tsv`，一行一个，也可以手动编辑：
+自定义词存在 `~/.local/share/archtype/custom.tsv`，一行一个，也可以手动编辑：
 
 ```
 # 编码<TAB>词[<TAB>频次]
@@ -24,17 +24,17 @@ di zhi	四川省\n宜宾市
 
 ```bash
 dbus-send --session --dest=org.fcitx.Fcitx5 /controller \
-  org.fcitx.Fcitx.Controller1.ReloadAddonConfig string:wowtype
+  org.fcitx.Fcitx.Controller1.ReloadAddonConfig string:archtype
 ```
 
-手动改 `wowtype.conf` 也一样。（重启 fcitx5 也行，但 Chrome 这类程序要跟着重开，见[第 3 步](#第-3-步把-wowtype-加进输入法列表)。）
+手动改 `archtype.conf` 也一样。（重启 fcitx5 也行，但 Chrome 这类程序要跟着重开，见[第 3 步](#第-3-步把-archtype-加进输入法列表)。）
 
 ## 互译
 
 在设置界面「翻译」里下载本地模型，或者在「用什么翻译」里选「自定义翻译服务」填一个 OpenAI 格式（`chat/completions`）的接口，打开「互译」，
 单按 Shift 就在 **中 → 英 → 译 → 中** 之间切换（没填好服务时只在中英之间切）。
 也可以在「输入」页设一个**互译的快捷键**（`TranslateModeKey`，比如 `Ctrl+Shift+Y`）：按它进「译」，在「译」里再按回到原来的模式（中文或英文）；设了以后单按 Shift 只在中英之间切。
-左 Shift 被 fcitx5 拿去「临时切换输入法」时切不到「译」，用右 Shift，或在设置「输入」页打开「Shift 只给 WowType 用」。
+左 Shift 被 fcitx5 拿去「临时切换输入法」时切不到「译」，用右 Shift，或在设置「输入」页打开「Shift 只给 ArchType 用」。
 
 切到「译」后照常打中文，用起来和微信输入法的「中英互译」一样：打的字攒在候选框里（顶上写着「中→英 互译」），
 不上屏；停 0.5 秒（打了句号、问号就立刻）发给服务，译文边出边写进输入框（带下划线），只给一种。
@@ -52,8 +52,8 @@ dbus-send --session --dest=org.fcitx.Fcitx5 /controller \
 - 打的是外文（比如英文）就翻成中文。数字、`/` `+` 这些符号也进原文。
 - 同一句话翻过一次会记住（最近 64 句），再打不用等。出错时候选框底下写原因，按回车重试。
 - 有的程序不让输入法把编辑区画在它的输入框里，这时译文写在候选框最下面一行。
-- **打的字会发给你填的服务**（WowType 自己不经手）。密码框里不翻译。
-- API Key 存在 `~/.config/wowtype/translate.key`（权限 0600，只有自己能读），不写进 `wowtype.conf`、不进日志。
+- **打的字会发给你填的服务**（ArchType 自己不经手）。密码框里不翻译。
+- API Key 存在 `~/.config/archtype/translate.key`（权限 0600，只有自己能读），不写进 `archtype.conf`、不进日志。
   手动写也行：一行，就是 Key 本身。本机的服务（Ollama 等）可以不填。
 - 发请求用的是系统的 `curl`（没装的话装一下），走系统的代理设置；连本机的服务不走代理。
 - 打字时要等它翻译，挑又小又快的模型（各家的 mini、flash、turbo 版）；推理模型会慢很多。
@@ -64,11 +64,11 @@ dbus-send --session --dest=org.fcitx.Fcitx5 /controller \
 不想把字发出去，可以在「翻译」页的「用什么翻译」里选「本地模型（离线）」（设置里默认就是它），用腾讯混元的翻译模型
 [HY-MT 1.5 1.8B](https://huggingface.co/tencent/HY-MT1.5-1.8B-GGUF)（Q4_K_M，1.13 GB）在本机翻：
 
-- 模型点「下载」获取，放在 `~/.local/share/wowtype/models/`（`TranslateLocalModel` 写了位置就下到那里），下载完校验 SHA256，断了再点会接着下（接着下时不用再确认许可）。两端一样。
-  命令行也行：`wowtype-config --download-model`（加 `--accept-license` 跳过确认）。
+- 模型点「下载」获取，放在 `~/.local/share/archtype/models/`（`TranslateLocalModel` 写了位置就下到那里），下载完校验 SHA256，断了再点会接着下（接着下时不用再确认许可）。两端一样。
+  命令行也行：`archtype-config --download-model`（加 `--accept-license` 跳过确认）。
 - 跑模型用 llama.cpp 的 `llama-server`，不用自己装：系统里没有时，下载模型会顺带从
   [llama.cpp 的发布页](https://github.com/ggml-org/llama.cpp/releases)下载官方程序（x86_64 约 22 MB、
-  arm64 约 18 MB，MIT 许可，钉死一个版本并校验 SHA256），解到 `~/.local/share/wowtype/llama/`，
+  arm64 约 18 MB，MIT 许可，钉死一个版本并校验 SHA256），解到 `~/.local/share/archtype/llama/`，
   设置里能删。它要 glibc 2.34 以上（Ubuntu 22.04、Debian 12、Fedora 35 起都满足）。
 - 找 `llama-server` 的顺序：设置里填的路径 → `PATH`（发行版的 llama.cpp 包）→ 上面下载的那份。
   NixOS 跑不了官方程序，设置里不提供下载，在系统配置里装 `pkgs.llama-cpp`。
@@ -76,7 +76,7 @@ dbus-send --session --dest=org.fcitx.Fcitx5 /controller \
   闲置 `TranslateIdleMinutes` 分钟（默认 5）后停掉，内存还回去；关掉互译或退出 fcitx5 时也停。
   翻译时 llama-server 占 1.5 GB 左右内存，一句话 1–3 秒。
 - **许可**：模型用的是腾讯混元社区许可协议（Tencent HY Community License），不是开源协议。
-  它**不适用于欧盟、英国和韩国**；月活超过 1 亿的产品要另找腾讯授权。WowType 不分发这个模型，
+  它**不适用于欧盟、英国和韩国**；月活超过 1 亿的产品要另找腾讯授权。ArchType 不分发这个模型，
   是你自己从 Hugging Face 下载，下载前设置界面会让你确认。[协议全文](https://huggingface.co/tencent/HY-MT1.5-1.8B/blob/main/License.txt)
 
 ## v + 空格：工具栏
@@ -94,15 +94,15 @@ dbus-send --session --dest=org.fcitx.Fcitx5 /controller \
 
 **剪贴板历史默认关**，在设置「输入」页打开「记录剪贴板历史」（`ClipboardHistory=True`）。打开后只在内存里记，不写到磁盘，重启 fcitx5 就清空；再关掉时立刻清空。
 
-WowType 自己读不到系统剪贴板，是从 fcitx5 自带的 clipboard 插件拿最新一条：打开工具栏、切换输入框时各取一次，所以连着复制了好几次、中间没切换输入框的话，只记得到最后一次。没装或关掉了 fcitx5 的 clipboard 插件就没有记录。
+ArchType 自己读不到系统剪贴板，是从 fcitx5 自带的 clipboard 插件拿最新一条：打开工具栏、切换输入框时各取一次，所以连着复制了好几次、中间没切换输入框的话，只记得到最后一次。没装或关掉了 fcitx5 的 clipboard 插件就没有记录。
 
-**密码**：光标在密码框里时不取剪贴板。但从密码管理器复制的密码，fcitx5 自己的剪贴板会显示成圆点、30 秒后清掉，它对外给输入法的接口却不带「这是密码」的标记，所以 WowType 分不出来，会把它当普通文字记下、在工具栏里明文显示，直到重启 fcitx5 或关掉这个开关。常用密码管理器的话，建议保持关闭，或者在 fcitx5 的剪贴板设置里打开「Do not show password from password managers」（这样 fcitx5 根本不收这类内容）。
+**密码**：光标在密码框里时不取剪贴板。但从密码管理器复制的密码，fcitx5 自己的剪贴板会显示成圆点、30 秒后清掉，它对外给输入法的接口却不带「这是密码」的标记，所以 ArchType 分不出来，会把它当普通文字记下、在工具栏里明文显示，直到重启 fcitx5 或关掉这个开关。常用密码管理器的话，建议保持关闭，或者在 fcitx5 的剪贴板设置里打开「Do not show password from password managers」（这样 fcitx5 根本不收这类内容）。
 
 互译模式（「译」）下不开工具栏。
 
 ## 配置文件和环境变量
 
-设置存在 `~/.config/fcitx5/conf/wowtype.conf`，设置界面和 Fcitx 5 配置改的都是这个文件：
+设置存在 `~/.config/fcitx5/conf/archtype.conf`，设置界面和 Fcitx 5 配置改的都是这个文件：
 
 ```ini
 CandidateLayout=Horizontal
@@ -175,25 +175,25 @@ Lexicon=
 | `SelectKeys` | 分号、引号选词：`Off`、`Semicolon`（`;` 选第 2 个）、`SemicolonQuote`（再加 `'` 选第 3 个，引号不再当隔音符） |
 | `RareExtChars` | 也出 CJK 扩展 B 区及以后的单字（比如 `hou` 的 𠯜），默认关：常见中文字体（Noto CJK、思源、苹方）都没有这些字，列出来是方块。打开前先装能显示它们的字体，比如 Ubuntu / Debian 的 `fonts-hanazono`。通用规范汉字表里的扩展区字（𬭩、𫚔，约 200 个，常见字体都有）和含这些字的词（𩽾𩾌）不受这个开关影响 |
 | `PickChar` | 以词定字：打拼音时 `[` 上屏光标处候选的第一个字、`]` 上屏最后一个字，默认开；翻页键设成 `[ ]` 时让给翻页 |
-| `InputScheme` | 输入方案，设置界面里是「输入方案」的单选：`Quanpin` 拼音（默认）、`Shuangpin` 双拼、`Wubi86` 五笔 86。五笔要数据目录里有五笔码表 `wubi86.tsv`（安装包里带着，查找顺序和词库一样，环境变量是 `WOWTYPE_WUBI`）；没有时设置里「五笔输入」灰掉，配置文件里写了 `Wubi86` 的照全拼打，候选框上方提示没有码表。五笔怎么打见 [README 的五笔](../README.md#五笔) |
+| `InputScheme` | 输入方案，设置界面里是「输入方案」的单选：`Quanpin` 拼音（默认）、`Shuangpin` 双拼、`Wubi86` 五笔 86。五笔要数据目录里有五笔码表 `wubi86.tsv`（安装包里带着，查找顺序和词库一样，环境变量是 `ARCHTYPE_WUBI`）；没有时设置里「五笔输入」灰掉，配置文件里写了 `Wubi86` 的照全拼打，候选框上方提示没有码表。五笔怎么打见 [README 的五笔](../README.md#五笔) |
 | `Shuangpin` | 0.3.12 及以前的双拼开关，已经不是设置项。文件里没有 `InputScheme` 时，`Shuangpin=True` 读成 `InputScheme=Shuangpin`；有 `InputScheme` 时不看它。三端存盘时都不写它，下次存盘这一行就没了 |
 | `WubiAutoCommit` | 五笔打满四码、只有一个字词时直接上屏，默认 `True`。只在五笔时显示 |
 | `WubiHint` | 五笔的候选后面显示还要打的码（打 `wq` 时「您 in」「你好 vb」），默认 `True`。只在五笔时显示；`z` 临时拼音反查的五笔码总是显示 |
 | `ShuangpinScheme` | 双拼方案：`Ziranma` 自然码、`Xiaohe` 小鹤、`Microsoft` 微软、`Sogou` 搜狗、`ABC` 智能 ABC、`Ziguang` 紫光、`PinyinJiajia` 拼音加加 |
 | `ShuangpinShowKeys` | 双拼时编辑区显示打的键（`uivs`），不翻成全拼（`shi'zhong`），中英混打时看得出打了什么。默认 `False` |
-| `ShiftToggle` | 单按哪个 Shift 切中英文：`Both`、`Left`、`Right`、`Off`。fcitx5 自己的全局快捷键（「临时切换输入法」「切换输入法」「向前切换输入法」等任何一项）里用了同一个 Shift 时，fcitx5 先处理，WowType 收不到；设置界面「输入」页会提示，并能一键把 Shift 从 fcitx5 那边去掉（改的是 `~/.config/fcitx5/config`，关掉开关就还原；这个文件写不了时提示「只在这次有效」，NixOS 见[安装说明](INSTALL.md#单按-shift-在-nixos-上)） |
-| `InitialMode` | 从别的输入法切到 WowType、开机后第一次用时的模式：`Chinese`（默认）、`English`、`Last`（和上次切走时一样）。换窗口不算，中英文照旧全局保持；关了 Shift 切换（`ShiftToggle=Off`）、也没另设切换键（`ToggleKey`）时总是中文（`TranslateModeKey` 只进出「译」，不算）。只在 Linux |
+| `ShiftToggle` | 单按哪个 Shift 切中英文：`Both`、`Left`、`Right`、`Off`。fcitx5 自己的全局快捷键（「临时切换输入法」「切换输入法」「向前切换输入法」等任何一项）里用了同一个 Shift 时，fcitx5 先处理，ArchType 收不到；设置界面「输入」页会提示，并能一键把 Shift 从 fcitx5 那边去掉（改的是 `~/.config/fcitx5/config`，关掉开关就还原；这个文件写不了时提示「只在这次有效」，NixOS 见[安装说明](INSTALL.md#单按-shift-在-nixos-上)） |
+| `InitialMode` | 从别的输入法切到 ArchType、开机后第一次用时的模式：`Chinese`（默认）、`English`、`Last`（和上次切走时一样）。换窗口不算，中英文照旧全局保持；关了 Shift 切换（`ShiftToggle=Off`）、也没另设切换键（`ToggleKey`）时总是中文（`TranslateModeKey` 只进出「译」，不算）。只在 Linux |
 | `VoiceKey` | fcitx5 的键名，如 `Alt_R`、`Control_R`、`Menu`、`F8` |
-| `ToggleKey` | 另设一个切换中 / 英文的快捷键（fcitx5 键名，如 `Control+Shift+space`），留空不用；单按 Shift 照常。在「译」里按回到中文。fcitx5 自己的全局快捷键先处理：`Control+space` 默认是 fcitx5「切换启用/禁用输入法」的键，设成它 WowType 收不到，所以设置里不再列它；Linux 设置界面会提示被 fcitx5 占着的键 |
+| `ToggleKey` | 另设一个切换中 / 英文的快捷键（fcitx5 键名，如 `Control+Shift+space`），留空不用；单按 Shift 照常。在「译」里按回到中文。fcitx5 自己的全局快捷键先处理：`Control+space` 默认是 fcitx5「切换启用/禁用输入法」的键，设成它 ArchType 收不到，所以设置里不再列它；Linux 设置界面会提示被 fcitx5 占着的键 |
 | `TranslateModeKey` | 进出「译」的快捷键（如 `Control+Shift+Y`），留空不用：按它进「译」（打到一半的拼音带进去），在「译」里再按回到进来前的模式；设了以后单按 Shift 只在中 ↔ 英之间切（在「译」里单按回中文）。互译没打开、翻译没配好、密码框里这个键交给应用。和 `ToggleKey` 设成同一个键时算这个 |
 | `EmojiKey` | 表情面板快捷键，fcitx5 的键名，如 `Super+period`、`Control+semicolon`；留空不用快捷键。 |
 | `TranslateTarget` | 互译语言：`en` 英、`ja` 日、`ko` 韩、`fr` 法、`de` 德、`es` 西、`ru` 俄、`pt` 葡、`it` 意、`vi` 越、`th` 泰、`id` 印尼、`ar` 阿 |
 | `TranslateBaseUrl`、`TranslateModel` | 翻译服务（OpenAI 格式）的地址和模型，见[互译](#互译) |
 | `TranslateLocal` | `True` 用本地模型（默认），`False` 用 `TranslateBaseUrl` 的翻译服务。配置文件里没写这一项、又填了 `TranslateBaseUrl` 时当 `False`（0.3.10 及以前填过翻译服务的照旧用服务）；Linux 插件和设置界面都这样 |
-| `TranslateLocalModel` | 本地模型文件，留空用 `~/.local/share/wowtype/models/HY-MT1.5-1.8B-Q4_K_M.gguf`，见[本地模型](#本地模型离线) |
+| `TranslateLocalModel` | 本地模型文件，留空用 `~/.local/share/archtype/models/HY-MT1.5-1.8B-Q4_K_M.gguf`，见[本地模型](#本地模型离线) |
 | `TranslateLlamaServer` | `llama-server` 的路径，留空先在 `PATH` 里找，再用设置里下载的那份 |
 | `TranslateIdleMinutes` | 本地模型闲置几分钟后释放，0–240，0 表示不自动释放 |
-| `Lexicon` | 词库文件路径，留空用默认的雾凇词库（查找顺序见[数据文件](#数据文件)）。设置界面切到万象时写的是 `~/.local/share/wowtype/dicts/wanxiang/lexicon.tsv`，见[可选词库](#可选词库万象拼音)。文件不存在时退回默认词库；环境变量 `WOWTYPE_LEXICON` 优先 |
+| `Lexicon` | 词库文件路径，留空用默认的雾凇词库（查找顺序见[数据文件](#数据文件)）。设置界面切到万象时写的是 `~/.local/share/archtype/dicts/wanxiang/lexicon.tsv`，见[可选词库](#可选词库万象拼音)。文件不存在时退回默认词库；环境变量 `ARCHTYPE_LEXICON` 优先 |
 
 文件不存在、或者少写了哪一项，就用默认值（就是上面这些）。注释要单独写一行（`#` 开头），不能写在值后面。
 
@@ -214,41 +214,41 @@ Lexicon=
 
 | 变量 | 作用 |
 |---|---|
-| `WOWTYPE_FUZZY=1`、`WOWTYPE_SHUANGPIN=1`、`WOWTYPE_TRADITIONAL=1`、`WOWTYPE_TYPO=0`、`WOWTYPE_VERTICAL=1`、`WOWTYPE_EMOJI=0`、`WOWTYPE_DATETIME=0`、`WOWTYPE_CALC=0`、`WOWTYPE_TOOLBAR=0`、`WOWTYPE_CLIPBOARD_HISTORY=0`、`WOWTYPE_VOICE_COPY=1` | 对应上面的开关 |
-| `WOWTYPE_AUTOSPACE` | 自动加空格的位掩码：1 汉字和字母之间、2 汉字和数字之间，`3` 两种都加，`0` 关 |
-| `WOWTYPE_FUZZY_GROUPS` | 模糊音分组的位掩码（1 z/zh、2 c/ch、4 s/sh、8 n/l、16 f/h、32 r/l、64 an/ang、128 en/eng、256 in/ing、512 ian/iang、1024 uan/uang、2048 un/ong、4096 an/ai、8192 huang/wang、16384 un/iong、32768 eng/ong） |
-| `WOWTYPE_SELECT_KEYS` | `off`、`semicolon`、`quote` |
-| `WOWTYPE_SHUANGPIN_SCHEME` | 双拼方案（`xiaohe`、`microsoft` 等，大小写都行），设了就当作打开双拼（这时不是五笔） |
-| `WOWTYPE_WUBI` | 五笔码表路径，默认按 `~/.local/share/wowtype/wubi86.tsv`、`/usr/share/wowtype/wubi86.tsv` 的顺序找 |
-| `WOWTYPE_SHIFT_TOGGLE` | `both`、`left`、`right`、`off` |
-| `WOWTYPE_VOICE_KEY` | 语音键（fcitx5 键名）；`none` 关掉语音 |
-| `WOWTYPE_VOICE_OVERLAY=0` | GNOME 上也不用语音浮条，用候选框里的文字提示 |
-| `WOWTYPE_LEXICON`、`WOWTYPE_ENGLISH` | 词库、英文词表路径（默认的查找顺序见下） |
-| `WOWTYPE_LM` | 词级语言模型，默认找 `words.lm`（`wowtype-lmbuild` 生成），也认旧的 `前词<TAB>后词<TAB>次数` 文本 |
-| `WOWTYPE_S2T` | 简繁对照表，默认 `/usr/share/wowtype/s2t.tsv` |
-| `WOWTYPE_USER_DICT`、`WOWTYPE_HISTORY`、`WOWTYPE_CUSTOM` | 自动学到的词、输入习惯、自定义词的文件路径 |
-| `WOWTYPE_VOICE_MODEL_DIR` | 语音模型目录，默认 `~/.local/share/wowtype/wtlocal`（插件和设置界面都认） |
-| `WOWTYPE_NNLM` | 神经语言模型路径，默认 `~/.local/share/wowtype/wetype/nlrgpt2_nnlm.bin` |
-| `WOWTYPE_DOMAIN_LM` | 领域词级模型路径，默认数据目录下的 `words.domain.lm`；没有就不混 |
-| `WOWTYPE_NO_UPDATE_CHECK=1` | 不自动检查更新，也不自动打开默认主题 |
-| `WOWTYPE_LOG` | 日志文件路径，默认 `~/.local/state/wowtype/wowtype.log`；`0` 不写 |
-| `WOWTYPE_TRANSLATE=1`、`WOWTYPE_TRANSLATE_URL`、`WOWTYPE_TRANSLATE_MODEL`、`WOWTYPE_TRANSLATE_TARGET` | 互译开关、服务地址、模型、语言 |
-| `WOWTYPE_TRANSLATE_KEY_FILE` | 互译 Key 文件，默认 `~/.config/wowtype/translate.key` |
+| `ARCHTYPE_FUZZY=1`、`ARCHTYPE_SHUANGPIN=1`、`ARCHTYPE_TRADITIONAL=1`、`ARCHTYPE_TYPO=0`、`ARCHTYPE_VERTICAL=1`、`ARCHTYPE_EMOJI=0`、`ARCHTYPE_DATETIME=0`、`ARCHTYPE_CALC=0`、`ARCHTYPE_TOOLBAR=0`、`ARCHTYPE_CLIPBOARD_HISTORY=0`、`ARCHTYPE_VOICE_COPY=1` | 对应上面的开关 |
+| `ARCHTYPE_AUTOSPACE` | 自动加空格的位掩码：1 汉字和字母之间、2 汉字和数字之间，`3` 两种都加，`0` 关 |
+| `ARCHTYPE_FUZZY_GROUPS` | 模糊音分组的位掩码（1 z/zh、2 c/ch、4 s/sh、8 n/l、16 f/h、32 r/l、64 an/ang、128 en/eng、256 in/ing、512 ian/iang、1024 uan/uang、2048 un/ong、4096 an/ai、8192 huang/wang、16384 un/iong、32768 eng/ong） |
+| `ARCHTYPE_SELECT_KEYS` | `off`、`semicolon`、`quote` |
+| `ARCHTYPE_SHUANGPIN_SCHEME` | 双拼方案（`xiaohe`、`microsoft` 等，大小写都行），设了就当作打开双拼（这时不是五笔） |
+| `ARCHTYPE_WUBI` | 五笔码表路径，默认按 `~/.local/share/archtype/wubi86.tsv`、`/usr/share/archtype/wubi86.tsv` 的顺序找 |
+| `ARCHTYPE_SHIFT_TOGGLE` | `both`、`left`、`right`、`off` |
+| `ARCHTYPE_VOICE_KEY` | 语音键（fcitx5 键名）；`none` 关掉语音 |
+| `ARCHTYPE_VOICE_OVERLAY=0` | GNOME 上也不用语音浮条，用候选框里的文字提示 |
+| `ARCHTYPE_LEXICON`、`ARCHTYPE_ENGLISH` | 词库、英文词表路径（默认的查找顺序见下） |
+| `ARCHTYPE_LM` | 词级语言模型，默认找 `words.lm`（`archtype-lmbuild` 生成），也认旧的 `前词<TAB>后词<TAB>次数` 文本 |
+| `ARCHTYPE_S2T` | 简繁对照表，默认 `/usr/share/archtype/s2t.tsv` |
+| `ARCHTYPE_USER_DICT`、`ARCHTYPE_HISTORY`、`ARCHTYPE_CUSTOM` | 自动学到的词、输入习惯、自定义词的文件路径 |
+| `ARCHTYPE_VOICE_MODEL_DIR` | 语音模型目录，默认 `~/.local/share/archtype/wtlocal`（插件和设置界面都认） |
+| `ARCHTYPE_NNLM` | 神经语言模型路径，默认 `~/.local/share/archtype/wetype/nlrgpt2_nnlm.bin` |
+| `ARCHTYPE_DOMAIN_LM` | 领域词级模型路径，默认数据目录下的 `words.domain.lm`；没有就不混 |
+| `ARCHTYPE_NO_UPDATE_CHECK=1` | 不自动检查更新，也不自动打开默认主题 |
+| `ARCHTYPE_LOG` | 日志文件路径，默认 `~/.local/state/archtype/archtype.log`；`0` 不写 |
+| `ARCHTYPE_TRANSLATE=1`、`ARCHTYPE_TRANSLATE_URL`、`ARCHTYPE_TRANSLATE_MODEL`、`ARCHTYPE_TRANSLATE_TARGET` | 互译开关、服务地址、模型、语言 |
+| `ARCHTYPE_TRANSLATE_KEY_FILE` | 互译 Key 文件，默认 `~/.config/archtype/translate.key` |
 
-临时试一下：`WOWTYPE_FUZZY=1 fcitx5 -r -d`。长期用写进 `~/.config/environment.d/wowtype.conf`，注销重新登录后生效。
+临时试一下：`ARCHTYPE_FUZZY=1 fcitx5 -r -d`。长期用写进 `~/.config/environment.d/archtype.conf`，注销重新登录后生效。
 
 ### 可选词库：万象拼音
 
 默认词库是[雾凇拼音](https://github.com/iDvel/rime-ice)（随安装包一起装好）。
 另外可以换成从[万象拼音](https://github.com/amzxyz/rime_wanxiang)转换的词库（CC BY 4.0），词更多。
-它不在安装包里，每次发版作为单独的 `wowtype-data-wanxiang-<版本>.tar.gz` 放在 Release 上。
+它不在安装包里，每次发版作为单独的 `archtype-data-wanxiang-<版本>.tar.gz` 放在 Release 上。
 
-- **切换**：「WowType 设置 → 输入 → 词库」里选「万象拼音」，第一次会下载（约 20 MB，对照 `SHA256SUMS` 校验），装到 `~/.local/share/wowtype/dicts/wanxiang/`，几秒后生效，不用重启 fcitx5。选回「雾凇拼音」就切回去，万象的文件可以在同一个地方删掉。
+- **切换**：「ArchType 设置 → 输入 → 词库」里选「万象拼音」，第一次会下载（约 20 MB，对照 `SHA256SUMS` 校验），装到 `~/.local/share/archtype/dicts/wanxiang/`，几秒后生效，不用重启 fcitx5。选回「雾凇拼音」就切回去，万象的文件可以在同一个地方删掉。
   没网时可以用「从文件安装」选手动下载的 `.tar.gz`。
-- **命令行**：`wowtype-config --install-lexicon wanxiang`（下载并切过去，也接受本地 `.tar.gz` 路径），`wowtype-config --use-lexicon rime-ice` 切回默认。
+- **命令行**：`archtype-config --install-lexicon wanxiang`（下载并切过去，也接受本地 `.tar.gz` 路径），`archtype-config --use-lexicon rime-ice` 切回默认。
 - **代价**：多占约 300 MB 内存，第一次载入（建快照）慢一些，之后启动约 2 秒。
-- 只用了万象的词条，没有用它的 `.gram` 语法模型（那是 librime 专用的格式）；整句仍靠 WowType 自己的 `words.lm`。
-  万象故意收的错音错字词库（`dicts/cuoyin`，如「秘鲁 mì lǔ」）没收，因为 WowType 没有在候选旁提示正确读音的功能。
+- 只用了万象的词条，没有用它的 `.gram` 语法模型（那是 librime 专用的格式）；整句仍靠 ArchType 自己的 `words.lm`。
+  万象故意收的错音错字词库（`dicts/cuoyin`，如「秘鲁 mì lǔ」）没收，因为 ArchType 没有在候选旁提示正确读音的功能。
 - 词库包由 `scripts/make-wanxiang.sh` 生成：拼音去声调，词频整体缩放到和雾凇同一量级，再合进项目热词；包里带万象的 `LICENSE` 和写明来源与改动的 `SOURCE.txt`。
 
 想用自己的词库：任何 Rime 格式的词库（`.dict.yaml`）都能用 `python3 tools/rime2tsv.py xxx.dict.yaml > lexicon.tsv` 转过来。

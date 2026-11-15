@@ -1,7 +1,7 @@
-//! 从语料训练词级二元语言模型（[`wowtype_core::wordlm`] 的格式）。
+//! 从语料训练词级二元语言模型（[`archtype_core::wordlm`] 的格式）。
 //!
 //! ```
-//! cargo run --release -p wowtype-core --bin wowtype-lmbuild -- \
+//! cargo run --release -p archtype-core --bin archtype-lmbuild -- \
 //!     --lexicon lexicon.tsv --s2t s2t.tsv --out words.lm corpus1.txt corpus2.txt
 //! ```
 //!
@@ -20,7 +20,7 @@ use std::sync::mpsc;
 use std::sync::Arc;
 use std::time::Instant;
 
-use wowtype_core::wordlm::{build, BuildConfig, Counts, BOS};
+use archtype_core::wordlm::{build, BuildConfig, Counts, BOS};
 
 fn fail(msg: &str) -> ! {
     eprintln!("{msg}");
@@ -231,7 +231,7 @@ fn main() {
             "--save-counts" => save_counts = Some(take()),
             "--from-counts" => from_counts = Some(take()),
             "-h" | "--help" => {
-                println!("用法：wowtype-lmbuild --lexicon lexicon.tsv [--s2t s2t.tsv] --out words.lm 语料...");
+                println!("用法：archtype-lmbuild --lexicon lexicon.tsv [--s2t s2t.tsv] --out words.lm 语料...");
                 return;
             }
             other => corpora.push(other.to_string()),

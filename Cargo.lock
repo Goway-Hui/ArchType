@@ -40,6 +40,33 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "330a5ed07fa54e4702c9d6c4174f74427fc0ef6e214bbd677ae50a5099946470"
 
 [[package]]
+name = "archtype-core"
+version = "0.4.11"
+dependencies = [
+ "anyhow",
+ "archtype-voice",
+ "libc",
+ "serde_json",
+]
+
+[[package]]
+name = "archtype-voice"
+version = "0.4.0"
+dependencies = [
+ "anyhow",
+ "cpal",
+]
+
+[[package]]
+name = "archtype-voiced"
+version = "0.4.0"
+dependencies = [
+ "anyhow",
+ "archtype-voice",
+ "x11rb",
+]
+
+[[package]]
 name = "autocfg"
 version = "1.5.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1044,33 +1071,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8c3b93199df0ab874cdf0c6a94f0a0dc3423fe41f1cafb62b8bd7b1deb277aef"
 dependencies = [
  "memchr",
-]
-
-[[package]]
-name = "wowtype-core"
-version = "0.4.0"
-dependencies = [
- "anyhow",
- "libc",
- "serde_json",
- "wowtype-voice",
-]
-
-[[package]]
-name = "wowtype-voice"
-version = "0.4.0"
-dependencies = [
- "anyhow",
- "cpal",
-]
-
-[[package]]
-name = "wowtype-voiced"
-version = "0.4.0"
-dependencies = [
- "anyhow",
- "wowtype-voice",
- "x11rb",
 ]
 
 [[package]]

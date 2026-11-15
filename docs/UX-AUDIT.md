@@ -116,7 +116,7 @@ python3 tools/make_eval.py lexicon.tsv --skip 30000 --top 300000 --count 400 > m
 # 截断 1 个字母
 python3 tools/make_eval.py lexicon.tsv --skip 30000 --top 300000 --count 400 --truncate 1 > midtrunc.tsv
 # 跑评测：会列出 top1 被谁占了（补全 / 纠错 / 原始串或英文 / 句首词 / 同音排序）
-cargo run --release -p wowtype-core --bin wowtype-eval -- \
+cargo run --release -p archtype-core --bin archtype-eval -- \
     --lexicon lexicon.tsv --english english.txt --eval mid.tsv --k 3 --show-top1
 ```
 

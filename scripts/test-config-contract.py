@@ -2,12 +2,12 @@
 """设置契约：拿 spec/config.json、spec/lexicon-pack.json 对照 Linux 的设置界面和 fcitx5 插件。
 
   python3 scripts/test-config-contract.py                                   # 规格自检 + 设置界面
-  python3 scripts/test-config-contract.py --fcitx5 <wowtype-config-dump>    # 再对照 fcitx5 插件
+  python3 scripts/test-config-contract.py --fcitx5 <archtype-config-dump>    # 再对照 fcitx5 插件
 
-wowtype-config-dump 是 scripts/addon-test.sh 编出来的（fcitx5-addon/test/config_dump.cpp），导出插件里
-WowtypeConfig 的键、类型、默认值、范围、可选值。
+archtype-config-dump 是 scripts/addon-test.sh 编出来的（fcitx5-addon/test/config_dump.cpp），导出插件里
+ArchtypeConfig 的键、类型、默认值、范围、可选值。
 
-设置界面（settings/wowtype-config）没有 .py 后缀，用 importlib 按路径导入。不用装 GTK：导入前塞一个假的 gi，
+设置界面（settings/archtype-config）没有 .py 后缀，用 importlib 按路径导入。不用装 GTK：导入前塞一个假的 gi，
 它在模块顶层只用到 gi.require_version、几个当基类的控件和 GObject.Property。XDG 目录都指到临时目录，不碰自己的配置。
 """
 
@@ -27,7 +27,7 @@ import types
 
 ROOT = Path(__file__).resolve().parents[1]
 SPEC_DIR = ROOT / "spec"
-SETTINGS = ROOT / "settings" / "wowtype-config"
+SETTINGS = ROOT / "settings" / "archtype-config"
 ENDS = ("fcitx5", "settings")
 TYPES = ("bool", "int", "enum", "string", "key")
 # fcitx5 配置说明里的类型名
@@ -65,7 +65,7 @@ def load_spec(name):
 
 
 def file_text(value):
-    """规格里的值写进 wowtype.conf 的样子。"""
+    """规格里的值写进 archtype.conf 的样子。"""
     if isinstance(value, bool):
         return "True" if value else "False"
     return str(value)
@@ -169,12 +169,12 @@ def fake_gi():
 def import_settings(home):
     for name in ("XDG_CONFIG_HOME", "XDG_DATA_HOME", "XDG_STATE_HOME", "XDG_CACHE_HOME"):
         os.environ[name] = os.path.join(home, name.lower())
-    for name in ("WOWTYPE_CUSTOM", "WOWTYPE_LOG", "WOWTYPE_TRANSLATE_KEY_FILE", "WOWTYPE_VOICE_MODEL_DIR"):
+    for name in ("ARCHTYPE_CUSTOM", "ARCHTYPE_LOG", "ARCHTYPE_TRANSLATE_KEY_FILE", "ARCHTYPE_VOICE_MODEL_DIR"):
         os.environ.pop(name, None)
     saved = {name: sys.modules.get(name) for name in ("gi", "gi.repository")}
     sys.modules.update(fake_gi())
     try:
-        loader = importlib.machinery.SourceFileLoader("wowtype_config", str(SETTINGS))
+        loader = importlib.machinery.SourceFileLoader("archtype_config", str(SETTINGS))
         module = importlib.util.module_from_spec(importlib.util.spec_from_loader(loader.name, loader))
         loader.exec_module(module)
     finally:
@@ -187,8 +187,8 @@ def import_settings(home):
 
 
 def read_settings_config(wc, home, entries):
-    """把 entries 写成 wowtype.conf，用设置界面的 read_config 读回来。"""
-    path = os.path.join(home, "wowtype.conf")
+    """把 entries 写成 archtype.conf，用设置界面的 read_config 读回来。"""
+    path = os.path.join(home, "archtype.conf")
     with open(path, "w", encoding="utf-8") as f:
         f.write("".join(f"{key}={value}\n" for key, value in entries.items()))
     saved, wc.CONFIG_FILE = wc.CONFIG_FILE, path
@@ -199,8 +199,8 @@ def read_settings_config(wc, home, entries):
 
 
 def read_settings_text(wc, home, text):
-    """把 text 原样写成 wowtype.conf，用设置界面的 read_config 读回来。"""
-    path = os.path.join(home, "wowtype.conf")
+    """把 text 原样写成 archtype.conf，用设置界面的 read_config 读回来。"""
+    path = os.path.join(home, "archtype.conf")
     with open(path, "w", encoding="utf-8") as f:
         f.write(text + "\n")
     saved, wc.CONFIG_FILE = wc.CONFIG_FILE, path
@@ -269,7 +269,7 @@ def check_settings(spec, wc, home):
         if not old:
             continue
         for value in enum_values(s):
-            path = os.path.join(home, "wowtype.conf")
+            path = os.path.join(home, "archtype.conf")
             with open(path, "w", encoding="utf-8") as f:
                 f.write(f"{old}=True\n")
             saved, wc.CONFIG_FILE = wc.CONFIG_FILE, path
@@ -415,7 +415,7 @@ def check_fcitx5(spec, exe):
     mine = settings_for(spec, "fcitx5")
     same_set(options, [s["key"] for s in mine], "fcitx5：配置工具里列出的键")
     saved = run_dump(exe, "--load")["values"]
-    same_set(saved, [s["key"] for s in mine], "fcitx5：WowtypeConfig 存盘的键")
+    same_set(saved, [s["key"] for s in mine], "fcitx5：ArchtypeConfig 存盘的键")
     for s in mine:
         key = s["key"]
         option = options.get(key)
@@ -436,7 +436,7 @@ def check_fcitx5(spec, exe):
         for case in missing["cases"] if missing else ():
             values = run_dump(exe, "--load", *(f"{k}={v}" for k, v in case["file"].items()))["values"]
             same(values.get(s["key"]), file_text(case["expect"]), f"fcitx5：文件是 {case['file']} 时 {s['key']}")
-            # 存盘的值（插件存盘只写 WowtypeConfig 里有的项）里没有旧键
+            # 存盘的值（插件存盘只写 ArchtypeConfig 里有的项）里没有旧键
             check(legacy_key(s, by_key) not in values, f"fcitx5：文件是 {case['file']} 时存盘还写了旧键 {legacy_key(s, by_key)}")
     policy = spec["readRules"]["outOfRange"]["fcitx5"]
     for s in mine:
@@ -445,7 +445,7 @@ def check_fcitx5(spec, exe):
                 values = run_dump(exe, "--load", f"{s['key']}={raw}")["values"]
                 same(values.get(s["key"]), expect, f"fcitx5：{s['key']}={raw} 读出来")
     with tempfile.TemporaryDirectory() as tmp:
-        path = os.path.join(tmp, "wowtype.conf")
+        path = os.path.join(tmp, "archtype.conf")
         for case in spec["readRules"]["cases"]["items"]:
             with open(path, "w", encoding="utf-8") as f:
                 f.write(case["file"] + "\n")

@@ -75,14 +75,14 @@ fn find_server(
     .or_else(|| downloaded.filter(|p| is_executable(p)))
 }
 
-/// 设置界面「下载」放 llama-server 的地方：`$XDG_DATA_HOME/wowtype/llama/llama-server`
+/// 设置界面「下载」放 llama-server 的地方：`$XDG_DATA_HOME/archtype/llama/llama-server`
 /// （llama.cpp 官方发布的二进制，和它的动态库在同一个目录）。
 pub fn downloaded_server() -> Option<PathBuf> {
     let data = match std::env::var_os("XDG_DATA_HOME").filter(|v| !v.is_empty()) {
         Some(dir) => PathBuf::from(dir),
         None => PathBuf::from(std::env::var_os("HOME")?).join(".local/share"),
     };
-    Some(data.join("wowtype/llama/llama-server"))
+    Some(data.join("archtype/llama/llama-server"))
 }
 
 fn is_executable(path: &Path) -> bool {
@@ -337,7 +337,7 @@ pub fn health(port: u16) -> Option<u16> {
 /// 看门狗：闲置超过 idle 就停掉。配置换了（generation 变了）就退出。
 fn spawn_watchdog(state: Arc<(Mutex<State>, Condvar)>, generation: u64, idle: Duration) {
     thread::Builder::new()
-        .name("wowtype-llama-idle".into())
+        .name("archtype-llama-idle".into())
         .spawn(move || {
             let (lock, cvar) = &*state;
             let mut s = lock.lock().unwrap();
@@ -457,7 +457,7 @@ mod tests {
                 use std::sync::atomic::{AtomicUsize, Ordering};
                 static N: AtomicUsize = AtomicUsize::new(0);
                 let p = std::env::temp_dir().join(format!(
-                    "wowtype-llama-test-{}-{}",
+                    "archtype-llama-test-{}-{}",
                     std::process::id(),
                     N.fetch_add(1, Ordering::SeqCst)
                 ));
@@ -619,7 +619,7 @@ mod tests {
     #[test]
     fn server_lookup_prefers_path_then_downloaded() {
         use std::os::unix::fs::PermissionsExt;
-        let dir = std::env::temp_dir().join(format!("wowtype-llama-find-{}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!("archtype-llama-find-{}", std::process::id()));
         let exe = |sub: &str| {
             let d = dir.join(sub);
             std::fs::create_dir_all(&d).unwrap();

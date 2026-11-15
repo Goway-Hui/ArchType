@@ -1,4 +1,4 @@
-// 插件按键行为测试：起一个无界面、无 D-Bus 的私有 fcitx5 实例，只加载 wowtype，
+// 插件按键行为测试：起一个无界面、无 D-Bus 的私有 fcitx5 实例，只加载 archtype，
 // 用一个假的输入上下文按键，检查上屏结果。不会碰到正在运行的 fcitx5。
 //
 // 由 scripts/addon-test.sh 设置好隔离的 XDG 目录和词库后运行。
@@ -73,12 +73,12 @@ public:
 class HarnessInputContext : public InputContext {
 public:
     explicit HarnessInputContext(InputContextManager &manager)
-        : InputContext(manager, "wowtype-harness") {
+        : InputContext(manager, "archtype-harness") {
         created();
     }
     ~HarnessInputContext() override { destroy(); }
 
-    const char *frontend() const override { return "wowtype-harness"; }
+    const char *frontend() const override { return "archtype-harness"; }
     void commitStringImpl(const std::string &text) override { committed += text; }
     void deleteSurroundingTextImpl(int, unsigned int) override {}
     void forwardKeyImpl(const ForwardKeyEvent &) override {}
@@ -195,8 +195,8 @@ void tapKey(HarnessInputContext *ic, KeySym sym) {
 void runCases(Instance &instance) {
     auto ic = std::make_unique<HarnessInputContext>(instance.inputContextManager());
     ic->focusIn();
-    instance.setCurrentInputMethod(ic.get(), "wowtype", true);
-    check(instance.inputMethod(ic.get()) == "wowtype", "当前输入法是 wowtype");
+    instance.setCurrentInputMethod(ic.get(), "archtype", true);
+    check(instance.inputMethod(ic.get()) == "archtype", "当前输入法是 archtype");
     std::string ims;
     instance.inputMethodManager().foreachEntries([&ims](const InputMethodEntry &entry) {
         ims += entry.uniqueName() + " ";
@@ -313,7 +313,7 @@ void runCases(Instance &instance) {
             type(ic.get(), "<right>");
         }
         // 先删掉 user.tsv：按完以后它又出现了，说明是忘掉以后马上存的（平时攒 20 次上屏才存）
-        const char *dictPath = std::getenv("WOWTYPE_USER_DICT");
+        const char *dictPath = std::getenv("ARCHTYPE_USER_DICT");
         std::error_code ec;
         if (dictPath) {
             std::filesystem::remove(dictPath, ec);
@@ -425,7 +425,7 @@ void runCases(Instance &instance) {
     const auto firstPage = page(ic.get());
     type(ic.get(), "<down>");
     const auto grid = page(ic.get());
-    if (std::getenv("WOWTYPE_HARNESS_SHOW")) {
+    if (std::getenv("ARCHTYPE_HARNESS_SHOW")) {
         for (const auto &row : grid) {
             std::fprintf(stderr, "GRID|%s|\n", row.c_str());
         }
@@ -778,7 +778,7 @@ void runCases(Instance &instance) {
     type(ic.get(), "nihao");
     instance.setCurrentInputMethod(ic.get(), "testim", true);
     check(ic->committed == "nihao", "切换输入法时打了一半的字母上屏，实际 " + ic->committed);
-    instance.setCurrentInputMethod(ic.get(), "wowtype", true);
+    instance.setCurrentInputMethod(ic.get(), "archtype", true);
 
     // 失去焦点：不往别的窗口上屏，编辑区清空
     fresh(ic.get());
@@ -788,7 +788,7 @@ void runCases(Instance &instance) {
     check(ic->committed.empty() && preedit(ic.get()).empty(), "失去焦点不上屏、编辑区清空，实际 " + ic->committed);
 
     // 编辑区画在输入框里时（应用支持 preedit）：失去焦点、应用重置输入框，GTK / Qt 的输入模块会把
-    // 编辑区里没标 DontCommit 的字上屏，不支持的（XIM）由 fcitx5 代劳。WowType 的编辑区整段标了
+    // 编辑区里没标 DontCommit 的字上屏，不支持的（XIM）由 fcitx5 代劳。ArchType 的编辑区整段标了
     // DontCommit：文档里不留「ni'hao」、选了一半的「你好zhong'guo」、五笔码
     ic->setCapabilityFlags(CapabilityFlag::Preedit);
     {
@@ -1056,13 +1056,13 @@ void runCases(Instance &instance) {
     // 设置：改配置文件和自定义词，reloadConfig 后立刻生效（设置界面走的就是这条路）
     fresh(ic.get());
     const std::string configDir = std::string(std::getenv("XDG_CONFIG_HOME")) + "/fcitx5/conf";
-    const std::string customFile = std::string(std::getenv("XDG_DATA_HOME")) + "/wowtype/custom.tsv";
+    const std::string customFile = std::string(std::getenv("XDG_DATA_HOME")) + "/archtype/custom.tsv";
     std::filesystem::create_directories(configDir);
     std::filesystem::create_directories(std::filesystem::path(customFile).parent_path());
-    auto *addon = instance.addonManager().addon("wowtype");
+    auto *addon = instance.addonManager().addon("archtype");
     check(addon && addon->getConfig(), "插件有配置项");
     {
-        std::ofstream(configDir + "/wowtype.conf")
+        std::ofstream(configDir + "/archtype.conf")
             << "CandidateLayout=Vertical\nPageSize=5\nVoice=False\nEmojiSuggest=False\n"
                "ClipboardHistory=True\n";
         std::ofstream(customFile) << "# 测试\nni hao\t妮好\nwo de you xiang\t我的邮箱\n";
@@ -1116,7 +1116,7 @@ void runCases(Instance &instance) {
           "常用语按文件顺序：" + join(page(ic.get())));
     type(ic.get(), "2");
     check(ic->committed == "我的邮箱" && page(ic.get()).empty(), "数字键选常用语：" + ic->committed);
-    if (std::getenv("WOWTYPE_HARNESS_REAL_CLIPBOARD")) {
+    if (std::getenv("ARCHTYPE_HARNESS_REAL_CLIPBOARD")) {
         // 系统装的 clipboard 插件（没有显示器，历史是空的）：只确认调用它不出错
         fresh(ic.get());
         type(ic.get(), "v<sp>1");
@@ -1182,7 +1182,7 @@ void runCases(Instance &instance) {
     fresh(ic.get());
 
     // 删掉文件再 reload：回到默认
-    std::filesystem::remove(configDir + "/wowtype.conf");
+    std::filesystem::remove(configDir + "/archtype.conf");
     std::filesystem::remove(customFile);
     addon->reloadConfig();
     fresh(ic.get());
@@ -1203,7 +1203,7 @@ void runCases(Instance &instance) {
     // #129：「方向键」设成左右键移动光标：左键把光标移进拼音，字母插在光标处，退格删光标前一个；
     // 右键到了末尾不去挑候选，上下键选词
     {
-        std::ofstream(configDir + "/wowtype.conf") << "ArrowKeys=Caret\n";
+        std::ofstream(configDir + "/archtype.conf") << "ArrowKeys=Caret\n";
     }
     addon->reloadConfig();
     type(ic.get(), "nihao<left><left><left>");
@@ -1228,14 +1228,14 @@ void runCases(Instance &instance) {
         check(ic->committed == want, "下键选第 2 个，空格上屏它：" + ic->committed + " / " + want);
     }
     fresh(ic.get());
-    std::filesystem::remove(configDir + "/wowtype.conf");
+    std::filesystem::remove(configDir + "/archtype.conf");
     addon->reloadConfig();
     type(ic.get(), "nihao<left>");
     check(ic->inputPanel().preedit().cursor() == static_cast<int>(preedit(ic.get()).size()),
           "默认（都用来选词）左键不动编辑区的光标：@" + std::to_string(ic->inputPanel().preedit().cursor()));
     fresh(ic.get());
 
-    // 单按 Shift 切英文（#28）：右 Shift 不是 fcitx 默认的临时切换键，走的是 WowType 自己的英文模式
+    // 单按 Shift 切英文（#28）：右 Shift 不是 fcitx 默认的临时切换键，走的是 ArchType 自己的英文模式
     const auto tapShift = [&](KeySym sym) {
         KeyEvent press(ic.get(), Key(sym), false);
         ic->keyEvent(press);
@@ -1283,28 +1283,28 @@ void runCases(Instance &instance) {
         ic->focusIn();
         check(english(), "换窗口后还是英文");
         instance.setCurrentInputMethod(ic.get(), "testim", true);
-        instance.setCurrentInputMethod(ic.get(), "wowtype", true);
+        instance.setCurrentInputMethod(ic.get(), "archtype", true);
         check(!english(), "从别的输入法切回来是中文");
         // InitialMode=English：切回来是英文（#121）
-        std::ofstream(configDir + "/wowtype.conf") << "InitialMode=English\n";
+        std::ofstream(configDir + "/archtype.conf") << "InitialMode=English\n";
         addon->reloadConfig();
         check(!english(), "改设置不改当前的模式");
         instance.setCurrentInputMethod(ic.get(), "testim", true);
-        instance.setCurrentInputMethod(ic.get(), "wowtype", true);
+        instance.setCurrentInputMethod(ic.get(), "archtype", true);
         check(english(), "InitialMode=English：切回来是英文");
         // InitialMode=Last：和切走时一样
-        std::ofstream(configDir + "/wowtype.conf") << "InitialMode=Last\n";
+        std::ofstream(configDir + "/archtype.conf") << "InitialMode=Last\n";
         addon->reloadConfig();
         tapShift(FcitxKey_Shift_R);
         instance.setCurrentInputMethod(ic.get(), "testim", true);
-        instance.setCurrentInputMethod(ic.get(), "wowtype", true);
+        instance.setCurrentInputMethod(ic.get(), "archtype", true);
         check(!english(), "InitialMode=Last：切走时是中文，切回来还是中文");
         tapShift(FcitxKey_Shift_R);
         instance.setCurrentInputMethod(ic.get(), "testim", true);
-        instance.setCurrentInputMethod(ic.get(), "wowtype", true);
+        instance.setCurrentInputMethod(ic.get(), "archtype", true);
         check(english(), "InitialMode=Last：切走时是英文，切回来还是英文");
         tapShift(FcitxKey_Shift_R);
-        std::filesystem::remove(configDir + "/wowtype.conf");
+        std::filesystem::remove(configDir + "/archtype.conf");
         addon->reloadConfig();
         check(!english(), "测完回到中文");
     }
@@ -1350,23 +1350,23 @@ void runCases(Instance &instance) {
             check(!english(), "再按一下回中文");
         }
         // fcitx5 全局快捷键里任何一项用了单按的 Shift（不只「切换输入法」「临时切换输入法」），
-        // fcitx5 都先把它吃掉，WowType 收不到。设置界面「Shift 只给 WowType 用」要把这几项都清掉。
+        // fcitx5 都先把它吃掉，ArchType 收不到。设置界面「Shift 只给 ArchType 用」要把这几项都清掉。
         {
             RawConfig raw;
             raw.setValueByPath("Hotkey/EnumerateForwardKeys/0", "Shift_R");
             instance.globalConfig().load(raw, true);
         }
         tapShift(FcitxKey_Shift_R);
-        check(instance.inputMethod(ic.get()) != "wowtype" || !english(),
+        check(instance.inputMethod(ic.get()) != "archtype" || !english(),
               "EnumerateForwardKeys=Shift_R 时 fcitx5 先拿走右 Shift");
         {
             RawConfig raw;
             raw.setValueByPath("Hotkey/EnumerateForwardKeys", "");
             instance.globalConfig().load(raw, true);
         }
-        instance.setCurrentInputMethod(ic.get(), "wowtype", true);
-        check(instance.inputMethod(ic.get()) == "wowtype" && !english(), "回到 WowType 中文");
-        check(tapShift(FcitxKey_Shift_R) && english(), "清掉以后右 Shift 又归 WowType");
+        instance.setCurrentInputMethod(ic.get(), "archtype", true);
+        check(instance.inputMethod(ic.get()) == "archtype" && !english(), "回到 ArchType 中文");
+        check(tapShift(FcitxKey_Shift_R) && english(), "清掉以后右 Shift 又归 ArchType");
         tapShift(FcitxKey_Shift_R);
         check(!english(), "回中文");
     }
@@ -1397,7 +1397,7 @@ void runCases(Instance &instance) {
 
     // 双拼方案：微软双拼（分号是 ing）
     {
-        std::ofstream(configDir + "/wowtype.conf") << "Shuangpin=True\nShuangpinScheme=Microsoft\n";
+        std::ofstream(configDir + "/archtype.conf") << "Shuangpin=True\nShuangpinScheme=Microsoft\n";
     }
     addon->reloadConfig();
     type(ic.get(), "vsgo");
@@ -1421,7 +1421,7 @@ void runCases(Instance &instance) {
     fresh(ic.get());
     // #122：设置里打开「双拼时编辑区显示打的键」
     {
-        std::ofstream(configDir + "/wowtype.conf")
+        std::ofstream(configDir + "/archtype.conf")
             << "Shuangpin=True\nShuangpinScheme=Microsoft\nShuangpinShowKeys=True\n";
     }
     addon->reloadConfig();
@@ -1429,11 +1429,11 @@ void runCases(Instance &instance) {
     check(preedit(ic.get()) == "vsgo", "双拼编辑区显示打的键：" + preedit(ic.get()));
     type(ic.get(), "<sp>");
     check(ic->committed == "中国", "显示打的键时照样出中国：" + ic->committed);
-    std::filesystem::remove(configDir + "/wowtype.conf");
+    std::filesystem::remove(configDir + "/archtype.conf");
     addon->reloadConfig();
     fresh(ic.get());
 
-    // 五笔：码表用一小段（rime-wubi 的原样几行），WOWTYPE_WUBI 指过去
+    // 五笔：码表用一小段（rime-wubi 的原样几行），ARCHTYPE_WUBI 指过去
     {
         const auto auxUp = [&] { return ic->inputPanel().auxUp().toString(); };
         const std::string table = configDir + "/wubi86.tsv";
@@ -1441,15 +1441,15 @@ void runCases(Instance &instance) {
                                 "v\t发\t395047607\nw\t人\t1002212710\nwq\t你\t597727619\n"
                                 "wqin\t您\t3090000000\nwqvb\t你好\t70500000\nwqvb\t您好\t34700000\n";
         // 先试没有码表：照全拼打，候选框上方说为什么
-        setenv("WOWTYPE_WUBI", (configDir + "/没有这个文件.tsv").c_str(), 1);
-        std::ofstream(configDir + "/wowtype.conf") << "InputScheme=Wubi86\n";
+        setenv("ARCHTYPE_WUBI", (configDir + "/没有这个文件.tsv").c_str(), 1);
+        std::ofstream(configDir + "/archtype.conf") << "InputScheme=Wubi86\n";
         addon->reloadConfig();
         type(ic.get(), "nihao");
         check(auxUp().find("没有五笔码表") != std::string::npos, "五笔没有码表时提示：" + auxUp());
         type(ic.get(), "<sp>");
         check(ic->committed == "你好", "五笔没有码表时照全拼打：" + ic->committed);
         fresh(ic.get());
-        setenv("WOWTYPE_WUBI", table.c_str(), 1);
+        setenv("ARCHTYPE_WUBI", table.c_str(), 1);
         addon->reloadConfig();
         type(ic.get(), "ggll");
         check(ic->committed == "一" && preedit(ic.get()).empty(), "五笔四码唯一自动上屏 ggll -> 一：" + ic->committed);
@@ -1490,7 +1490,7 @@ void runCases(Instance &instance) {
         check(ic->committed == "7", "五笔计算器用大写 V：" + ic->committed);
         fresh(ic.get());
         // 四码唯一自动上屏关掉：ggll 等空格
-        std::ofstream(configDir + "/wowtype.conf") << "InputScheme=Wubi86\nWubiAutoCommit=False\nWubiHint=False\n";
+        std::ofstream(configDir + "/archtype.conf") << "InputScheme=Wubi86\nWubiAutoCommit=False\nWubiHint=False\n";
         addon->reloadConfig();
         type(ic.get(), "ggll");
         check(ic->committed.empty() && preedit(ic.get()) == "ggll", "关掉四码唯一自动上屏：" + ic->committed);
@@ -1501,10 +1501,10 @@ void runCases(Instance &instance) {
             check(std::find(p.begin(), p.end(), "您") != p.end(), "关掉编码提示：候选不带码：" + join(p));
         }
         fresh(ic.get());
-        unsetenv("WOWTYPE_WUBI");
+        unsetenv("ARCHTYPE_WUBI");
         std::filesystem::remove(table);
     }
-    std::filesystem::remove(configDir + "/wowtype.conf");
+    std::filesystem::remove(configDir + "/archtype.conf");
     addon->reloadConfig();
     fresh(ic.get());
 
@@ -1556,14 +1556,14 @@ void runCases(Instance &instance) {
 
     // 模糊音分组：n=l 默认关，打开后 liunai 能出牛奶
     {
-        std::ofstream(configDir + "/wowtype.conf") << "Fuzzy=True\nTypoCorrection=False\n";
+        std::ofstream(configDir + "/archtype.conf") << "Fuzzy=True\nTypoCorrection=False\n";
     }
     addon->reloadConfig();
     type(ic.get(), "liunai");
     check(join(page(ic.get())).find("牛奶") == std::string::npos, "n=l 默认不开：" + join(page(ic.get())));
     fresh(ic.get());
     {
-        std::ofstream(configDir + "/wowtype.conf") << "Fuzzy=True\nFuzzyNL=True\nTypoCorrection=False\n";
+        std::ofstream(configDir + "/archtype.conf") << "Fuzzy=True\nFuzzyNL=True\nTypoCorrection=False\n";
     }
     addon->reloadConfig();
     type(ic.get(), "liunai");
@@ -1584,25 +1584,25 @@ void runCases(Instance &instance) {
             }
             return std::make_pair(total, ext);
         };
-        std::ofstream(configDir + "/wowtype.conf") << "";
+        std::ofstream(configDir + "/archtype.conf") << "";
         addon->reloadConfig();
         type(ic.get(), "hou");
         const auto [total, ext] = houChars();
         check(total > 40 && !ext, "hou 默认不列扩展 B 区以后的字（𠯜）：共 " + std::to_string(total) + " 个");
         fresh(ic.get());
-        std::ofstream(configDir + "/wowtype.conf") << "RareExtChars=True\n";
+        std::ofstream(configDir + "/archtype.conf") << "RareExtChars=True\n";
         addon->reloadConfig();
         type(ic.get(), "hou");
         const auto [totalOn, extOn] = houChars();
         check(extOn && totalOn > total, "打开 RareExtChars 后列出 𠯜：共 " + std::to_string(totalOn) + " 个");
         fresh(ic.get());
-        std::ofstream(configDir + "/wowtype.conf") << "";
+        std::ofstream(configDir + "/archtype.conf") << "";
         addon->reloadConfig();
     }
 
     // 标点样式：半角（#51）
     {
-        std::ofstream(configDir + "/wowtype.conf") << "PunctuationStyle=Halfwidth\n";
+        std::ofstream(configDir + "/archtype.conf") << "PunctuationStyle=Halfwidth\n";
     }
     addon->reloadConfig();
     type(ic.get(), "nihao,");
@@ -1614,7 +1614,7 @@ void runCases(Instance &instance) {
 
     // 翻页键可选（#36）：打开 , . 和 Tab，关掉 - =
     {
-        std::ofstream(configDir + "/wowtype.conf")
+        std::ofstream(configDir + "/archtype.conf")
             << "PageKeysMinusEqual=False\nPageKeysCommaPeriod=True\nPageKeysTab=True\n";
     }
     addon->reloadConfig();
@@ -1637,7 +1637,7 @@ void runCases(Instance &instance) {
 
     // 自定义词：非拼音编码、\n 换行
     {
-        std::ofstream(configDir + "/wowtype.conf") << "EmojiSuggest=False\n";
+        std::ofstream(configDir + "/archtype.conf") << "EmojiSuggest=False\n";
         std::ofstream(customFile) << "mail\tme@example.com\ndi zhi\t四川省\\n宜宾市\n";
     }
     addon->reloadConfig();
@@ -1658,7 +1658,7 @@ void runCases(Instance &instance) {
     check(ic->committed == "你；", "默认分号还是标点：" + ic->committed);
     fresh(ic.get());
     {
-        std::ofstream(configDir + "/wowtype.conf") << "SelectKeys=Semicolon\nEmojiSuggest=False\n";
+        std::ofstream(configDir + "/archtype.conf") << "SelectKeys=Semicolon\nEmojiSuggest=False\n";
     }
     addon->reloadConfig();
     type(ic.get(), "shi");
@@ -1672,7 +1672,7 @@ void runCases(Instance &instance) {
     check(preedit(ic.get()).find("xi'an") != std::string::npos, "只开分号时引号仍是隔音符：" + preedit(ic.get()));
     fresh(ic.get());
     {
-        std::ofstream(configDir + "/wowtype.conf") << "SelectKeys=SemicolonQuote\nEmojiSuggest=False\n";
+        std::ofstream(configDir + "/archtype.conf") << "SelectKeys=SemicolonQuote\nEmojiSuggest=False\n";
     }
     addon->reloadConfig();
     type(ic.get(), "shi");
@@ -1688,13 +1688,13 @@ void runCases(Instance &instance) {
         type(ic.get(), ";");
         check(items.size() > 1 && ic->committed == items[1], "翻页后分号选这一页第二个：" + ic->committed);
     }
-    std::filesystem::remove(configDir + "/wowtype.conf");
+    std::filesystem::remove(configDir + "/archtype.conf");
     addon->reloadConfig();
     fresh(ic.get());
 
     // 自动补空格（#36）：只看光标前一个字和要上屏的第一个字；读不到光标前的文字、密码框不补
     {
-        std::ofstream(configDir + "/wowtype.conf") << "AutoSpace=True\nEmojiSuggest=False\n";
+        std::ofstream(configDir + "/archtype.conf") << "AutoSpace=True\nEmojiSuggest=False\n";
     }
     addon->reloadConfig();
     auto surround = [&](const std::string &text, int cursorBack = 0, int anchorBack = 0) {
@@ -1753,7 +1753,7 @@ void runCases(Instance &instance) {
     type(ic.get(), "5");
     check(ic->committed.empty() && ic->passed == "5", "读不到光标前的文字不补");
     {
-        std::ofstream(configDir + "/wowtype.conf") << "AutoSpace=True\nAutoSpaceDigits=False\nEmojiSuggest=False\n";
+        std::ofstream(configDir + "/archtype.conf") << "AutoSpace=True\nAutoSpaceDigits=False\nEmojiSuggest=False\n";
     }
     addon->reloadConfig();
     ic->setCapabilityFlags(CapabilityFlag::SurroundingText);
@@ -1765,7 +1765,7 @@ void runCases(Instance &instance) {
     surround("Linux");
     type(ic.get(), "xitong<sp>");
     check(ic->committed == " 系统", "字母那项还开着：[" + ic->committed + "]");
-    std::filesystem::remove(configDir + "/wowtype.conf");
+    std::filesystem::remove(configDir + "/archtype.conf");
     addon->reloadConfig();
     ic->setCapabilityFlags(CapabilityFlags{});
     fresh(ic.get());
@@ -1773,14 +1773,14 @@ void runCases(Instance &instance) {
     // 换词库（设置里切到万象就是写 Lexicon=）：reloadConfig 后在后台换，换好前按键照常进编辑区
     {
         const std::string dictFile =
-            std::string(std::getenv("XDG_DATA_HOME")) + "/wowtype/dicts/harness/lexicon.tsv";
+            std::string(std::getenv("XDG_DATA_HOME")) + "/archtype/dicts/harness/lexicon.tsv";
         std::filesystem::create_directories(std::filesystem::path(dictFile).parent_path());
         std::ofstream(dictFile) << "ping guo\t平锅\t1000000\nce shi ci ku\t测试词库\t100\n";
-        // 环境变量 WOWTYPE_LEXICON 优先于配置，测配置时先拿掉
-        const char *envLexicon = std::getenv("WOWTYPE_LEXICON");
+        // 环境变量 ARCHTYPE_LEXICON 优先于配置，测配置时先拿掉
+        const char *envLexicon = std::getenv("ARCHTYPE_LEXICON");
         const std::string savedLexicon = envLexicon ? envLexicon : "";
-        unsetenv("WOWTYPE_LEXICON");
-        std::ofstream(configDir + "/wowtype.conf") << "Lexicon=" << dictFile << "\nEmojiSuggest=False\n";
+        unsetenv("ARCHTYPE_LEXICON");
+        std::ofstream(configDir + "/archtype.conf") << "Lexicon=" << dictFile << "\nEmojiSuggest=False\n";
         addon->reloadConfig();
         // 等到候选里出现 word（换词库在后台，最多 30 秒）
         const auto waitFor = [&ic](const std::string &keys, const std::string &word) {
@@ -1803,7 +1803,7 @@ void runCases(Instance &instance) {
         type(ic.get(), "pingguo<sp>");
         check(ic->committed == "平锅", "新词库里 pingguo -> 平锅，实际 " + ic->committed);
         // 改别的设置不重新载入词库
-        std::ofstream(configDir + "/wowtype.conf")
+        std::ofstream(configDir + "/archtype.conf")
             << "Lexicon=" << dictFile << "\nEmojiSuggest=False\nPageSize=6\n";
         addon->reloadConfig();
         fresh(ic.get());
@@ -1816,9 +1816,9 @@ void runCases(Instance &instance) {
         const bool reloaded = waitFor("gengxinle", "更新了");
         check(reloaded, "词库文件更新后重新载入：" + join(page(ic.get())));
         // 换回来
-        std::filesystem::remove(configDir + "/wowtype.conf");
+        std::filesystem::remove(configDir + "/archtype.conf");
         if (!savedLexicon.empty()) {
-            setenv("WOWTYPE_LEXICON", savedLexicon.c_str(), 1);
+            setenv("ARCHTYPE_LEXICON", savedLexicon.c_str(), 1);
         }
         addon->reloadConfig();
         // 刚学过「平锅」，它可能还排在前面；只看默认词库里的「苹果」回来了没有
@@ -1857,7 +1857,7 @@ std::string auxDown(HarnessInputContext *ic) { return ic->inputPanel().auxDown()
 std::string inlineText(HarnessInputContext *ic) { return ic->inputPanel().clientPreedit().toString(); }
 
 void runTranslateCase(Instance &instance, std::function<void()> done) {
-    const char *url = std::getenv("WOWTYPE_HARNESS_TRANSLATE_URL");
+    const char *url = std::getenv("ARCHTYPE_HARNESS_TRANSLATE_URL");
     if (!url || !*url) {
         std::printf("skip 互译（没有 python3 或 curl）\n");
         done();
@@ -1867,15 +1867,15 @@ void runTranslateCase(Instance &instance, std::function<void()> done) {
                                 {}, {}};
     const std::string configDir = std::string(std::getenv("XDG_CONFIG_HOME")) + "/fcitx5/conf";
     std::filesystem::create_directories(configDir);
-    c->configFile = configDir + "/wowtype.conf";
+    c->configFile = configDir + "/archtype.conf";
     std::ofstream(c->configFile) << "Translate=True\nTranslateBaseUrl=" << url
                                  << "\nTranslateModel=mock\nTranslateTarget=en\n";
-    auto *addon = instance.addonManager().addon("wowtype");
+    auto *addon = instance.addonManager().addon("archtype");
     addon->reloadConfig();
     // 像大多数应用一样，编辑区画在应用自己的输入框里
     c->ic->setCapabilityFlags(CapabilityFlag::Preedit);
     c->ic->focusIn();
-    instance.setCurrentInputMethod(c->ic.get(), "wowtype", true);
+    instance.setCurrentInputMethod(c->ic.get(), "archtype", true);
 
     auto expectCommit = [](const std::string &text) {
         return [text](HarnessInputContext *ic) { return ic->committed == text; };
@@ -2000,7 +2000,7 @@ void runTranslateCase(Instance &instance, std::function<void()> done) {
                  }});
     s.push_back({"上面那种情况回车也上屏译文", [](HarnessInputContext *ic) { type(ic, "<cr>"); },
                  expectCommit("EN:你好")});
-#ifdef WOWTYPE_HAVE_PASSWORD_IM_OPTION
+#ifdef ARCHTYPE_HAVE_PASSWORD_IM_OPTION
     s.push_back({"密码框里照常打中文，不翻译",
                  [reset, &instance](HarnessInputContext *ic) {
                      reset(ic);
@@ -2013,7 +2013,7 @@ void runTranslateCase(Instance &instance, std::function<void()> done) {
                  },
                  expectCommit("你好")});
 #else
-    // fcitx5 5.0 没有「密码框也用输入法」：密码框里换成键盘布局，WowType 收不到按键，更不会翻译
+    // fcitx5 5.0 没有「密码框也用输入法」：密码框里换成键盘布局，ArchType 收不到按键，更不会翻译
     s.push_back({"密码框里不用输入法（fcitx5 没有「密码框也用输入法」）：按键原样交给应用",
                  [reset](HarnessInputContext *ic) {
                      reset(ic);
@@ -2222,7 +2222,7 @@ void runTranslateCase(Instance &instance, std::function<void()> done) {
         });
 }
 
-/// 外部命令切模式（#98）：经会话总线调 org.wowtype.Input1。addon-test.sh 起了私有总线才跑。
+/// 外部命令切模式（#98）：经会话总线调 org.archtype.Input1。addon-test.sh 起了私有总线才跑。
 /// 插件的总线和这里的总线挂在同一个事件循环上，所以只能异步调。
 struct ModeCall {
     std::string arg; // SetMode 的参数；空表示调 Mode
@@ -2251,7 +2251,7 @@ void nextModeCall(ModeCase *c) {
     if (call.before) {
         call.before(c->ic.get());
     }
-    auto msg = c->bus->createMethodCall("org.wowtype.Input", "/org/wowtype/Input", "org.wowtype.Input1",
+    auto msg = c->bus->createMethodCall("org.archtype.Input", "/org/archtype/Input", "org.archtype.Input1",
                                         call.arg.empty() ? "Mode" : "SetMode");
     if (!call.arg.empty()) {
         msg << call.arg;
@@ -2282,7 +2282,7 @@ void runModeCase(Instance &instance, std::function<void()> done) {
                            std::make_unique<dbus::Bus>(dbus::BusType::Session), {}, {}, 0, done};
     c->bus->attachEventLoop(&instance.eventLoop());
     c->ic->focusIn();
-    instance.setCurrentInputMethod(c->ic.get(), "wowtype", true);
+    instance.setCurrentInputMethod(c->ic.get(), "archtype", true);
     auto expect = [](const std::string &name, const std::string &want) {
         return [name, want](HarnessInputContext *, const std::string &reply, bool error) {
             check(!error && reply == want, "外部命令：" + name + "，回复「" + reply + "」");
@@ -2323,8 +2323,8 @@ void runModeCase(Instance &instance, std::function<void()> done) {
     nextModeCall(c);
 }
 
-/// 语音：按住右 Alt 说话（WOWTYPE_VOICE_WAV 代替麦克风），松开后等识别结果上屏。
-/// 要真模型，所以只在 addon-test.sh 带了 WOWTYPE_VOICE_WAV 时跑。异步：靠事件循环里的定时器推进。
+/// 语音：按住右 Alt 说话（ARCHTYPE_VOICE_WAV 代替麦克风），松开后等识别结果上屏。
+/// 要真模型，所以只在 addon-test.sh 带了 ARCHTYPE_VOICE_WAV 时跑。异步：靠事件循环里的定时器推进。
 struct VoiceCase {
     Instance &instance;
     std::unique_ptr<HarnessInputContext> ic;
@@ -2335,18 +2335,18 @@ struct VoiceCase {
 };
 
 void runVoiceCase(Instance &instance, std::function<void()> done) {
-    const char *wav = std::getenv("WOWTYPE_VOICE_WAV");
+    const char *wav = std::getenv("ARCHTYPE_VOICE_WAV");
     if (!wav || !*wav) {
-        std::printf("skip 语音（没给 WOWTYPE_VOICE_WAV）\n");
+        std::printf("skip 语音（没给 ARCHTYPE_VOICE_WAV）\n");
         done();
         return;
     }
     auto *c = new VoiceCase{instance, std::make_unique<HarnessInputContext>(instance.inputContextManager()), {}, {}};
-    if (const char *expect = std::getenv("WOWTYPE_VOICE_EXPECT")) {
+    if (const char *expect = std::getenv("ARCHTYPE_VOICE_EXPECT")) {
         c->expect = expect;
     }
     c->ic->focusIn();
-    instance.setCurrentInputMethod(c->ic.get(), "wowtype", true);
+    instance.setCurrentInputMethod(c->ic.get(), "archtype", true);
     KeyEvent press(c->ic.get(), Key(FcitxKey_Alt_R), false);
     check(c->ic->keyEvent(press), "语音：按下右 Alt 被输入法接住");
     check(c->ic->inputPanel().auxUp().toString().find("🎙") != std::string::npos,
@@ -2401,7 +2401,7 @@ void runVoiceScript(Instance &instance, std::string name,
                               std::make_unique<HarnessInputContext>(instance.inputContextManager()),
                               {}, std::move(steps)};
     s->ic->focusIn();
-    instance.setCurrentInputMethod(s->ic.get(), "wowtype", true);
+    instance.setCurrentInputMethod(s->ic.get(), "archtype", true);
     s->timer = instance.eventLoop().addTimeEvent(
         CLOCK_MONOTONIC, now(CLOCK_MONOTONIC) + 100000, 0,
         [s, done](EventSourceTime *source, uint64_t) {
@@ -2423,12 +2423,12 @@ void runVoiceScript(Instance &instance, std::string name,
 }
 
 /// 没下载语音模型时按语音键：只提示去设置里下载，不录音、不下载，松开后提示一会儿自己消失。
-/// 给了 WOWTYPE_VOICE_WAV 时有模型，跳过。
+/// 给了 ARCHTYPE_VOICE_WAV 时有模型，跳过。
 void runVoiceNoModelCase(Instance &instance, std::function<void()> done) {
-    const char *wav = std::getenv("WOWTYPE_VOICE_WAV");
-    const char *dirEnv = std::getenv("WOWTYPE_VOICE_MODEL_DIR");
+    const char *wav = std::getenv("ARCHTYPE_VOICE_WAV");
+    const char *dirEnv = std::getenv("ARCHTYPE_VOICE_MODEL_DIR");
     if ((wav && *wav) || !dirEnv || !*dirEnv) {
-        std::printf("skip 语音·没有模型（给了 WOWTYPE_VOICE_WAV，或没指定模型目录）\n");
+        std::printf("skip 语音·没有模型（给了 ARCHTYPE_VOICE_WAV，或没指定模型目录）\n");
         done();
         return;
     }
@@ -2508,16 +2508,16 @@ struct FakeOverlay {
 
 void runVoiceOverlayCase(Instance &instance, std::function<void()> done) {
     const char *address = std::getenv("DBUS_SESSION_BUS_ADDRESS");
-    const char *wav = std::getenv("WOWTYPE_VOICE_WAV");
-    const char *dirEnv = std::getenv("WOWTYPE_VOICE_MODEL_DIR");
+    const char *wav = std::getenv("ARCHTYPE_VOICE_WAV");
+    const char *dirEnv = std::getenv("ARCHTYPE_VOICE_MODEL_DIR");
     if (!address || !*address || (wav && *wav) || !dirEnv || !*dirEnv) {
         std::printf("skip 语音浮条回执（没有会话总线，或有语音模型）\n");
         done();
         return;
     }
-    static constexpr char kService[] = "io.github.gloridust.WowType.VoiceOverlay";
-    static constexpr char kPath[] = "/io/github/gloridust/WowType";
-    static constexpr char kInterface[] = "io.github.gloridust.WowType.Voice1";
+    static constexpr char kService[] = "io.github.gowayhui.ArchType.VoiceOverlay";
+    static constexpr char kPath[] = "/io/github/gowayhui/ArchType";
+    static constexpr char kInterface[] = "io.github.gowayhui.ArchType.Voice1";
     auto overlay = std::make_shared<FakeOverlay>();
     overlay->bus = std::make_unique<dbus::Bus>(dbus::BusType::Session);
     overlay->bus->attachEventLoop(&instance.eventLoop());
@@ -2583,9 +2583,9 @@ void runVoiceOverlayCase(Instance &instance, std::function<void()> done) {
 }
 
 void runVoiceCancelCases(Instance &instance, std::function<void()> done) {
-    const char *wav = std::getenv("WOWTYPE_VOICE_WAV");
+    const char *wav = std::getenv("ARCHTYPE_VOICE_WAV");
     if (!wav || !*wav) {
-        std::printf("skip 语音取消（没给 WOWTYPE_VOICE_WAV）\n");
+        std::printf("skip 语音取消（没给 ARCHTYPE_VOICE_WAV）\n");
         done();
         return;
     }
@@ -2646,7 +2646,7 @@ void runVoiceCancelCases(Instance &instance, std::function<void()> done) {
 /// 语音结果复制到剪贴板：用假的 wl-copy（把标准输入写进文件）代替真的剪贴板。
 void runClipboardCase() {
     const auto dir = std::filesystem::temp_directory_path() /
-                     ("wowtype-clip-" + std::to_string(::getpid()));
+                     ("archtype-clip-" + std::to_string(::getpid()));
     std::filesystem::create_directories(dir);
     const auto out = dir / "copied.txt";
     {
@@ -2662,7 +2662,7 @@ void runClipboardCase() {
     ::setenv("WAYLAND_DISPLAY", "wayland-test", 1);
 
     const std::string text = "语音结果 \"$HOME\" `id`\n第二行";
-    const bool started = wowtype::copyToClipboard(text);
+    const bool started = archtype::copyToClipboard(text);
     std::string copied;
     for (int i = 0; i < 100 && copied.empty(); ++i) {
         std::this_thread::sleep_for(std::chrono::milliseconds(20));
@@ -2670,8 +2670,8 @@ void runClipboardCase() {
         copied.assign(std::istreambuf_iterator<char>(in), {});
     }
     check(started && copied == text, "语音结果复制到剪贴板（原样，不经 shell 展开）：" + copied);
-    check(!wowtype::copyToClipboard(""), "空的不复制");
-    check(!wowtype::copyToClipboard(std::string(40 * 1024, 'a')), "太长的不复制");
+    check(!archtype::copyToClipboard(""), "空的不复制");
+    check(!archtype::copyToClipboard(std::string(40 * 1024, 'a')), "太长的不复制");
 
     ::setenv("PATH", oldPath.c_str(), 1);
     if (oldWayland) {
@@ -2687,15 +2687,15 @@ void runClipboardCase() {
 int main(int argc, char **argv) {
     (void)argc;
     (void)argv;
-    char arg0[] = "wowtype-key-harness";
+    char arg0[] = "archtype-key-harness";
     char arg1[] = "--disable=all";
-    char arg2[] = "--enable=wowtype,testim,clipboard";
+    char arg2[] = "--enable=archtype,testim,clipboard";
     char *args[] = {arg0, arg1, arg2};
     Instance instance(3, args);
     FakeClipboardFactory clipboardFactory;
     StaticAddonRegistry registry{{"clipboard", &clipboardFactory}};
     instance.addonManager().registerDefaultLoader(
-        std::getenv("WOWTYPE_HARNESS_REAL_CLIPBOARD") ? nullptr : &registry);
+        std::getenv("ARCHTYPE_HARNESS_REAL_CLIPBOARD") ? nullptr : &registry);
     EventDispatcher mainDispatcher;
     mainDispatcher.attach(&instance.eventLoop());
     dispatcher = &mainDispatcher;

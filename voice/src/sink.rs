@@ -91,7 +91,7 @@ mod tests {
 
     #[test]
     fn clipboard_sink_feeds_copy_command() {
-        let path = std::env::temp_dir().join(format!("wowtype_clip_{}.txt", std::process::id()));
+        let path = std::env::temp_dir().join(format!("archtype_clip_{}.txt", std::process::id()));
         let _ = std::fs::remove_file(&path);
         let mut sink = ClipboardSink {
             copy_cmd: vec![

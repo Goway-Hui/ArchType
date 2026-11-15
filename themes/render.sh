@@ -6,7 +6,7 @@ cd "$(dirname "$0")"
 render() { # <svg 名> <主题目录> <png 名>
   rsvg-convert "src/$1.svg" -o "fcitx5/$2/$3.png"
 }
-for theme in wowtype wowtype-dark; do
+for theme in archtype archtype-dark; do
   mkdir -p "fcitx5/$theme"
   s=""; [[ $theme == *-dark ]] && s="-dark"
   render "panel$s" "$theme" panel
@@ -16,4 +16,4 @@ for theme in wowtype wowtype-dark; do
   render "arrow$s" "$theme" arrow
   render "radio$s" "$theme" radio
 done
-echo "已生成 fcitx5/wowtype、fcitx5/wowtype-dark 的图片"
+echo "已生成 fcitx5/archtype、fcitx5/archtype-dark 的图片"

@@ -1,15 +1,15 @@
 <div align="center">
 
-<img src="icons/hicolor/scalable/apps/wowtype.svg" width="112" alt="WowType 图标">
+<img src="icons/hicolor/scalable/apps/archtype.svg" width="112" alt="ArchType 图标">
 
-# WowType
+# ArchType
 
 **在 Linux 上打字，像微信输入法一样顺手。**
 
 一个 fcitx5 拼音输入法：长句一次打完、打一半就有词、按错键也能认出来，越用越懂你。
 
-[![CI](https://github.com/Goway-Hui/WowType/actions/workflows/ci.yml/badge.svg)](https://github.com/Goway-Hui/WowType/actions/workflows/ci.yml)
-[![Release](https://img.shields.io/github/v/release/Goway-Hui/WowType?include_prereleases&label=release)](https://github.com/Goway-Hui/WowType/releases)
+[![CI](https://github.com/Goway-Hui/ArchType/actions/workflows/ci.yml/badge.svg)](https://github.com/Goway-Hui/ArchType/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/github/v/release/Goway-Hui/ArchType?include_prereleases&label=release)](https://github.com/Goway-Hui/ArchType/releases)
 ![fcitx5](https://img.shields.io/badge/fcitx5-%E2%89%A5%205.0-blue)
 ![License](https://img.shields.io/badge/license-MIT%20%2F%20Apache--2.0-green)
 
@@ -49,7 +49,7 @@
 - **中英文之间自动加空格**（默认关）：`你好Linux` → `你好 Linux`、`第5章` → `第 5 章`，字母和数字分别开关。
 - **繁体、模糊音、双拼**：可切繁体输出；模糊音分 16 组单独开（z=zh、n=l、f=h、r=l、an=ang、un=ong、huang=wang……）；双拼支持自然码、小鹤、微软、搜狗、智能 ABC、紫光、拼音加加，双拼也有整句、句首词和分段选词，编辑区显示全拼。
 - **五笔 86**：设置里「输入方案」选「五笔输入」。四码唯一自动上屏、第五码顶字、标点顶字、空码提示，候选后面显示还要打的码；不会打的字按 `z` 临时打拼音，候选后面就是它的五笔码。码表来自 [rime-wubi](https://github.com/rime/rime-wubi)，码位固定、不调频，见[五笔](#五笔)。
-- **图形设置界面**：候选排列、模糊音、语音键都在「WowType 设置」里点一下就改，马上生效；还能加自定义词（人名、公司名、常用的长句、邮箱），加进去的词排第一，简拼也能打；编码可以是 `mail` 这类字母，词里能换行，可以导入导出。
+- **图形设置界面**：候选排列、模糊音、语音键都在「ArchType 设置」里点一下就改，马上生效；还能加自定义词（人名、公司名、常用的长句、邮箱），加进去的词排第一，简拼也能打；编码可以是 `mail` 这类字母，词里能换行，可以导入导出。
 - **打字统计**：设置里的「统计」页看今天和累计的输入字数、活跃时长、速度、连续天数，以及每个键按了多少次（按键热力图）和候选命中位置。只在本机按天记计数，不保存输入内容；默认打开，可以关掉或清空。
 - **快、全在本地**：完整的雾凇拼音词库，按一个键一般几毫秒内出候选；不联网，输入内容不离开你的电脑（语音模型在设置里下载一次；互译要联网，只在切到「译」时把那句话发给你填的服务）。
 
@@ -106,7 +106,7 @@
 Ubuntu 22.04 / 24.04 / 26.04、Debian 13、deepin 23 / 25、Arch Linux（及衍生版）、Fedora 上，在终端里运行：
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/Goway-Hui/WowType/main/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/Goway-Hui/ArchType/main/install.sh | bash
 ```
 
 在 Linux 上它会：
@@ -114,13 +114,13 @@ curl -fsSL https://raw.githubusercontent.com/Goway-Hui/WowType/main/install.sh |
 1. 下载和你系统对应的最新安装包（词库已经在包里，约 29 MB），按 `SHA256SUMS` 校验
 2. 用系统的包管理器（`apt-get`、`pacman`、`dnf`）装上，顺带装好 fcitx5 和设置界面要用的 GTK 4 / libadwaita。Arch 不会替你整机升级，提示依赖不满足时先 `sudo pacman -Syu`
 3. 输入法框架还不是 fcitx5（Ubuntu 默认是 IBus）时，问你要不要用 `im-config` 切过去（deepin 默认就是 fcitx5，不动）
-4. 把 WowType 加进 fcitx5 的输入法列表；fcitx5 正在运行的话会先重启它一次
+4. 把 ArchType 加进 fcitx5 的输入法列表；fcitx5 正在运行的话会先重启它一次
 
-装完按提示做：切换了输入法框架的话**注销并重新登录**，然后按 `Ctrl+Space` 切到 WowType，打 `nihao` 试试。
+装完按提示做：切换了输入法框架的话**注销并重新登录**，然后按 `Ctrl+Space` 切到 ArchType，打 `nihao` 试试。
 以后再跑一遍同样的命令就是升级（设置界面里也会提醒有新版本）。
 
 > 想先看看脚本做了什么：[install.sh](install.sh)，或者 `bash install.sh --print-plan` 只看会装哪个包、不动系统。
-> 不想让它改输入法框架或重启 fcitx5，可以加环境变量，例如 `curl -fsSL … | WOWTYPE_NO_IM_CONFIG=1 WOWTYPE_NO_RESTART=1 bash`。
+> 不想让它改输入法框架或重启 fcitx5，可以加环境变量，例如 `curl -fsSL … | ARCHTYPE_NO_IM_CONFIG=1 ARCHTYPE_NO_RESTART=1 bash`。
 >
 > GNOME（Ubuntu 默认桌面）在 Wayland 下，建议再装 GNOME Shell 扩展
 > [Input Method Panel](https://extensions.gnome.org/extension/261/kimpanel/)，
@@ -140,12 +140,12 @@ im-config -n fcitx5
 
 然后**注销并重新登录**。登录后右上角托盘里应该有一个键盘图标。
 
-#### 第 2 步：安装 WowType
+#### 第 2 步：安装 ArchType
 
 ##### 方式一：安装包
 
-到 [Releases](https://github.com/Goway-Hui/WowType/releases) 页面下载和你系统对应的那**一个**文件
-`wowtype_<版本>_<发行版>_<架构>.deb`（发行版是 `ubuntu22.04`、`ubuntu24.04`、`ubuntu26.04`、`debian13`、`deepin23`、`deepin25`，架构是 `amd64` 或 `arm64`，deepin 只有 `amd64`），词库已经包含在里面。
+到 [Releases](https://github.com/Goway-Hui/ArchType/releases) 页面下载和你系统对应的那**一个**文件
+`archtype_<版本>_<发行版>_<架构>.deb`（发行版是 `ubuntu22.04`、`ubuntu24.04`、`ubuntu26.04`、`debian13`、`deepin23`、`deepin25`，架构是 `amd64` 或 `arm64`，deepin 只有 `amd64`），词库已经包含在里面。
 不知道自己是哪个发行版、哪种架构：
 
 ```bash
@@ -156,21 +156,21 @@ dpkg --print-architecture                      # amd64 或 arm64
 在下载目录里安装：
 
 ```bash
-sudo apt install ./wowtype_*.deb
+sudo apt install ./archtype_*.deb
 ```
 
 `apt` 会顺带装上设置界面要用的 GTK 4 和 libadwaita（`python3-gi`、`gir1.2-gtk-4.0`、`gir1.2-adw-1`）。
 加了 `--no-install-recommends` 的话不会装，打字不受影响，只是打不开设置界面。
 
-> 0.3.3 及以前的版本，词库是单独的 `wowtype-data-rime-ice` 包。装新版时 apt 会自动把它删掉（文件由新包接管），不用管它。
+> 0.3.3 及以前的版本，词库是单独的 `archtype-data-rime-ice` 包。装新版时 apt 会自动把它删掉（文件由新包接管），不用管它。
 
 ###### Fedora
 
-到 [Releases](https://github.com/Goway-Hui/WowType/releases) 下载 `wowtype-<版本>-1.fc<Fedora 版本>.<架构>.rpm`（架构是 `x86_64` 或 `aarch64`，词库已经在包里），然后：
+到 [Releases](https://github.com/Goway-Hui/ArchType/releases) 下载 `archtype-<版本>-1.fc<Fedora 版本>.<架构>.rpm`（架构是 `x86_64` 或 `aarch64`，词库已经在包里），然后：
 
 ```bash
-sudo dnf install ./wowtype-*.rpm
-wowtype-config --add-to-group      # 把 WowType 加进 fcitx5 的输入法列表
+sudo dnf install ./archtype-*.rpm
+archtype-config --add-to-group      # 把 ArchType 加进 fcitx5 的输入法列表
 ```
 
 `dnf` 会顺带装上 fcitx5 和设置界面要用的 PyGObject、GTK 4、libadwaita。
@@ -178,12 +178,12 @@ wowtype-config --add-to-group      # 把 WowType 加进 fcitx5 的输入法列�
 
 ###### NixOS / Nix
 
-仓库根目录有 `flake.nix`。在 NixOS 的 flake 配置里加上输入，再把 WowType 加进 fcitx5 的插件：
+仓库根目录有 `flake.nix`。在 NixOS 的 flake 配置里加上输入，再把 ArchType 加进 fcitx5 的插件：
 
 ```nix
 # flake.nix
-inputs.wowtype = {
-  url = "github:Goway-Hui/WowType/release";   # 跟正式版；想锁某一版写 github:Goway-Hui/WowType/v0.3.10
+inputs.archtype = {
+  url = "github:Goway-Hui/ArchType/release";   # 跟正式版；想锁某一版写 github:Goway-Hui/ArchType/v0.3.10
   inputs.nixpkgs.follows = "nixpkgs";         # 和系统用同一份 fcitx5
 };
 
@@ -191,29 +191,29 @@ inputs.wowtype = {
 i18n.inputMethod = {
   enable = true;
   type = "fcitx5";
-  fcitx5.addons = [ inputs.wowtype.packages.${pkgs.stdenv.hostPlatform.system}.default ];
+  fcitx5.addons = [ inputs.archtype.packages.${pkgs.stdenv.hostPlatform.system}.default ];
 };
 ```
 
-`nixos-rebuild switch` 后重新登录，运行 `wowtype-config --add-to-group`（或在 Fcitx 5 配置里添加 WowType）。
-也提供了 overlay：`nixpkgs.overlays = [ inputs.wowtype.overlays.default ];` 之后用 `pkgs.wowtype`。
+`nixos-rebuild switch` 后重新登录，运行 `archtype-config --add-to-group`（或在 Fcitx 5 配置里添加 ArchType）。
+也提供了 overlay：`nixpkgs.overlays = [ inputs.archtype.overlays.default ];` 之后用 `pkgs.archtype`。
 home-manager 的 `i18n.inputMethod.fcitx5.addons` 用法相同。
-支持 x86_64 和 aarch64；升级：`nix flake update wowtype` 后再 `nixos-rebuild switch`。
+支持 x86_64 和 aarch64；升级：`nix flake update archtype` 后再 `nixos-rebuild switch`。
 
 ##### 方式二：从源码构建
 
 其他发行版，或者想用最新代码：依赖、编译、词库生成、排障都在 [docs/INSTALL.md](docs/INSTALL.md)。
 
-#### 第 3 步：把 WowType 加进输入法列表
+#### 第 3 步：把 ArchType 加进输入法列表
 
-1. 重启 fcitx5：`wowtype-config --restart-fcitx`（或者注销再登录）。KDE Plasma Wayland 下不要用 `fcitx5 -r -d`：新起来的 fcitx5 拿不到 KWin 给的输入法连接，之后新打开的程序里打不了字
+1. 重启 fcitx5：`archtype-config --restart-fcitx`（或者注销再登录）。KDE Plasma Wayland 下不要用 `fcitx5 -r -d`：新起来的 fcitx5 拿不到 KWin 给的输入法连接，之后新打开的程序里打不了字
 2. 打开 **Fcitx 5 配置**（托盘图标右键 → 配置，或运行 `fcitx5-configtool`）
-3. 在右边「可用输入法」里**取消勾选「仅显示当前语言」**，搜索 `WowType`，点 ← 加到左边
-4. 关掉配置窗口，按 `Ctrl+Space` 切换到 WowType，打 `nihao` 试试
+3. 在右边「可用输入法」里**取消勾选「仅显示当前语言」**，搜索 `ArchType`，点 ← 加到左边
+4. 关掉配置窗口，按 `Ctrl+Space` 切换到 ArchType，打 `nihao` 试试
 
-也可以从应用菜单打开 **WowType 设置**：「常规」页第一行会显示 WowType 有没有在输入法列表里，没有的话点「添加」就行。
+也可以从应用菜单打开 **ArchType 设置**：「常规」页第一行会显示 ArchType 有没有在输入法列表里，没有的话点「添加」就行。
 
-<!-- 截图（补上后删掉这行注释）：<img src="docs/images/configtool.png" width="560" alt="在 Fcitx 5 配置里添加 WowType"> -->
+<!-- 截图（补上后删掉这行注释）：<img src="docs/images/configtool.png" width="560" alt="在 Fcitx 5 配置里添加 ArchType"> -->
 
 > **重要：重启 fcitx5 以后，Chrome、VS Code、Slack、微信等 Chromium / Electron 程序要彻底退出再打开**，
 > 否则在它们里面打不了中文。终端、GTK、Qt 程序会自动重新连上。
@@ -221,12 +221,12 @@ home-manager 的 `i18n.inputMethod.fcitx5.addons` 用法相同。
 ### 检查是否装好
 
 ```bash
-wowtype-check --lexicon /usr/share/wowtype/lexicon.tsv    # 源码安装的用 ~/.local/share/wowtype/lexicon.tsv
-wowtype-show  --lexicon /usr/share/wowtype/lexicon.tsv nihao
+archtype-check --lexicon /usr/share/archtype/lexicon.tsv    # 源码安装的用 ~/.local/share/archtype/lexicon.tsv
+archtype-show  --lexicon /usr/share/archtype/lexicon.tsv nihao
 # nihao: 1.你好词 2.拟好词 ...
 ```
 
-`wowtype-show` 和插件用的是同一个引擎、同样的配置，打出来的候选应该和输入法里一样。
+`archtype-show` 和插件用的是同一个引擎、同样的配置，打出来的候选应该和输入法里一样。
 
 ## 使用
 
@@ -248,7 +248,7 @@ wowtype-show  --lexicon /usr/share/wowtype/lexicon.tsv nihao
 | `'` | 分隔音节，比如 `xi'an` → 西安 |
 | `[` `]` | 以词定字：只上屏光标处候选的第一个、最后一个字（`nihao` `[` → 你）；设置里能关，翻页键设成 `[ ]` 时是翻页 |
 | `Super` + `.` | 表情面板：打拼音或英文搜 emoji 和符号，见下 |
-| 单按 `Shift` | 切到英文（字母、半角标点直接上屏），再按一下回中文；打了一半的字母原样上屏。左右 Shift 都行，设置里能改成只用一边或关掉。设置好[互译](#互译)后是 中 → 英 → 译 → 中（设了互译的快捷键时只切中英）。两个平台各自还有别的切法，见[中英文切换](#中英文切换)。要是按 Shift 只在 WowType 和 en 之间来回，见[下面](#shift-被-fcitx5-占了) |
+| 单按 `Shift` | 切到英文（字母、半角标点直接上屏），再按一下回中文；打了一半的字母原样上屏。左右 Shift 都行，设置里能改成只用一边或关掉。设置好[互译](#互译)后是 中 → 英 → 译 → 中（设了互译的快捷键时只切中英）。两个平台各自还有别的切法，见[中英文切换](#中英文切换)。要是按 Shift 只在 ArchType 和 en 之间来回，见[下面](#shift-被-fcitx5-占了) |
 | 右 `Alt` | 语音输入，见下 |
 | `v` + 空格 | 工具栏：剪贴板历史、常用语、符号、表情（数字键选，退格返回，`Esc` 关闭），见 [docs/CONFIG.md](docs/CONFIG.md#v--空格工具栏) |
 
@@ -260,7 +260,7 @@ wowtype-show  --lexicon /usr/share/wowtype/lexicon.tsv nihao
 
 ### 五笔
 
-在「WowType 设置 → 输入 → 输入方案」里选「五笔输入」（86 版）。打的字母就是五笔码，最多四码：
+在「ArchType 设置 → 输入 → 输入方案」里选「五笔输入」（86 版）。打的字母就是五笔码，最多四码：
 
 - **上屏**：空格上屏光标处的候选，数字键选第几个。打满四码只有一个字词时直接上屏（「四码唯一自动上屏」，可以关）。
 - **顶字**：四码打满了再打字母，先上屏首选，这个字母开始下一个字；打码时按标点也是先上屏首选再上屏标点。
@@ -273,26 +273,26 @@ wowtype-show  --lexicon /usr/share/wowtype/lexicon.tsv nihao
 
 fcitx5 上至少有一种切法管用：
 
-- **系统自己的**：`Ctrl` + `空格` 在 WowType 和英文键盘之间切（fcitx5 的「切换启用/禁用输入法」）。
-- **单按 `Shift`**：默认开着，切到 WowType 自己的英文（字母直接上屏，不用换输入法）。
+- **系统自己的**：`Ctrl` + `空格` 在 ArchType 和英文键盘之间切（fcitx5 的「切换启用/禁用输入法」）。
+- **单按 `Shift`**：默认开着，切到 ArchType 自己的英文（字母直接上屏，不用换输入法）。
 - **另设一个切换键**：设置「输入」页选，比如 `Ctrl` + `Shift` + `空格`；默认不用。
 - **互译的快捷键**：设置「输入」页选，比如 `Ctrl` + `Shift` + `Y`：进「译」，再按回到原来的模式；设了以后单按 Shift 只切中英。
 
-设置文件里的键名是 `ShiftToggle`、`ToggleKey`、`TranslateModeKey`，见 [docs/CONFIG.md](docs/CONFIG.md)。系统自己的快捷键（fcitx5 的）先处理，设成它们 WowType 收不到。
+设置文件里的键名是 `ShiftToggle`、`ToggleKey`、`TranslateModeKey`，见 [docs/CONFIG.md](docs/CONFIG.md)。系统自己的快捷键（fcitx5 的）先处理，设成它们 ArchType 收不到。
 
 #### Shift 被 fcitx5 占了
 
-fcitx5 默认用左 Shift「临时切换输入法」（切到 en 键盘），这时左 Shift 到不了 WowType：按它只在 WowType 和 en 之间来回，切不到英文和「译」。
-右 Shift 不受影响。想左 Shift 也给 WowType 用，打开 [WowType 设置](#设置)「输入」页的 **Shift 只给 WowType 用**（只在有冲突时出现）：
+fcitx5 默认用左 Shift「临时切换输入法」（切到 en 键盘），这时左 Shift 到不了 ArchType：按它只在 ArchType 和 en 之间来回，切不到英文和「译」。
+右 Shift 不受影响。想左 Shift 也给 ArchType 用，打开 [ArchType 设置](#设置)「输入」页的 **Shift 只给 ArchType 用**（只在有冲突时出现）：
 它从 fcitx5 的快捷键里去掉单按的 Shift，之后切别的输入法用 `Ctrl` + `空格`；关掉就原样还给 fcitx5。
 fcitx5 的配置文件写不了时（比如 NixOS 用 Home Manager 配 fcitx5，`~/.config/fcitx5` 是只读的），开关下面会提示「只在这次有效」，这时要在 Nix 配置里写，见 [NixOS 安装说明](docs/INSTALL.md#单按-shift-在-nixos-上)。
 
 #### 用命令切中英文（vim 等）
 
-WowType 在会话总线上登记了 `org.wowtype.Input`，外部命令可以直接切 WowType 自己的中 / 英 / 译，不用切到别的输入法（切到 en 键盘的话语音输入就用不了了）：
+ArchType 在会话总线上登记了 `org.archtype.Input`，外部命令可以直接切 ArchType 自己的中 / 英 / 译，不用切到别的输入法（切到 en 键盘的话语音输入就用不了了）：
 
 ```bash
-busctl --user call org.wowtype.Input /org/wowtype/Input org.wowtype.Input1 SetMode s en
+busctl --user call org.archtype.Input /org/archtype/Input org.archtype.Input1 SetMode s en
 ```
 
 模式可以是 `zh`、`en`、`translate`（配置了互译时）、`toggle`（中英之间切），返回切完以后的模式；查现在的模式用 `Mode`。
@@ -300,12 +300,12 @@ neovim 里退出插入模式切英文、回到插入模式切回原来的模式�
 
 ```lua
 local mode = "zh"
-local function wowtype(args) return vim.fn.system("busctl --user call org.wowtype.Input /org/wowtype/Input org.wowtype.Input1 " .. args) end
+local function archtype(args) return vim.fn.system("busctl --user call org.archtype.Input /org/archtype/Input org.archtype.Input1 " .. args) end
 vim.api.nvim_create_autocmd("InsertLeave", { callback = function()
-  mode = wowtype("Mode"):match('"(%a+)"') or mode
-  wowtype("SetMode s en")
+  mode = archtype("Mode"):match('"(%a+)"') or mode
+  archtype("SetMode s en")
 end })
-vim.api.nvim_create_autocmd("InsertEnter", { callback = function() wowtype("SetMode s " .. mode) end })
+vim.api.nvim_create_autocmd("InsertEnter", { callback = function() archtype("SetMode s " .. mode) end })
 ```
 
 切的是最近用过的输入框（vim 所在的终端），不弹「中 / 英」提示。
@@ -329,72 +329,72 @@ vim.api.nvim_create_autocmd("InsertEnter", { callback = function() wowtype("SetM
 
 ### 语音输入
 
-在 WowType 打字的地方（没在打拼音时）：
+在 ArchType 打字的地方（没在打拼音时）：
 
 - **按住右 `Alt` 说话，松开**：说的话上屏。
 - **点一下右 `Alt`**：开始听，说完停 1.5 秒自动上屏，或者再点一下右 `Alt` 马上结束。
 - 说话时编辑区里是正在识别的字；按 `Esc` 不要这次说的话；按别的键也会放弃这次说的话，那个键照常打字。
 - **GNOME** 上光标下面会弹出一条语音浮条：蓝色话筒（外圈跟着音量呼吸）、「正在听… 离线」和一排跟着你音量跳动的竖条，
-  光标右边也会裂成几根跳动的蓝色竖条；松开后显示「识别完成」再淡出。浮条是 WowType 的 GNOME 扩展画的
+  光标右边也会裂成几根跳动的蓝色竖条；松开后显示「识别完成」再淡出。浮条是 ArchType 的 GNOME 扩展画的
   （和蓝色主题是同一个扩展，见[主题](#主题)），**装好或升级后要注销重新登录一次**才会出现。
   其他桌面（或关掉了蓝色主题）在候选框里显示 🎙 和用字符画的波形。
 
-识别用的是微信输入法的离线语音模型，在你的电脑上算，录音不上传。模型不随 WowType 分发，
-**要先在 [WowType 设置](#设置)的「语音」页点「下载」**：从腾讯的服务器下载约 100MB（能取消，断了再点接着下），
-解开后约 130MB，存在 `~/.local/share/wowtype/wtlocal/`。下载好以后语音输入自动打开；没下载模型时语音输入的开关是灰的，
+识别用的是微信输入法的离线语音模型，在你的电脑上算，录音不上传。模型不随 ArchType 分发，
+**要先在 [ArchType 设置](#设置)的「语音」页点「下载」**：从腾讯的服务器下载约 100MB（能取消，断了再点接着下），
+解开后约 130MB，存在 `~/.local/share/archtype/wtlocal/`。下载好以后语音输入自动打开；没下载模型时语音输入的开关是灰的，
 按右 `Alt` 只会提示你去设置里下载，不会自己下载。同一页可以删掉模型（空出空间，语音输入随之关闭）。
 模型载入后常驻内存，约 150MB。
 
-不方便开设置界面（比如远程、NixOS 配置脚本）时用命令行：`wowtype-config --install-voice-model` 下载并打开语音输入
-（也接受已经下载好的语音包路径），`wowtype-config --remove-voice-model` 删掉并关闭。
+不方便开设置界面（比如远程、NixOS 配置脚本）时用命令行：`archtype-config --install-voice-model` 下载并打开语音输入
+（也接受已经下载好的语音包路径），`archtype-config --remove-voice-model` 删掉并关闭。
 
-换语音键（右 Ctrl、菜单键、F8–F10）或者关掉语音，在 [WowType 设置](#设置)的「语音」页里改。
+换语音键（右 Ctrl、菜单键、F8–F10）或者关掉语音，在 [ArchType 设置](#设置)的「语音」页里改。
 
-（和 Linux 同一个包，存在 `~/Library/Application Support/WowType/wtlocal/`），第一次说话时允许 WowType 使用麦克风。
+（和 Linux 同一个包，存在 `~/Library/Application Support/ArchType/wtlocal/`），第一次说话时允许 ArchType 使用麦克风。
 提示显示在候选框里（🎙 和字符画的波形）。
 
 <img src="docs/images/voice.png" width="560" alt="按住右 Alt 说话：光标变成声波，下面是正在听、离线和实时波形">
 
 ### 互译
 
-在 [WowType 设置](#设置)的「翻译」页里选个服务商（或者填任何 OpenAI 格式的接口）、填 Key 和模型，打开「互译」。
+在 [ArchType 设置](#设置)的「翻译」页里选个服务商（或者填任何 OpenAI 格式的接口）、填 Key 和模型，打开「互译」。
 之后单按 `Shift` 就在 **中 → 英 → 译** 之间切换；也可以在「输入」页设一个**互译的快捷键**（比如 `Ctrl` + `Shift` + `Y`），按它进出「译」，单按 Shift 就只切中英：
 
 - 和微信输入法的「中英互译」一样：切到「译」照常打中文，打的字攒在候选框里，不上屏；停 0.5 秒（打了句号就立刻）开始翻译，译文边翻边写进输入框。
 - `回车` 或 `空格` 上屏译文，还没翻完就等翻好了自动上屏；`Shift+回车` 上屏原文；`Esc` 清空。
 - 打的是外文就翻成中文。设置里能选「正式语气」（写邮件用）。
-- **打的字会发给你填的服务**，WowType 自己不经手。密码框里不翻译。Key 单独存在只有你能读的文件里。
+- **打的字会发给你填的服务**，ArchType 自己不经手。密码框里不翻译。Key 单独存在只有你能读的文件里。
 
 翻译要等服务回话，挑又小又快的模型（各家的 mini、flash、turbo 版）；设置里的「测试连接」会显示一次要多久。详见 [docs/CONFIG.md](docs/CONFIG.md#互译)。
 
 不想联网，可以用「翻译」页默认的「本地模型（离线）」：点「下载」获取 HY-MT 1.5 1.8B（1.13 GB），跑模型用的 llama-server 系统里没有时会一起下载（约 22 MB），不用另外装东西。
-第一次翻译时才载入，闲置 5 分钟释放内存。模型是腾讯混元社区许可，不适用于欧盟、英国和韩国，WowType 不分发它，见 [本地模型](docs/CONFIG.md#本地模型离线)。
+第一次翻译时才载入，闲置 5 分钟释放内存。模型是腾讯混元社区许可，不适用于欧盟、英国和韩国，ArchType 不分发它，见 [本地模型](docs/CONFIG.md#本地模型离线)。
 
 ### 设置
 
-从应用菜单打开 **WowType 设置**（或者运行 `wowtype-config`）。改完立刻生效，不用重启 fcitx5。
+从应用菜单打开 **ArchType 设置**（或者运行 `archtype-config`）。改完立刻生效，不用重启 fcitx5。
 
 <table>
 <tr>
 <td align="center" width="50%">
-<img src="docs/images/settings-input.png" alt="WowType 设置的输入页：拼音输入或双拼输入、双拼方案、单按 Shift 切换中英文、模糊音、按错键纠正、繁体字"><br>
+<img src="docs/images/settings-input.png" alt="ArchType 设置的输入页：拼音输入或双拼输入、双拼方案、单按 Shift 切换中英文、模糊音、按错键纠正、繁体字"><br>
 <b>输入</b><br>
 <sub>全拼还是双拼（7 种方案）、Shift 切英文、模糊音、纠错、繁体</sub>
 </td>
 <td align="center" width="50%">
-<img src="docs/images/settings-words.png" alt="WowType 设置的自定义词页：输入词后拼音自动填好，下面是已经加过的词，右上角能导入导出"><br>
+<img src="docs/images/settings-words.png" alt="ArchType 设置的自定义词页：输入词后拼音自动填好，下面是已经加过的词，右上角能导入导出"><br>
 <b>自定义词</b><br>
 <sub>填上词，拼音自动查好</sub>
 </td>
 </tr>
 <tr>
 <td align="center">
-<img src="docs/images/settings-voice.png" alt="WowType 设置的语音页：语音输入开关、语音键选右 Alt、识别模型已下载"><br>
+<img src="docs/images/settings-voice.png" alt="ArchType 设置的语音页：语音输入开关、语音键选右 Alt、识别模型已下载"><br>
 <b>语音</b><br>
 <sub>开关、换语音键</sub>
 </td>
 <td align="center">
-<img src="docs/images/settings-update.png" alt="WowType 设置的更新页：有新版本 0.3.5，下载并安装按钮，下面是更新内容"><br>
+<img src="docs/images/settings-update.png" alt="ArchType 设置的更新页：有新版本 0.3.5，下载并安装按钮，下面是更新内容"><br>
 <b>更新</b><br>
 <sub>有新版本发通知，点一下装好</sub>
 </td>
@@ -403,7 +403,7 @@ vim.api.nvim_create_autocmd("InsertEnter", { callback = function() wowtype("SetM
 
 | 页面 | 能改什么 |
 |---|---|
-| 常规 | 候选排列（横排 / 竖排）、每页个数（3–9）、WowType 蓝色主题（见[主题](#主题)）、候选字号。还会检查 WowType 有没有加进 fcitx5 的输入法列表，没有的话一键添加；底下的「帮助」能[导出日志](#出问题时导出日志) |
+| 常规 | 候选排列（横排 / 竖排）、每页个数（3–9）、ArchType 蓝色主题（见[主题](#主题)）、候选字号。还会检查 ArchType 有没有加进 fcitx5 的输入法列表，没有的话一键添加；底下的「帮助」能[导出日志](#出问题时导出日志) |
 | 输入 | 词库（默认雾凇，可下载切换到[万象](docs/CONFIG.md#可选词库万象拼音)）、输入方案（拼音、双拼、五笔）、双拼方案（自然码、小鹤、微软、搜狗、智能 ABC、紫光、拼音加加）、五笔的四码唯一自动上屏和编码提示、单按哪个 Shift 切中英文（和 fcitx5 抢 Shift 时提示并能一键让出）、另设一个切换中英文的快捷键、互译的快捷键、模糊音（16 组分别开关：z=zh、c=ch、s=sh、n=l、f=h、r=l、an=ang、an=ai、ian=iang、uan=uang、huang=wang、en=eng、eng=ong、in=ing、un=ong、un=iong）、按错键自动纠正、繁体字、日期时间、计算器、v + 空格工具栏、剪贴板历史、中英文之间自动加空格、分号引号选第 2/3 个候选 |
 | 表情 | 打字时推荐 emoji、表情面板快捷键 |
 | 语音 | 下载 / 删除识别模型（有进度、能取消）；下载好模型后才能打开语音输入；语音键（右 Alt / 右 Ctrl / 菜单键 / F8–F10）、识别结果同时复制到剪贴板 |
@@ -416,39 +416,39 @@ vim.api.nvim_create_autocmd("InsertEnter", { callback = function() wowtype("SetM
 
 右上角菜单里还有：用文本编辑器打开自定义词文件、导出日志、恢复默认设置（不影响自定义词和翻译服务）、关于。
 
-- `wowtype-config --page voice`（或 `general`、`input`、`emoji`、`translate`、`words`、`stats`、`update`）直接打开某一页。
-- **Fcitx 5 配置**里选中 WowType 点「配置」，也能改上面这些设置，里面的「自定义词和更多设置」会打开 WowType 设置。
+- `archtype-config --page voice`（或 `general`、`input`、`emoji`、`translate`、`words`、`stats`、`update`）直接打开某一页。
+- **Fcitx 5 配置**里选中 ArchType 点「配置」，也能改上面这些设置，里面的「自定义词和更多设置」会打开 ArchType 设置。
 
 #### 主题
 
-WowType 默认用自己的蓝色主题：选中的词是图标里的那种蓝，系统换深色模式时跟着换深色版。
-第一次切到 WowType 时自动打开（只这一次；你在用别的 fcitx5 主题时不动）。
-不喜欢的话在「WowType 设置 → 常规 → 外观」里关掉「WowType 蓝色主题」，换回默认。
+ArchType 默认用自己的蓝色主题：选中的词是图标里的那种蓝，系统换深色模式时跟着换深色版。
+第一次切到 ArchType 时自动打开（只这一次；你在用别的 fcitx5 主题时不动）。
+不喜欢的话在「ArchType 设置 → 常规 → 外观」里关掉「ArchType 蓝色主题」，换回默认。
 候选框的字嫌小，在同一个地方调「候选字号」（8–32 磅），改了马上生效：GNOME 上改的是 Input Method Panel 扩展的字体，别的桌面改的是 fcitx5 经典界面的字体，两边一起改。
 
 <table>
 <tr>
-<td align="center" width="50%"><img src="docs/images/theme-light.png" alt="WowType 浅色主题：白底细边框的候选框，第一个候选是蓝底白字"><br><sub>浅色</sub></td>
-<td align="center" width="50%"><img src="docs/images/theme-dark.png" alt="WowType 深色主题：下键展开的候选面板，当前行是蓝底"><br><sub>深色（按下键展开）</sub></td>
+<td align="center" width="50%"><img src="docs/images/theme-light.png" alt="ArchType 浅色主题：白底细边框的候选框，第一个候选是蓝底白字"><br><sub>浅色</sub></td>
+<td align="center" width="50%"><img src="docs/images/theme-dark.png" alt="ArchType 深色主题：下键展开的候选面板，当前行是蓝底"><br><sub>深色（按下键展开）</sub></td>
 </tr>
 </table>
 
 候选框由谁来画，决定了主题怎么生效：
 
-- **KDE、X11 等**：fcitx5 自己画（经典界面），用的是主题 `wowtype` / `wowtype-dark`，打开开关马上生效。
+- **KDE、X11 等**：fcitx5 自己画（经典界面），用的是主题 `archtype` / `archtype-dark`，打开开关马上生效。
   也可以在 Fcitx 5 配置 → 附加组件 → 经典用户界面里手动选。候选框是不透明的圆角加细边框：
   没开混成器的 X11（openbox、i3、关了混成的 xfwm4）上 fcitx5 不裁窗口形状，圆角外面会露出一圈黑角；
   Wayland 和有混成器的 X11 上是正常的圆角。主题不带半透明阴影也是这个原因。
-- **GNOME（Wayland）**：候选框是 Input Method Panel 扩展画的，fcitx5 的主题管不到。WowType 另带一个只有样式表的小扩展
-  `wowtype-theme@gloridust.github.io` 给它换色，打开开关会顺带启用它。**第一次启用要注销重新登录一次**（GNOME 只在登录时加载新装的扩展）。
+- **GNOME（Wayland）**：候选框是 Input Method Panel 扩展画的，fcitx5 的主题管不到。ArchType 另带一个只有样式表的小扩展
+  `archtype-theme@goway-hui.github.io` 给它换色，打开开关会顺带启用它。**第一次启用要注销重新登录一次**（GNOME 只在登录时加载新装的扩展）。
   这个扩展同时画[语音浮条](#语音输入)，关掉蓝色主题，语音提示也会回到候选框里的文字版。
 
 主题文件在 `themes/`：`themes/fcitx5/` 是经典界面主题，图片由 `themes/src/*.svg` 经 `themes/render.sh` 生成；`themes/gnome-shell/` 是 GNOME 扩展。
 
 ### 更新
 
-用 deb 包装的会自动检查更新：切到 WowType 时在后台查一下（最多一小时一次），
-有新版本就弹一条通知，点开进「WowType 设置」的「更新」页，能看更新内容，点「下载并安装」，
+用 deb 包装的会自动检查更新：切到 ArchType 时在后台查一下（最多一小时一次），
+有新版本就弹一条通知，点开进「ArchType 设置」的「更新」页，能看更新内容，点「下载并安装」，
 按系统提示授权就装好了（下载后会对照 `SHA256SUMS` 校验），最后点「重启输入法」生效。
 也可以重新运行[一行安装命令](#一行命令安装推荐)。
 不想自动检查，在「更新」页关掉「自动检查更新」（就是配置文件里的 `CheckUpdate=False`）。从源码装的只会提示新版本，要自己更新。
@@ -457,32 +457,32 @@ WowType 默认用自己的蓝色主题：选中的词是图标里的那种蓝，
 
 | 现象 | 处理 |
 |---|---|
-| 输入法列表里找不到 WowType | 添加时取消勾选「仅显示当前语言」；确认 `/usr/share/fcitx5/inputmethod/wowtype.conf` 存在；`wowtype-config --restart-fcitx` 重启 |
-| KDE Wayland 下已经开着的程序能打字，新打开的程序打不了 | fcitx5 是用 `fcitx5 -r` 或托盘「重新启动」重启的，没经过 KWin。运行 `wowtype-config --restart-fcitx`，或注销再登录 |
+| 输入法列表里找不到 ArchType | 添加时取消勾选「仅显示当前语言」；确认 `/usr/share/fcitx5/inputmethod/archtype.conf` 存在；`archtype-config --restart-fcitx` 重启 |
+| KDE Wayland 下已经开着的程序能打字，新打开的程序打不了 | fcitx5 是用 `fcitx5 -r` 或托盘「重新启动」重启的，没经过 KWin。运行 `archtype-config --restart-fcitx`，或注销再登录 |
 | 某个程序里打不了中文，别的程序可以 | 重启 fcitx5 以后 Chrome / Electron 程序要彻底退出再打开 |
-| 能打，但候选很少、很多常用词没有 | 没找到词库，用的是演示词库。用安装包装的话重装一遍（安装包自带词库）；从源码装的把 `lexicon.tsv` 放进 `~/.local/share/wowtype/` |
-| 第一次切到 WowType 时要等一两秒 | 正常：第一次要载入词库并生成快照，之后约 0.3 秒 |
-| 按右 Alt 提示「没有语音模型」 | 到 WowType 设置的「语音」页点「下载」（或运行 `wowtype-config --install-voice-model`） |
+| 能打，但候选很少、很多常用词没有 | 没找到词库，用的是演示词库。用安装包装的话重装一遍（安装包自带词库）；从源码装的把 `lexicon.tsv` 放进 `~/.local/share/archtype/` |
+| 第一次切到 ArchType 时要等一两秒 | 正常：第一次要载入词库并生成快照，之后约 0.3 秒 |
+| 按右 Alt 提示「没有语音模型」 | 到 ArchType 设置的「语音」页点「下载」（或运行 `archtype-config --install-voice-model`） |
 | 按右 Alt 提示「开不了麦克风」 | 在系统设置的「声音」里确认有输入设备；`arecord -l` 应该能列出麦克风 |
-| 按 Super + . 打不开表情面板 | 只在 WowType 是当前输入法时有效；桌面或别的程序占了这个键的话，到设置里换成 Ctrl + ; |
+| 按 Super + . 打不开表情面板 | 只在 ArchType 是当前输入法时有效；桌面或别的程序占了这个键的话，到设置里换成 Ctrl + ; |
 | emoji 显示成方块 | 缺彩色 emoji 字体：`sudo apt install fonts-noto-color-emoji` |
-| 按右 Alt 没反应 | 只在 WowType 是当前输入法、没在打拼音时有效；有的键盘右边是 AltGr，到设置的「语音」页换个键 |
-| 应用菜单里没有「WowType 设置」，或者打不开 | 缺 GTK 4 / libadwaita：`sudo apt install python3-gi gir1.2-gtk-4.0 gir1.2-adw-1`。在终端里运行 `wowtype-config` 能看到报错 |
-| 设置里改了，打字时没变化 | 看看是不是设了 `WOWTYPE_*` 环境变量（`env \| grep WOWTYPE`），它们优先于设置；fcitx5 没在运行时，设置会在它下次启动时生效 |
-| 想看日志 | `~/.local/state/wowtype/wowtype.log`，或者[导出日志](#出问题时导出日志) |
+| 按右 Alt 没反应 | 只在 ArchType 是当前输入法、没在打拼音时有效；有的键盘右边是 AltGr，到设置的「语音」页换个键 |
+| 应用菜单里没有「ArchType 设置」，或者打不开 | 缺 GTK 4 / libadwaita：`sudo apt install python3-gi gir1.2-gtk-4.0 gir1.2-adw-1`。在终端里运行 `archtype-config` 能看到报错 |
+| 设置里改了，打字时没变化 | 看看是不是设了 `ARCHTYPE_*` 环境变量（`env \| grep ARCHTYPE`），它们优先于设置；fcitx5 没在运行时，设置会在它下次启动时生效 |
+| 想看日志 | `~/.local/state/archtype/archtype.log`，或者[导出日志](#出问题时导出日志) |
 | 怎么确认 fcitx5 在工作 | 运行 `fcitx5-diagnose`，它会列出缺的环境变量和前端 |
 
 ### 出问题时导出日志
 
-「WowType 设置 → 常规 → 帮助 → 导出日志」，或者右上角菜单里的「导出日志…」，会存一个 `wowtype-log-时间.txt`，
-里面有版本、系统和桌面环境、fcitx5 的输入法列表和主题、WowType 的设置、数据文件在不在、WowType 和 fcitx5 最近的日志。
+「ArchType 设置 → 常规 → 帮助 → 导出日志」，或者右上角菜单里的「导出日志…」，会存一个 `archtype-log-时间.txt`，
+里面有版本、系统和桌面环境、fcitx5 的输入法列表和主题、ArchType 的设置、数据文件在不在、ArchType 和 fcitx5 最近的日志。
 **不含你打过的字**，自定义词、自动学到的词和输入习惯只写条数；家目录写成 `~`。导出后可以先打开看一眼再发。
 
-没有图形界面时：`wowtype-config --export-log`（存到当前目录）或 `wowtype-config --export-log -`（打到终端）。
+没有图形界面时：`archtype-config --export-log`（存到当前目录）或 `archtype-config --export-log -`（打到终端）。
 
-WowType 自己的日志在 `~/.local/state/wowtype/wowtype.log`（满 512 KB 换一个，旧的留一份 `.1`）。
+ArchType 自己的日志在 `~/.local/state/archtype/archtype.log`（满 512 KB 换一个，旧的留一份 `.1`）。
 
-问题没解决，欢迎[提 issue](https://github.com/Goway-Hui/WowType/issues)，把导出的日志拖进去。
+问题没解决，欢迎[提 issue](https://github.com/Goway-Hui/ArchType/issues)，把导出的日志拖进去。
 
 ## 工作原理
 
@@ -495,28 +495,28 @@ WowType 自己的日志在 `~/.local/state/wowtype/wowtype.log`（满 512 KB 换
 
 引擎用 Rust 写，编成静态库链进 fcitx5 插件。设计思路参考了微信输入法（WeType）3.0 的公开行为和引擎里的符号名，
 但拼音引擎没有用它的任何代码、词库或模型；词库来自开源的雾凇拼音。
-语音识别用的是微信输入法的离线模型：不随 WowType 分发，第一次用语音时从腾讯的服务器下载，推理代码来自 voicekey（纯 Rust）。实现细节、评测数字和调参方法见 [docs/ENGINE.md](docs/ENGINE.md)。
+语音识别用的是微信输入法的离线模型：不随 ArchType 分发，第一次用语音时从腾讯的服务器下载，推理代码来自 voicekey（纯 Rust）。实现细节、评测数字和调参方法见 [docs/ENGINE.md](docs/ENGINE.md)。
 
 ## 参与开发
 
 ```bash
 cargo test --workspace                     # Rust 测试（需要 libasound2-dev，语音守护进程还要 libx11-dev libxkbcommon-dev）
 ./scripts/abi-smoke.sh                     # C 接口冒烟测试
-scripts/addon-test.sh ~/.local/share/wowtype/lexicon.tsv ~/.local/share/wowtype/english.txt
+scripts/addon-test.sh ~/.local/share/archtype/lexicon.tsv ~/.local/share/archtype/english.txt
                                            # 插件按键测试：起一个私有的 fcitx5，不影响你正在用的输入法
-WOWTYPE_VOICE_WAV=说的话.wav WOWTYPE_VOICE_EXPECT=期望的字 scripts/addon-test.sh ...
+ARCHTYPE_VOICE_WAV=说的话.wav ARCHTYPE_VOICE_EXPECT=期望的字 scripts/addon-test.sh ...
                                            # 加跑语音用例：用 WAV 代替麦克风，要先下载好语音模型
                                            # （不给 WAV 时跑「没有模型按右 Alt 只提示」）
 ```
 
-改了排序，用 `wowtype-eval` 在几百个用例上对比改前改后（用法见 [docs/ENGINE.md](docs/ENGINE.md#调排序)）。
+改了排序，用 `archtype-eval` 在几百个用例上对比改前改后（用法见 [docs/ENGINE.md](docs/ENGINE.md#调排序)）。
 推送 `v*` 标签会自动编译各发行版的安装包并发布到 Releases。
 
 | 目录 | 内容 |
 |---|---|
 | `core/` | 拼音引擎和 C 接口 |
 | `fcitx5-addon/` | fcitx5 插件 |
-| `settings/` | 设置界面 `wowtype-config`（Python、GTK 4、libadwaita） |
+| `settings/` | 设置界面 `archtype-config`（Python、GTK 4、libadwaita） |
 | `voice/` | 语音输入：热键状态机、麦克风采集、微信离线模型推理（插件通过 `core/src/voice_ffi.rs` 调用） |
 | `voice-daemon/` | 不依赖输入法的语音守护进程（X11，实验性，没进安装包） |
 | `tools/` | 词库转换、评测用例生成 |
@@ -532,7 +532,7 @@ WOWTYPE_VOICE_WAV=说的话.wav WOWTYPE_VOICE_EXPECT=期望的字 scripts/addon-
 
 ## 致谢
 
-- [雾凇拼音 rime-ice](https://github.com/iDvel/rime-ice)：词库和英文词表（GPL-3.0，随安装包一起分发，许可证见 `/usr/share/doc/wowtype/copyright`）
+- [雾凇拼音 rime-ice](https://github.com/iDvel/rime-ice)：词库和英文词表（GPL-3.0，随安装包一起分发，许可证见 `/usr/share/doc/archtype/copyright`）
 - [Rime 五笔字型 rime-wubi](https://github.com/rime/rime-wubi)：五笔 86 码表（LGPL-3.0，随安装包一起分发；作者见 `WUBI-AUTHORS`，来源和钉死的提交见 `WUBI-SOURCE.txt`）
 - [Tatoeba](https://tatoeba.org)：中文句子统计出的词频（`data/tatoeba-freq.tsv`，只有词频、不含句子），融进安装包的词库；句子许可证 CC BY 2.0 FR，Tatoeba contributors
 - [万象拼音 rime_wanxiang](https://github.com/amzxyz/rime_wanxiang)：可选词库（CC BY 4.0，不在安装包里，在设置里下载）

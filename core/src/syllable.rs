@@ -588,7 +588,7 @@ mod tests {
     /// Linux 设置界面（Python，不链接核心）自己抄了一份音节表，改了这里要跟着改。
     #[test]
     fn settings_syllable_table_matches() {
-        let path = concat!(env!("CARGO_MANIFEST_DIR"), "/../settings/wowtype-config");
+        let path = concat!(env!("CARGO_MANIFEST_DIR"), "/../settings/archtype-config");
         let Ok(script) = std::fs::read_to_string(path) else {
             return; // 单独发的核心源码包里没有设置界面
         };
@@ -601,7 +601,7 @@ mod tests {
         theirs.sort_unstable();
         assert_eq!(
             theirs, SYLLABLES,
-            "settings/wowtype-config 的 SYLLABLES 和核心的不一样"
+            "settings/archtype-config 的 SYLLABLES 和核心的不一样"
         );
     }
 

@@ -1,7 +1,7 @@
 """wetype-assets 各脚本共用的小工具：读文件、边界检查、安全写出。
 
 这些脚本只读本机已安装的微信输入法，不联网；唯一会写文件的是用户用参数指定的输出路径，
-而且拒绝写进 WowType 仓库目录（防止把提取出的东西误提交）。
+而且拒绝写进 ArchType 仓库目录（防止把提取出的东西误提交）。
 """
 
 import json
@@ -62,10 +62,10 @@ def uvarint(buf, i, what="varint"):
 
 
 def open_output(path):
-    """打开用户指定的输出文件。拒绝写进 WowType 仓库，避免提取出的数据被误提交。"""
+    """打开用户指定的输出文件。拒绝写进 ArchType 仓库，避免提取出的数据被误提交。"""
     real = os.path.realpath(path)
     if os.path.commonpath([real, os.path.realpath(REPO)]) == os.path.realpath(REPO):
-        sys.exit(f"不写进 WowType 仓库（{REPO}）：提取出的数据不能入库，换个目录，比如 ~/wetype-dump/")
+        sys.exit(f"不写进 ArchType 仓库（{REPO}）：提取出的数据不能入库，换个目录，比如 ~/wetype-dump/")
     parent = os.path.dirname(real)
     if not os.path.isdir(parent):
         sys.exit(f"输出目录不存在：{parent}")

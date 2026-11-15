@@ -1,7 +1,7 @@
 //! 输入会话：一个输入框里的编辑状态和按键规则（见 docs/PORTING.md）。
 //!
 //! 目标是让 fcitx5 和 macOS 两个外壳只做「平台按键 → 会话 → 按结果画界面、上屏」，
-//! 输入行为都在这里。现在是一块一块从 fcitx5 外壳（`fcitx5-addon/src/wowtype_engine.cpp`）
+//! 输入行为都在这里。现在是一块一块从 fcitx5 外壳（`fcitx5-addon/src/archtype_engine.cpp`）
 //! 挪过来的，已经挪进来的：
 //!
 //! - 编辑区里的原始输入、已选词栈（长句先选开头的词）；
@@ -2288,7 +2288,7 @@ impl<'e> Session<'e> {
         if !self.composing() || !self.config.wubi {
             String::new()
         } else if self.engine.is_some_and(|e| e.wubi().is_none()) {
-            "没有五笔码表，先按全拼打（重装 WowType 可以修好）".to_owned()
+            "没有五笔码表，先按全拼打（重装 ArchType 可以修好）".to_owned()
         } else if n == 0 && self.wubi_code() {
             "空码".to_owned()
         } else {

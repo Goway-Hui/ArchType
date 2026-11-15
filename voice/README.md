@@ -1,4 +1,4 @@
-# wowtype-voice
+# archtype-voice
 
 语音输入的核心逻辑，与平台解耦，可在任何系统上单测。
 

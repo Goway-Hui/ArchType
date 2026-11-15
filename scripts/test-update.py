@@ -16,7 +16,7 @@ from unittest.mock import Mock, patch
 import urllib.request
 
 
-SCRIPT = Path(__file__).resolve().parents[1] / "settings" / "wowtype-config"
+SCRIPT = Path(__file__).resolve().parents[1] / "settings" / "archtype-config"
 source = SCRIPT.read_text(encoding="utf-8")
 compile(source, str(SCRIPT), "exec")
 tree = ast.parse(source, filename=str(SCRIPT))
@@ -140,12 +140,12 @@ class UpdateTests(unittest.TestCase):
 
     def test_exact_assets_and_installed_package_required(self):
         cases = [
-            ({"ID": "ubuntu", "VERSION_ID": "24.04"}, "wowtype_0.3.9_ubuntu24.04_amd64.deb"),
-            ({"ID": "linuxmint", "UBUNTU_CODENAME": "noble"}, "wowtype_0.3.9_ubuntu24.04_amd64.deb"),
-            ({"ID": "ubuntu", "VERSION_ID": "22.04"}, "wowtype_0.3.9_ubuntu22.04_amd64.deb"),
-            ({"ID": "deepin", "VERSION_ID": "25"}, "wowtype_0.3.9_deepin25_amd64.deb"),
-            ({"ID": "arch"}, "wowtype-0.3.9-1-x86_64.pkg.tar.zst"),
-            ({"ID": "fedora", "VERSION_ID": "44"}, "wowtype-0.3.9-1.fc44.x86_64.rpm"),
+            ({"ID": "ubuntu", "VERSION_ID": "24.04"}, "archtype_0.3.9_ubuntu24.04_amd64.deb"),
+            ({"ID": "linuxmint", "UBUNTU_CODENAME": "noble"}, "archtype_0.3.9_ubuntu24.04_amd64.deb"),
+            ({"ID": "ubuntu", "VERSION_ID": "22.04"}, "archtype_0.3.9_ubuntu22.04_amd64.deb"),
+            ({"ID": "deepin", "VERSION_ID": "25"}, "archtype_0.3.9_deepin25_amd64.deb"),
+            ({"ID": "arch"}, "archtype-0.3.9-1-x86_64.pkg.tar.zst"),
+            ({"ID": "fedora", "VERSION_ID": "44"}, "archtype-0.3.9-1.fc44.x86_64.rpm"),
         ]
         for info, name in cases:
             with self.subTest(info=info):
@@ -155,13 +155,13 @@ class UpdateTests(unittest.TestCase):
                 self.assertEqual(self.plan(info, {name: assets[name]})[0], [])
                 self.assertEqual(self.plan(info, {"SHA256SUMS": assets["SHA256SUMS"]})[0], [])
         self.assertEqual(self.plan({"ID": "fedora", "VERSION_ID": "43"},
-                                  {"wowtype-0.3.9-1.fc44.x86_64.rpm": "x", "SHA256SUMS": "s"})[0], [])
+                                  {"archtype-0.3.9-1.fc44.x86_64.rpm": "x", "SHA256SUMS": "s"})[0], [])
         # arm64 只认 arm64 的包，不拿 x86_64 的凑数
         for info, name, other in [
-            ({"ID": "ubuntu", "VERSION_ID": "24.04"}, "wowtype_0.3.9_ubuntu24.04_arm64.deb",
-             "wowtype_0.3.9_ubuntu24.04_amd64.deb"),
-            ({"ID": "fedora", "VERSION_ID": "44"}, "wowtype-0.3.9-1.fc44.aarch64.rpm",
-             "wowtype-0.3.9-1.fc44.x86_64.rpm"),
+            ({"ID": "ubuntu", "VERSION_ID": "24.04"}, "archtype_0.3.9_ubuntu24.04_arm64.deb",
+             "archtype_0.3.9_ubuntu24.04_amd64.deb"),
+            ({"ID": "fedora", "VERSION_ID": "44"}, "archtype-0.3.9-1.fc44.aarch64.rpm",
+             "archtype-0.3.9-1.fc44.x86_64.rpm"),
         ]:
             with self.subTest(info=info, arch="aarch64"):
                 assets = {name: "https://example.invalid/arm", other: "https://example.invalid/x86",
@@ -174,7 +174,7 @@ class UpdateTests(unittest.TestCase):
     def test_package_query_uses_native_manager(self):
         for manager, output, command, expected in [
             ("apt-get", "install ok installed\t0.3.8", "dpkg-query", "0.3.8"),
-            ("pacman", "wowtype 0.3.8-1\n", "pacman", "0.3.8-1"),
+            ("pacman", "archtype 0.3.8-1\n", "pacman", "0.3.8-1"),
             ("dnf", "0.3.8-1.fc44", "rpm", "0.3.8-1.fc44"),
         ]:
             with self.subTest(manager=manager), patch.object(subprocess, "run") as run:
@@ -196,7 +196,7 @@ class UpdateTests(unittest.TestCase):
                 updater["install_commands"](manager, paths)
 
     def test_checksum_enforcement(self):
-        name, payload = "wowtype-0.3.9-1-x86_64.pkg.tar.zst", b"fixture package"
+        name, payload = "archtype-0.3.9-1-x86_64.pkg.tar.zst", b"fixture package"
         digest = hashlib.sha256(payload).hexdigest()
         release = {"tag": "v0.3.9", "assets": {"SHA256SUMS": "sums"}}
         class Response(io.BytesIO):
@@ -256,7 +256,7 @@ class UpdateTests(unittest.TestCase):
                                          install_failed=Mock(), toast=Mock(), updated=False)
                 with patch.dict(updater, Gio=gui, GLib=glib, log=lambda _m: None,
                                 update_platform=lambda: ("pacman", "archlinux", "x86_64", "")):
-                    updater["run_installer"](window, ["/tmp/wowtype.pkg.tar.zst"])
+                    updater["run_installer"](window, ["/tmp/archtype.pkg.tar.zst"])
                 self.assertEqual(len(commands), expected_calls)
                 self.assertEqual(window.updated, updated)
                 self.assertEqual(window.install_failed.called, not updated)
@@ -267,10 +267,10 @@ if __name__ == "__main__":
 
     def test_api_403_falls_back_to_download_page(self):
         # API 配额用完（403）就解析 releases/latest 下载页；别的错误照旧抛
-        tag_page = b'<a href="/Goway-Hui/WowType/releases/tag/v0.4.9">v0.4.9</a>'
-        assets_page = (b'<a href="/Goway-Hui/WowType/releases/download/v0.4.9/'
-                       b'wowtype-0.4.9-1-x86_64.pkg.tar.zst">pkg</a>'
-                       b'<a href="/Goway-Hui/WowType/releases/download/v0.4.9/SHA256SUMS">sums</a>')
+        tag_page = b'<a href="/Goway-Hui/ArchType/releases/tag/v0.4.9">v0.4.9</a>'
+        assets_page = (b'<a href="/Goway-Hui/ArchType/releases/download/v0.4.9/'
+                       b'archtype-0.4.9-1-x86_64.pkg.tar.zst">pkg</a>'
+                       b'<a href="/Goway-Hui/ArchType/releases/download/v0.4.9/SHA256SUMS">sums</a>')
         class Response(io.BytesIO):
             headers = {}
         calls = []
@@ -286,21 +286,21 @@ if __name__ == "__main__":
             if "api.github.com" in url:
                 raise urllib.error.HTTPError(url, 403, "rate limit", {}, io.BytesIO())
             raise RuntimeError("unexpected " + url)
-        with patch.dict(updater, HOMEPAGE="https://github.com/Goway-Hui/WowType",
-                        REPO="Goway-Hui/WowType", http_open=fetch):
+        with patch.dict(updater, HOMEPAGE="https://github.com/Goway-Hui/ArchType",
+                        REPO="Goway-Hui/ArchType", http_open=fetch):
             release = updater["fetch_latest"]()
             self.assertEqual(release["tag"], "v0.4.9")
             self.assertEqual(release["version"], "0.4.9")
             self.assertTrue(release.get("limited"))
-            self.assertIn("wowtype-0.4.9-1-x86_64.pkg.tar.zst", release["assets"])
+            self.assertIn("archtype-0.4.9-1-x86_64.pkg.tar.zst", release["assets"])
             self.assertEqual(release["assets"]["SHA256SUMS"],
-                             "https://github.com/Goway-Hui/WowType/releases/download/v0.4.9/SHA256SUMS")
+                             "https://github.com/Goway-Hui/ArchType/releases/download/v0.4.9/SHA256SUMS")
             self.assertEqual(calls[0].split("/")[2], "api.github.com")
             # 下载地址能直接用（plan_update 只看 assets）
             files, reason = updater["plan_update"](release)
             self.assertEqual(reason, "")
             self.assertEqual([name for name, _ in files],
-                             ["wowtype-0.4.9-1-x86_64.pkg.tar.zst"])
+                             ["archtype-0.4.9-1-x86_64.pkg.tar.zst"])
 
     def test_other_http_errors_propagate(self):
         def fetch(_url, **_kwargs):

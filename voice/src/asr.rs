@@ -218,7 +218,7 @@ impl AsrChannel for ProcessChannel {
         use std::sync::atomic::{AtomicUsize, Ordering};
         static SEQ: AtomicUsize = AtomicUsize::new(0);
         let path = std::env::temp_dir().join(format!(
-            "wowtype-asr-{}-{}.wav",
+            "archtype-asr-{}-{}.wav",
             std::process::id(),
             SEQ.fetch_add(1, Ordering::Relaxed)
         ));

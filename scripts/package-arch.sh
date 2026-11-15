@@ -15,7 +15,7 @@ VERSION=${1:?用法: package-arch.sh <版本> [输出目录]}
 (( EUID != 0 )) || { echo "makepkg 不能以 root 运行，请用普通用户运行此脚本" >&2; exit 1; }
 command -v makepkg >/dev/null || { echo "需要 Arch Linux 的 makepkg（pacman/base-devel）" >&2; exit 1; }
 OUT=$(realpath -m "${2:-dist}")
-DATA=$(realpath -m "${WOWTYPE_DATA_DIR:-dist/data}")
+DATA=$(realpath -m "${ARCHTYPE_DATA_DIR:-dist/data}")
 for f in lexicon.tsv english.txt words.lm LICENSE SOURCE.txt; do
   [[ -s "$DATA/$f" ]] || { echo "缺 $DATA/${f}，先跑 scripts/make-data.sh" >&2; exit 1; }
 done
@@ -37,18 +37,18 @@ cp "$DATA"/{wubi86.tsv,WUBI-LICENSE,WUBI-SOURCE.txt,WUBI-AUTHORS} "$work/source/
 if [[ -f "$DATA/VERSION" ]]; then
   cp "$DATA/VERSION" "$work/source/dist/data/"
 fi
-tar -cf "$work/wowtype-src.tar" -C "$work/source" .
+tar -cf "$work/archtype-src.tar" -C "$work/source" .
 rm -rf "$work/source"
-checksum=$(sha256sum "$work/wowtype-src.tar")
+checksum=$(sha256sum "$work/archtype-src.tar")
 {
   printf 'pkgver=%q\n' "$VERSION"
   printf "sha256sums=('%s')\n" "${checksum%% *}"
   cat <<'PKGBUILD'
-pkgname=wowtype
+pkgname=archtype
 pkgrel=1
 pkgdesc='WeChat-style pinyin input method for fcitx5, with bundled dictionaries and language model'
 arch=('x86_64')
-url='https://github.com/Gloridust/WowType'
+url='https://github.com/Goway-Hui/ArchType'
 license=('MIT' 'Apache-2.0' 'GPL-3.0-only' 'CC-BY-SA-4.0' 'Unicode-3.0' 'LGPL-3.0-only')
 depends=('fcitx5' 'alsa-lib' 'gcc-libs' 'glibc' 'python')
 makedepends=('rust' 'cmake' 'extra-cmake-modules' 'pkgconf')
@@ -57,8 +57,8 @@ optdepends=('python-gobject: settings app' 'gtk4: settings app' 'libadwaita: set
 # makepkg handles ELF stripping and byte-sized .PKGINFO/.MTREE/.BUILDINFO.
 # Avoid a second debug package in the CI release artifacts.
 options=('!debug')
-source=('wowtype-src.tar')
-install=wowtype.install
+source=('archtype-src.tar')
+install=archtype.install
 
 prepare() {
   cd "$srcdir" || return
@@ -67,46 +67,46 @@ prepare() {
 
 build() {
   cd "$srcdir" || return
-  cargo build --release --frozen -p wowtype-core --lib \
-    --bin wowtype-check --bin wowtype-show
+  cargo build --release --frozen -p archtype-core --lib \
+    --bin archtype-check --bin archtype-show
   cmake -S fcitx5-addon -B build -DCMAKE_BUILD_TYPE=None \
-    -DCMAKE_INSTALL_PREFIX=/usr -DCMAKE_INSTALL_LIBDIR=lib -DWOWTYPE_VERSION="$pkgver"
+    -DCMAKE_INSTALL_PREFIX=/usr -DCMAKE_INSTALL_LIBDIR=lib -DARCHTYPE_VERSION="$pkgver"
   cmake --build build -j"$(nproc)"
 }
 
 check() {
   cd "$srcdir" || return
-  cargo test --release --frozen -p wowtype-core --lib
+  cargo test --release --frozen -p archtype-core --lib
 }
 
 package() {
   cd "$srcdir" || return
   DESTDIR="$pkgdir" cmake --install build
-  rm -r "$pkgdir/usr/include/wowtype"
+  rm -r "$pkgdir/usr/include/archtype"
   rmdir --ignore-fail-on-non-empty "$pkgdir/usr/include"
-  for bin in wowtype-check wowtype-show; do
+  for bin in archtype-check archtype-show; do
     install -Dm755 "target/release/$bin" "$pkgdir/usr/bin/$bin"
   done
-  install -m644 dist/data/{lexicon.tsv,english.txt,words.lm,wubi86.tsv} "$pkgdir/usr/share/wowtype/"
-  install -Dm644 README.md "$pkgdir/usr/share/doc/wowtype/README.md"
-  install -Dm644 dist/data/SOURCE.txt "$pkgdir/usr/share/doc/wowtype/DATA-SOURCE.txt"
-  install -Dm644 dist/data/WUBI-SOURCE.txt "$pkgdir/usr/share/doc/wowtype/WUBI-SOURCE.txt"
-  install -Dm644 dist/data/WUBI-AUTHORS "$pkgdir/usr/share/doc/wowtype/WUBI-AUTHORS"
+  install -m644 dist/data/{lexicon.tsv,english.txt,words.lm,wubi86.tsv} "$pkgdir/usr/share/archtype/"
+  install -Dm644 README.md "$pkgdir/usr/share/doc/archtype/README.md"
+  install -Dm644 dist/data/SOURCE.txt "$pkgdir/usr/share/doc/archtype/DATA-SOURCE.txt"
+  install -Dm644 dist/data/WUBI-SOURCE.txt "$pkgdir/usr/share/doc/archtype/WUBI-SOURCE.txt"
+  install -Dm644 dist/data/WUBI-AUTHORS "$pkgdir/usr/share/doc/archtype/WUBI-AUTHORS"
   if [[ -f dist/data/VERSION ]]; then
-    install -Dm644 dist/data/VERSION "$pkgdir/usr/share/doc/wowtype/DATA-VERSION"
+    install -Dm644 dist/data/VERSION "$pkgdir/usr/share/doc/archtype/DATA-VERSION"
   fi
-  install -Dm644 dist/data/LICENSE "$pkgdir/usr/share/licenses/wowtype/LICENSE.rime-ice"
-  install -Dm644 dist/data/WUBI-LICENSE "$pkgdir/usr/share/licenses/wowtype/LICENSE.rime-wubi"
+  install -Dm644 dist/data/LICENSE "$pkgdir/usr/share/licenses/archtype/LICENSE.rime-ice"
+  install -Dm644 dist/data/WUBI-LICENSE "$pkgdir/usr/share/licenses/archtype/LICENSE.rime-wubi"
 }
 PKGBUILD
 } > "$work/PKGBUILD"
-cat > "$work/wowtype.install" <<'INSTALL'
+cat > "$work/archtype.install" <<'INSTALL'
 post_install() {
   cat <<'EOF'
-==> WowType 已安装。
-  把 WowType 加进 fcitx5 的输入法列表：wowtype-config --add-to-group
-  （或 fcitx5-configtool → 添加「WowType 拼音」）
-  设置界面需要 python-gobject、gtk4、libadwaita，在应用菜单「WowType 设置」。
+==> ArchType 已安装。
+  把 ArchType 加进 fcitx5 的输入法列表：archtype-config --add-to-group
+  （或 fcitx5-configtool → 添加「ArchType 拼音」）
+  设置界面需要 python-gobject、gtk4、libadwaita，在应用菜单「ArchType 设置」。
   Arch 上没有 im-config，别照 Ubuntu 教程跑它。
 EOF
 }
@@ -119,6 +119,6 @@ cd "$work"
 # 不安装依赖、不提权。CI 先装好依赖，再用普通用户执行这里。
 PKGDEST="$OUT" PKGEXT=.pkg.tar.zst BUILDDIR="$work" SRCDEST="$work" \
   SRCPKGDEST="$work" LOGDEST="$work" makepkg --noconfirm --force --nosign
-file="$OUT/wowtype-$VERSION-1-$(uname -m).pkg.tar.zst"
+file="$OUT/archtype-$VERSION-1-$(uname -m).pkg.tar.zst"
 [[ -s "$file" ]] || { echo "makepkg 没有生成 $file" >&2; exit 1; }
 printf '%s\n' "$file"

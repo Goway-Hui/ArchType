@@ -6,7 +6,7 @@
 只报结构，不输出词条：文件头、尾部结构大小、`50 01 <字数> <UTF-16LE>` 形式的值记录有多少条、
 落在哪段偏移、字数分布，以及前半部分 ASCII 码区的大致范围。
 
-WowType 的五笔码表用的是公开的 rime-wubi（scripts/make-wubi.sh），**不用**这里的任何数据；
+ArchType 的五笔码表用的是公开的 rime-wubi（scripts/make-wubi.sh），**不用**这里的任何数据；
 这个脚本只是记录格式研究的结论（读文件的是 LoudsTrieHashMapReader：LOUDS trie + 哈希表 + 值区）。
 """
 
@@ -94,7 +94,7 @@ def main():
         a = r["ascii_codes"]
         if a:
             print(f"  ASCII 码区：约 0x{a['from']:x}–0x{a['to']:x}（{a['runs']:,} 段 2~4 位 a-y 串）")
-    print("（码 ↔ 词的对应没有解；WowType 用公开的 rime-wubi 码表，不用这里的数据）")
+    print("（码 ↔ 词的对应没有解；ArchType 用公开的 rime-wubi 码表，不用这里的数据）")
 
 
 if __name__ == "__main__":

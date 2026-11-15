@@ -2,10 +2,10 @@
 // 左边蓝色话筒（外圈跟着音量呼吸）、「正在听… 离线」、右边 24 根跟着真实音量跳的竖条；
 // 光标右边再画 5 根蓝色竖条，像光标裂成了声波。
 //
-// 数据来自 fcitx5 里的 WowType 插件：插件发现这个扩展注册了 BUS_NAME，就不再在候选框里
+// 数据来自 fcitx5 里的 ArchType 插件：插件发现这个扩展注册了 BUS_NAME，就不再在候选框里
 // 写文字提示，改为每 50 毫秒发一次 State 信号（状态、文字、音量、光标矩形）。
 // 每画好一个状态回插件一个 Ack；插件一次说话里等不到回执，就退回候选框里的文字提示（#170），
-// 所以这里画出错时不能回执，错误写进 journal（journalctl --user -b | grep -i wowtype）。
+// 所以这里画出错时不能回执，错误写进 journal（journalctl --user -b | grep -i archtype）。
 import Clutter from 'gi://Clutter';
 import Gio from 'gi://Gio';
 import GLib from 'gi://GLib';
@@ -13,9 +13,9 @@ import Mtk from 'gi://Mtk';
 import St from 'gi://St';
 import * as Main from 'resource:///org/gnome/shell/ui/main.js';
 
-const BUS_NAME = 'io.github.gloridust.WowType.VoiceOverlay';
-const OBJECT_PATH = '/io/github/gloridust/WowType';
-const INTERFACE = 'io.github.gloridust.WowType.Voice1';
+const BUS_NAME = 'io.github.gowayhui.ArchType.VoiceOverlay';
+const OBJECT_PATH = '/io/github/gowayhui/ArchType';
+const INTERFACE = 'io.github.gowayhui.ArchType.Voice1';
 
 const STATE_HIDE = 0;
 const STATE_LISTENING = 1;
@@ -115,32 +115,32 @@ export class VoiceOverlay {
 
     _build() {
         this._pill = new St.BoxLayout({
-            style_class: 'wowtype-voice-pill',
+            style_class: 'archtype-voice-pill',
             reactive: false,
             visible: false,
             opacity: 0,
         });
         this._pill.set_pivot_point(0.12, 0.5);
 
-        this._mic = new St.DrawingArea({style_class: 'wowtype-voice-mic', y_align: Clutter.ActorAlign.CENTER});
+        this._mic = new St.DrawingArea({style_class: 'archtype-voice-mic', y_align: Clutter.ActorAlign.CENTER});
         this._mic.connect('repaint', area => this._paintMic(area));
         this._pill.add_child(this._mic);
 
         this._label = new St.Label({
-            style_class: 'wowtype-voice-label',
+            style_class: 'archtype-voice-label',
             text: '正在听…',
             y_align: Clutter.ActorAlign.CENTER,
         });
         this._pill.add_child(this._label);
 
         this._tag = new St.Label({
-            style_class: 'wowtype-voice-tag',
+            style_class: 'archtype-voice-tag',
             text: '离线',
             y_align: Clutter.ActorAlign.CENTER,
         });
         this._pill.add_child(this._tag);
 
-        this._wave = new St.DrawingArea({style_class: 'wowtype-voice-wave', y_align: Clutter.ActorAlign.CENTER});
+        this._wave = new St.DrawingArea({style_class: 'archtype-voice-wave', y_align: Clutter.ActorAlign.CENTER});
         this._wave.connect('repaint', area => this._paintWave(area));
         this._pill.add_child(this._wave);
 
@@ -160,7 +160,7 @@ export class VoiceOverlay {
             state = args[0];
             this._onState(args);
         } catch (e) {
-            console.error(`WowType 语音浮条画不出来（状态 ${state}）：`, e);
+            console.error(`ArchType 语音浮条画不出来（状态 ${state}）：`, e);
             return;
         }
         // 真的显示出来了才回执；收起不回（插件不等这个）
@@ -170,7 +170,7 @@ export class VoiceOverlay {
             Gio.DBus.session.emit_signal(sender, OBJECT_PATH, INTERFACE, 'Ack',
                 new GLib.Variant('(u)', [state]));
         } catch (e) {
-            console.error('WowType 语音浮条回执发不出去：', e);
+            console.error('ArchType 语音浮条回执发不出去：', e);
         }
     }
 
@@ -187,9 +187,9 @@ export class VoiceOverlay {
 
         this._state = state;
         this._label.text = label || '';
-        this._label.remove_style_class_name('wowtype-voice-error');
+        this._label.remove_style_class_name('archtype-voice-error');
         if (state === STATE_ERROR)
-            this._label.add_style_class_name('wowtype-voice-error');
+            this._label.add_style_class_name('archtype-voice-error');
         this._tag.visible = state !== STATE_ERROR;
 
         if (state === STATE_LISTENING) {

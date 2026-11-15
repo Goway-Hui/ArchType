@@ -1,13 +1,13 @@
 //! 打字统计的 C ABI：输入法进程持有记录器，设置界面读写同一个文件。
 //!
-//! 约定见 core/include/wowtype_core.h：句柄由调用方保证生命周期，失败用 wowtype_last_error 取原因。
+//! 约定见 core/include/archtype_core.h：句柄由调用方保证生命周期，失败用 archtype_last_error 取原因。
 
 use std::os::raw::{c_char, c_int};
 
 use crate::ffi::set_last_error;
 use crate::stats::{self, Recorder};
 
-pub struct WowtypeStats {
+pub struct ArchtypeStats {
     recorder: Recorder,
 }
 
@@ -23,7 +23,7 @@ unsafe fn cstr(ptr: *const c_char) -> Option<String> {
 
 /// 创建一个记录器；`path` 是统计文件的绝对路径。失败返回 NULL。
 #[no_mangle]
-pub unsafe extern "C" fn wowtype_stats_new(path: *const c_char) -> *mut WowtypeStats {
+pub unsafe extern "C" fn archtype_stats_new(path: *const c_char) -> *mut ArchtypeStats {
     let Some(path) = (unsafe { cstr(path) }) else {
         set_last_error("stats path is null or not utf8");
         return std::ptr::null_mut();
@@ -32,13 +32,13 @@ pub unsafe extern "C" fn wowtype_stats_new(path: *const c_char) -> *mut WowtypeS
         set_last_error("stats path is empty");
         return std::ptr::null_mut();
     }
-    Box::into_raw(Box::new(WowtypeStats {
+    Box::into_raw(Box::new(ArchtypeStats {
         recorder: Recorder::new(path),
     }))
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn wowtype_stats_free(stats: *mut WowtypeStats) {
+pub unsafe extern "C" fn archtype_stats_free(stats: *mut ArchtypeStats) {
     if stats.is_null() {
         return;
     }
@@ -48,8 +48,8 @@ pub unsafe extern "C" fn wowtype_stats_free(stats: *mut WowtypeStats) {
 /// 一次物理按键。`platform`：0 = X11/fcitx5（`code` 是 XKB 键码），1 = macOS（`NSEvent.keyCode`）。
 /// `down` 非 0 表示按下。返回 0 成功，-1 参数错误。
 #[no_mangle]
-pub unsafe extern "C" fn wowtype_stats_key(
-    stats: *mut WowtypeStats,
+pub unsafe extern "C" fn archtype_stats_key(
+    stats: *mut ArchtypeStats,
     platform: c_int,
     code: u32,
     down: c_int,
@@ -65,8 +65,8 @@ pub unsafe extern "C" fn wowtype_stats_key(
 
 /// 一次上屏（文本只用来分类，不落盘）。`cand_index` 是候选位置（1 起），不是选候选时为 0。
 #[no_mangle]
-pub unsafe extern "C" fn wowtype_stats_commit(
-    stats: *mut WowtypeStats,
+pub unsafe extern "C" fn archtype_stats_commit(
+    stats: *mut ArchtypeStats,
     text: *const c_char,
     source: *const c_char,
     scheme: *const c_char,
@@ -89,9 +89,9 @@ pub unsafe extern "C" fn wowtype_stats_commit(
     0
 }
 
-/// 把攒着的计数写进文件。返回 0 成功，-1 失败（原因见 wowtype_last_error）。
+/// 把攒着的计数写进文件。返回 0 成功，-1 失败（原因见 archtype_last_error）。
 #[no_mangle]
-pub unsafe extern "C" fn wowtype_stats_flush(stats: *mut WowtypeStats, now_ms: i64) -> c_int {
+pub unsafe extern "C" fn archtype_stats_flush(stats: *mut ArchtypeStats, now_ms: i64) -> c_int {
     let Some(stats) = (unsafe { stats.as_mut() }) else {
         set_last_error("stats is null");
         return -1;
@@ -107,7 +107,7 @@ pub unsafe extern "C" fn wowtype_stats_flush(stats: *mut WowtypeStats, now_ms: i
 
 /// 当前开关（输入法缓存的值，最多 30 秒重读一次文件）。1 开，0 关。
 #[no_mangle]
-pub unsafe extern "C" fn wowtype_stats_enabled(stats: *mut WowtypeStats) -> c_int {
+pub unsafe extern "C" fn archtype_stats_enabled(stats: *mut ArchtypeStats) -> c_int {
     let Some(stats) = (unsafe { stats.as_ref() }) else {
         return 0;
     };
@@ -116,7 +116,7 @@ pub unsafe extern "C" fn wowtype_stats_enabled(stats: *mut WowtypeStats) -> c_in
 
 /// 设置界面用：清空统计（只留开关，换一个新代号）。`generation` 由调用方给一个随机数。
 #[no_mangle]
-pub unsafe extern "C" fn wowtype_stats_clear_file(path: *const c_char, generation: u64) -> c_int {
+pub unsafe extern "C" fn archtype_stats_clear_file(path: *const c_char, generation: u64) -> c_int {
     let Some(path) = (unsafe { cstr(path) }) else {
         set_last_error("stats path is null or not utf8");
         return -1;
@@ -132,7 +132,7 @@ pub unsafe extern "C" fn wowtype_stats_clear_file(path: *const c_char, generatio
 
 /// 设置界面用：改开关。
 #[no_mangle]
-pub unsafe extern "C" fn wowtype_stats_set_enabled(path: *const c_char, enabled: c_int) -> c_int {
+pub unsafe extern "C" fn archtype_stats_set_enabled(path: *const c_char, enabled: c_int) -> c_int {
     let Some(path) = (unsafe { cstr(path) }) else {
         set_last_error("stats path is null or not utf8");
         return -1;
@@ -148,7 +148,7 @@ pub unsafe extern "C" fn wowtype_stats_set_enabled(path: *const c_char, enabled:
 
 /// 当前 Unix 毫秒，外壳不必自己算。
 #[no_mangle]
-pub extern "C" fn wowtype_stats_now_ms() -> i64 {
+pub extern "C" fn archtype_stats_now_ms() -> i64 {
     stats::now_ms()
 }
 
@@ -159,18 +159,18 @@ mod tests {
 
     #[test]
     fn ffi_round_trip() {
-        let path = std::env::temp_dir().join(format!("wowtype-stats-ffi-{}", std::process::id()));
+        let path = std::env::temp_dir().join(format!("archtype-stats-ffi-{}", std::process::id()));
         let _ = std::fs::remove_file(&path);
         let path = CString::new(path.to_str().unwrap()).unwrap();
-        let stats = unsafe { wowtype_stats_new(path.as_ptr()) };
+        let stats = unsafe { archtype_stats_new(path.as_ptr()) };
         assert!(!stats.is_null());
         let text = CString::new("你好").unwrap();
         let source = CString::new("quanpin").unwrap();
         let scheme = CString::new("").unwrap();
-        let now = wowtype_stats_now_ms();
+        let now = archtype_stats_now_ms();
         assert_eq!(
             unsafe {
-                wowtype_stats_commit(
+                archtype_stats_commit(
                     stats,
                     text.as_ptr(),
                     source.as_ptr(),
@@ -181,10 +181,10 @@ mod tests {
             },
             0
         );
-        assert_eq!(unsafe { wowtype_stats_flush(stats, now) }, 0);
-        assert_eq!(unsafe { wowtype_stats_enabled(stats) }, 1);
+        assert_eq!(unsafe { archtype_stats_flush(stats, now) }, 0);
+        assert_eq!(unsafe { archtype_stats_enabled(stats) }, 1);
         // 清空一次，记录器下次写会丢掉旧计数。
-        assert_eq!(unsafe { wowtype_stats_clear_file(path.as_ptr(), 7) }, 0);
-        unsafe { wowtype_stats_free(stats) };
+        assert_eq!(unsafe { archtype_stats_clear_file(path.as_ptr(), 7) }, 0);
+        unsafe { archtype_stats_free(stats) };
     }
 }

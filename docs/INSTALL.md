@@ -1,6 +1,6 @@
 # Linux 安装与更新
 
-WowType 是 Fcitx 5 的输入法插件。安装时需要让插件、Fcitx 5 和系统动态库使用兼容的版本；
+ArchType 是 Fcitx 5 的输入法插件。安装时需要让插件、Fcitx 5 和系统动态库使用兼容的版本；
 安装包因此按发行版构建。源码构建会使用本机的 Fcitx 5 开发文件。
 
 最低要求：Fcitx 5.0、C++20 编译器、CMake 3.16。构建使用当前稳定版 Rust 和仓库的 `Cargo.lock`。
@@ -23,7 +23,7 @@ WowType 是 Fcitx 5 的输入法插件。安装时需要让插件、Fcitx 5 和�
 | NixOS / Home Manager | flake | x86_64、aarch64；与系统共用 nixpkgs，注册到 Fcitx 插件列表 |
 | Fedora Atomic | 宿主 `rpm-ostree` 分层 | 普通 dnf 安装脚本会给出手动说明 |
 
-[Releases](https://github.com/Goway-Hui/WowType/releases) 中存在对应资产后才能使用二进制安装。
+[Releases](https://github.com/Goway-Hui/ArchType/releases) 中存在对应资产后才能使用二进制安装。
 没有发布包、其他 CPU 架构或其他发行版，先使用下面的源码构建方法。
 Alpine 使用 musl，需要单独完成构建与运行验证；这里不把 glibc 安装包用于 Alpine。
 openSUSE Leap、RHEL / Rocky / AlmaLinux 也需要先核对 Fcitx 5 和 libadwaita 的可用版本。
@@ -33,7 +33,7 @@ openSUSE Leap、RHEL / Rocky / AlmaLinux 也需要先核对 Fcitx 5 和 libadwai
 用普通用户运行；脚本会在安装软件包时调用 sudo：
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/Goway-Hui/WowType/main/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/Goway-Hui/ArchType/main/install.sh | bash
 ```
 
 下载目标来自当前仓库，按系统和 CPU 架构选择 `.deb`、`.pkg.tar.zst` 或 `.rpm`，每个文件都校验 SHA256。
@@ -43,15 +43,15 @@ Arch 不会替你升级整个系统；提示依赖不满足时，先运行 `sudo
 查看安装目标、固定版本或保留当前桌面设置：
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/Goway-Hui/WowType/main/install.sh -o install.sh
+curl -fsSL https://raw.githubusercontent.com/Goway-Hui/ArchType/main/install.sh -o install.sh
 bash install.sh --help
 bash install.sh --print-plan
-WOWTYPE_VERSION=v0.3.8 bash install.sh
-WOWTYPE_NO_IM_CONFIG=1 WOWTYPE_NO_RESTART=1 bash install.sh
+ARCHTYPE_VERSION=v0.3.8 bash install.sh
+ARCHTYPE_NO_IM_CONFIG=1 ARCHTYPE_NO_RESTART=1 bash install.sh
 ```
 
-`--print-plan` 不查询网络、不安装软件、不修改配置。`WOWTYPE_YES=1` 可用于非交互安装。
-`WOWTYPE_REPO=owner/repo` 可选择其他发布仓库；系统和版本的匹配规则仍然生效。
+`--print-plan` 不查询网络、不安装软件、不修改配置。`ARCHTYPE_YES=1` 可用于非交互安装。
+`ARCHTYPE_REPO=owner/repo` 可选择其他发布仓库；系统和版本的匹配规则仍然生效。
 对应发行版的 Release 资产不存在时，请从本仓库源码构建。
 
 ## 从源码构建
@@ -135,8 +135,8 @@ Python 的实际版本包名会随 Tumbleweed 更新；上面的通用名字采�
 ### 2. 获取源码与词库
 
 ```bash
-git clone https://github.com/Goway-Hui/WowType.git
-cd WowType
+git clone https://github.com/Goway-Hui/ArchType.git
+cd ArchType
 scripts/make-data.sh "" dist/data
 scripts/make-wubi.sh "" dist/data
 ```
@@ -156,11 +156,11 @@ scripts/make-wubi.sh "" dist/data
 ```bash
 version=$(sed -n 's/^version = "\(.*\)"/\1/p' core/Cargo.toml)
 scripts/package-arch.sh "$version" dist/pkg
-sudo pacman -U "dist/pkg/wowtype-$version-1-$(uname -m).pkg.tar.zst"
+sudo pacman -U "dist/pkg/archtype-$version-1-$(uname -m).pkg.tar.zst"
 ```
 
 `makepkg` 会在独立目录编译并把插件、设置界面、自检工具和完整词库一起打包。
-之后可用 `pacman -Q wowtype` 查询安装版本、`pacman -Qkk wowtype` 检查已安装文件。
+之后可用 `pacman -Q archtype` 查询安装版本、`pacman -Qkk archtype` 检查已安装文件。
 无需继续执行通用源码安装步骤，直接进入“启用 Fcitx 5”。
 
 ### 4. 通用源码编译与安装
@@ -168,14 +168,14 @@ sudo pacman -U "dist/pkg/wowtype-$version-1-$(uname -m).pkg.tar.zst"
 其他发行版或不需要原生安装包时，在仓库根目录执行：
 
 ```bash
-cargo build --release --locked -p wowtype-core
-cargo test --locked -p wowtype-core
+cargo build --release --locked -p archtype-core
+cargo test --locked -p archtype-core
 ./scripts/abi-smoke.sh
 cmake -S fcitx5-addon -B build -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/usr
 cmake --build build -j"$(nproc)"
 sudo cmake --install build
-sudo install -m755 target/release/wowtype-check target/release/wowtype-show /usr/bin/
-install -Dm644 -t "${XDG_DATA_HOME:-$HOME/.local/share}/wowtype" \
+sudo install -m755 target/release/archtype-check target/release/archtype-show /usr/bin/
+install -Dm644 -t "${XDG_DATA_HOME:-$HOME/.local/share}/archtype" \
   dist/data/lexicon.tsv dist/data/english.txt dist/data/words.lm dist/data/wubi86.tsv
 ```
 
@@ -192,21 +192,21 @@ Debian 打包还需要 `dpkg-dev`，Fedora 打包需要 `rpm-build`；两者都�
 只保留文字输入时，Rust 和 CMake 两侧一起关闭语音：
 
 ```bash
-cargo build --release --locked -p wowtype-core --no-default-features
+cargo build --release --locked -p archtype-core --no-default-features
 cmake -S fcitx5-addon -B build-text -DCMAKE_BUILD_TYPE=Release \
-  -DCMAKE_INSTALL_PREFIX=/usr -DWOWTYPE_VOICE=OFF
+  -DCMAKE_INSTALL_PREFIX=/usr -DARCHTYPE_VOICE=OFF
 cmake --build build-text -j"$(nproc)"
 sudo cmake --install build-text
 ```
 
 这条构建路径不需要 ALSA 开发包；后续仍按通用步骤安装词库和自检工具。
-如果不需要设置界面，再添加 `-DWOWTYPE_INSTALL_SETTINGS=OFF`，使用 `fcitx5-configtool` 添加输入法。
+如果不需要设置界面，再添加 `-DARCHTYPE_INSTALL_SETTINGS=OFF`，使用 `fcitx5-configtool` 添加输入法。
 维护开发环境时可用 `scripts/build-linux.sh --addon` 统一构建与测试。
 真实词库存在时会运行按键测试，测试失败会直接返回非零状态。
 
 ## 启用 Fcitx 5
 
-先让桌面启动 Fcitx 5，再添加 WowType。修改会话配置后注销并重新登录。
+先让桌面启动 Fcitx 5，再添加 ArchType。修改会话配置后注销并重新登录。
 
 | 桌面 / 系统 | 设置 |
 |---|---|
@@ -234,29 +234,29 @@ KDE Wayland 使用其虚拟键盘设置，避免重复启动。
 添加输入法：
 
 ```bash
-wowtype-config --add-to-group --restart
+archtype-config --add-to-group --restart
 ```
 
-或打开 `fcitx5-configtool`，取消“仅显示当前语言”，搜索并添加 WowType。
+或打开 `fcitx5-configtool`，取消“仅显示当前语言”，搜索并添加 ArchType。
 按 `Ctrl+Space` 切换，输入 `nihao`。重启 Fcitx 5 后，Chromium / Electron 程序可能需要退出后重新打开。
 
 ## 检查与排错
 
 ```bash
-wowtype-config --self-test
+archtype-config --self-test
 # 安装包自带的系统词库：
-wowtype-check --lexicon /usr/share/wowtype/lexicon.tsv
-wowtype-show --lexicon /usr/share/wowtype/lexicon.tsv nihao
+archtype-check --lexicon /usr/share/archtype/lexicon.tsv
+archtype-show --lexicon /usr/share/archtype/lexicon.tsv nihao
 # 源码安装到当前用户目录的词库：
-wowtype-check --lexicon "${XDG_DATA_HOME:-$HOME/.local/share}/wowtype/lexicon.tsv"
+archtype-check --lexicon "${XDG_DATA_HOME:-$HOME/.local/share}/archtype/lexicon.tsv"
 fcitx5-diagnose
 ```
 
 | 现象 | 检查方式 |
 |---|---|
 | CMake 找不到 Fcitx5Core 或版本过旧 | `pkg-config --modversion Fcitx5Core`；安装第 1 节的开发包 |
-| 找不到 `libwowtype_core.a` | 先构建 Rust 核心；自定义 target 目录时用 `-DWOWTYPE_CORE_LIB=/绝对路径/libwowtype_core.a` |
-| 输入法列表没有 WowType | 检查 `/usr/share/fcitx5/addon/wowtype.conf`、`/usr/share/fcitx5/inputmethod/wowtype.conf` 和插件库目录 |
+| 找不到 `libarchtype_core.a` | 先构建 Rust 核心；自定义 target 目录时用 `-DARCHTYPE_CORE_LIB=/绝对路径/libarchtype_core.a` |
+| 输入法列表没有 ArchType | 检查 `/usr/share/fcitx5/addon/archtype.conf`、`/usr/share/fcitx5/inputmethod/archtype.conf` 和插件库目录 |
 | 插件报 undefined symbol | 按本机发行版安装匹配包；Arch 完整升级，Manjaro 本机重编译 |
 | 设置界面缺 `gi` / `Gtk` / `Adw` | 按第 1 节补齐当前发行版的 Python GI / GTK / libadwaita 包 |
 | 只有少量候选 | 真实词库未加载，程序退回演示词典；检查 `lexicon.tsv` 路径 |
@@ -272,16 +272,16 @@ fcitx5-diagnose
 构建或检查 flake：
 
 ```bash
-nix build github:Goway-Hui/WowType
-nix flake check github:Goway-Hui/WowType
+nix build github:Goway-Hui/ArchType
+nix flake check github:Goway-Hui/ArchType
 ```
 
 系统 flake 配置：
 
 ```nix
 # flake.nix 的 inputs
-wowtype = {
-  url = "github:Goway-Hui/WowType/release";
+archtype = {
+  url = "github:Goway-Hui/ArchType/release";
   inputs.nixpkgs.follows = "nixpkgs";
 };
 
@@ -290,12 +290,12 @@ wowtype = {
 i18n.inputMethod = {
   enable = true;
   type = "fcitx5";
-  fcitx5.addons = [ inputs.wowtype.packages.${pkgs.stdenv.hostPlatform.system}.default ];
+  fcitx5.addons = [ inputs.archtype.packages.${pkgs.stdenv.hostPlatform.system}.default ];
 };
 ```
 
 运行 `sudo nixos-rebuild switch` 后重新登录。Home Manager 将同一个包加入自己的 `i18n.inputMethod.fcitx5.addons`。
-也可以使用 `nixpkgs.overlays = [ inputs.wowtype.overlays.default ];` 后引用 `pkgs.wowtype`。
+也可以使用 `nixpkgs.overlays = [ inputs.archtype.overlays.default ];` 后引用 `pkgs.archtype`。
 插件作为系统 Fcitx 的 addon 注册；单独把包放进 Nix profile 不会自动完成插件注册。
 词库使用 `nix/package.nix` 中固定 URL 和哈希的上游数据资产。
 
@@ -303,21 +303,21 @@ flake 输入选哪个：
 
 | 写法 | 拿到的是 |
 |---|---|
-| `github:Goway-Hui/WowType/release` | 最新正式版（推荐）；每次发版时 CI 把 `release` 分支移到新版本的标签 |
-| `github:Goway-Hui/WowType/v0.3.10` | 锁定这一版，升级时手动改版本号 |
-| `github:Goway-Hui/WowType` | main 分支最新提交，可能包含还没发布的改动 |
+| `github:Goway-Hui/ArchType/release` | 最新正式版（推荐）；每次发版时 CI 把 `release` 分支移到新版本的标签 |
+| `github:Goway-Hui/ArchType/v0.3.10` | 锁定这一版，升级时手动改版本号 |
+| `github:Goway-Hui/ArchType` | main 分支最新提交，可能包含还没发布的改动 |
 
-更新时先在自己的 flake 中执行 `nix flake update wowtype`，再重建系统或 Home Manager 配置。
+更新时先在自己的 flake 中执行 `nix flake update archtype`，再重建系统或 Home Manager 配置。
 CI 在 nixos-unstable（x86_64、aarch64）和当前稳定版 nixos-26.05（x86_64）上构建并自检，
 发布要等这些检查都通过。设置界面的更新提醒在 NixOS 上只提示新版本，不会去调用其他包管理器。
 
 ### 单按 Shift 在 NixOS 上
 
-fcitx5 默认用左 Shift「临时切换输入法」，它先拿到这一下，WowType 收不到。设置界面的「Shift 只给 WowType 用」
+fcitx5 默认用左 Shift「临时切换输入法」，它先拿到这一下，ArchType 收不到。设置界面的「Shift 只给 ArchType 用」
 是让正在跑的 fcitx5 改掉这个快捷键，再由 fcitx5 存进 `~/.config/fcitx5/config`。
 用 Home Manager 的 `i18n.inputMethod.fcitx5.settings` 时，整个 `~/.config/fcitx5` 是指向 `/nix/store` 的只读目录，
-fcitx5 存不进去，重新登录后左 Shift 又被拿走（设置界面会提示「只在这次有效」）；WowType 自己的设置也存不了，
-要写在 `settings.addons.wowtype.globalSection` 里。这种情况把快捷键写进 Nix 配置：
+fcitx5 存不进去，重新登录后左 Shift 又被拿走（设置界面会提示「只在这次有效」）；ArchType 自己的设置也存不了，
+要写在 `settings.addons.archtype.globalSection` 里。这种情况把快捷键写进 Nix 配置：
 
 ```nix
 # Home Manager
@@ -347,7 +347,7 @@ Silverblue / Kinoite 等桌面在宿主上使用匹配当前 Fedora 版本的 RP
 下载并按 Release 的 `SHA256SUMS` 核对后，使用宿主终端：
 
 ```bash
-rpm-ostree install ./wowtype-*.rpm fcitx5 fcitx5-configtool \
+rpm-ostree install ./archtype-*.rpm fcitx5 fcitx5-configtool \
   fcitx5-gtk3 fcitx5-gtk4 fcitx5-qt5 fcitx5-qt6 \
   python3-gobject gtk4 libadwaita gobject-introspection
 systemctl reboot
@@ -363,22 +363,22 @@ deb、Arch 和 Fedora 原生安装包可使用设置界面的更新页；它只�
 
 | 安装方式 | 卸载命令 |
 |---|---|
-| Debian / Ubuntu | `sudo apt remove wowtype` |
-| Arch / Manjaro | `sudo pacman -R wowtype` |
-| Fedora | `sudo dnf remove wowtype` |
-| Fedora Atomic | `rpm-ostree uninstall wowtype`，然后重启 |
-| NixOS / Home Manager | 从 `fcitx5.addons` 移除 WowType，再重建配置 |
+| Debian / Ubuntu | `sudo apt remove archtype` |
+| Arch / Manjaro | `sudo pacman -R archtype` |
+| Fedora | `sudo dnf remove archtype` |
+| Fedora Atomic | `rpm-ostree uninstall archtype`，然后重启 |
+| NixOS / Home Manager | 从 `fcitx5.addons` 移除 ArchType，再重建配置 |
 | 通用源码 | 在原仓库中检查 `build/install_manifest.txt` 后运行下方命令 |
 
 源码安装的卸载：
 
 ```bash
 sudo xargs -d '\n' -r rm -v -- < build/install_manifest.txt
-sudo rm -f /usr/bin/wowtype-check /usr/bin/wowtype-show
+sudo rm -f /usr/bin/archtype-check /usr/bin/archtype-show
 ```
 
 如果使用 `build-text` 等其他构建目录，应使用对应的 `install_manifest.txt`。
-卸载保留用户词库、学习记录和配置。随后在 Fcitx 5 配置中移除 WowType，再重启输入法。
+卸载保留用户词库、学习记录和配置。随后在 Fcitx 5 配置中移除 ArchType，再重启输入法。
 
 ## 官方参考
 

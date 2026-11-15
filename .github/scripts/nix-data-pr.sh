@@ -11,7 +11,7 @@ set -euo pipefail
 
 tarball_path=$1
 tarball=$(basename "$tarball_path")
-built=${tarball#wowtype-data-rime-ice-}
+built=${tarball#archtype-data-rime-ice-}
 built=${built%.tar.gz}
 nix=nix/package.nix
 repo=$GITHUB_REPOSITORY
@@ -45,7 +45,7 @@ path, built, tag, sri = sys.argv[1:]
 s = open(path, encoding="utf-8").read()
 subs = [
     (r'(\n *dataVersion = )"[^"]*";', rf'\1"{built}";'),
-    (r'(releases/download/)[^/"]+(/wowtype-data-rime-ice-\$\{dataVersion\}\.tar\.gz")', rf'\g<1>{tag}\2'),
+    (r'(releases/download/)[^/"]+(/archtype-data-rime-ice-\$\{dataVersion\}\.tar\.gz")', rf'\g<1>{tag}\2'),
     # data = fetchurl { 里面那行 hash（网址里有 ${dataVersion}，不能按花括号找结尾，按缩进逐行找）
     (r'(\n  data = fetchurl \{(?:\n    [^\n]*)*?\n    hash = )"[^"]*";', rf'\1"{sri}";'),
 ]

@@ -4,8 +4,8 @@
 
 use std::sync::Arc;
 
-use wowtype_core::lm::BigramLm;
-use wowtype_core::{Engine, Lexicon, MemoryLexicon};
+use archtype_core::lm::BigramLm;
+use archtype_core::{Engine, Lexicon, MemoryLexicon};
 
 fn engine(lexicon_tsv: &str) -> Engine {
     let lexicon: Arc<dyn Lexicon> = Arc::new(MemoryLexicon::from_tsv_str(lexicon_tsv).unwrap());
@@ -27,7 +27,7 @@ fn context_does_not_leak() {
 fn learned_word_survives_save_load() {
     let lexicon: Arc<dyn Lexicon> =
         Arc::new(MemoryLexicon::from_tsv_str("ni hao\t你好\t5000\n").unwrap());
-    let path = std::env::temp_dir().join(format!("wowtype_session_{}.tsv", std::process::id()));
+    let path = std::env::temp_dir().join(format!("archtype_session_{}.tsv", std::process::id()));
     let _ = std::fs::remove_file(&path);
 
     {
@@ -82,7 +82,7 @@ fn history_does_not_cross_words() {
 fn loading_user_dict_twice_does_not_duplicate() {
     let lexicon: Arc<dyn Lexicon> =
         Arc::new(MemoryLexicon::from_tsv_str("ni hao\t你好\t5000\n").unwrap());
-    let path = std::env::temp_dir().join(format!("wowtype_dup_{}.tsv", std::process::id()));
+    let path = std::env::temp_dir().join(format!("archtype_dup_{}.tsv", std::process::id()));
     let _ = std::fs::remove_file(&path);
 
     let e = Engine::new(lexicon, Arc::new(BigramLm::default()));

@@ -1,11 +1,11 @@
-// 设置契约：把插件的 WowtypeConfig（键、类型、默认值、范围、可选值）导出成 JSON，
+// 设置契约：把插件的 ArchtypeConfig（键、类型、默认值、范围、可选值）导出成 JSON，
 // scripts/test-config-contract.py 拿去对照 spec/config.json（scripts/addon-test.sh 里跑）。
 //
-//   wowtype-config-dump                  各项的说明：{"options": [{"key", "type", "default", "min", "max", "values", "names"}]}
-//   wowtype-config-dump --load K=V ...   把这几行当成 wowtype.conf 读进来（和插件读文件一样走 loadWowtypeConfig），
+//   archtype-config-dump                  各项的说明：{"options": [{"key", "type", "default", "min", "max", "values", "names"}]}
+//   archtype-config-dump --load K=V ...   把这几行当成 archtype.conf 读进来（和插件读文件一样走 loadArchtypeConfig），
 //                                        导出读到的值：{"values": {"K": "V", ...}}
-//   wowtype-config-dump --load-file 文件    整个文件按 fcitx5 读 wowtype.conf 的方式读（[分组]、引号转义都照它的规矩），
-//                                        再走 loadWowtypeConfig，导出读到的值（规格里 readRules.cases 的例子用它）
+//   archtype-config-dump --load-file 文件    整个文件按 fcitx5 读 archtype.conf 的方式读（[分组]、引号转义都照它的规矩），
+//                                        再走 loadArchtypeConfig，导出读到的值（规格里 readRules.cases 的例子用它）
 
 #include <cstdio>
 #include <string>
@@ -13,7 +13,7 @@
 #include <fcitx-config/iniparser.h>
 #include <fcitx-config/rawconfig.h>
 
-#include "wowtype_engine.h"
+#include "archtype_engine.h"
 
 namespace {
 
@@ -58,15 +58,15 @@ std::string jsonList(const fcitx::RawConfig &item, const std::string &path) {
 }
 
 int dumpOptions() {
-    WowtypeConfig config;
+    ArchtypeConfig config;
     fcitx::RawConfig description;
     config.dumpDescription(description);
     // 默认值按写进文件的样子取（save 和插件存盘一样）；ExternalOption 不存盘，是 null
     fcitx::RawConfig saved;
     config.save(saved);
-    auto root = description.get("WowtypeConfig");
+    auto root = description.get("ArchtypeConfig");
     if (!root) {
-        std::fprintf(stderr, "配置说明里没有 WowtypeConfig\n");
+        std::fprintf(stderr, "配置说明里没有 ArchtypeConfig\n");
         return 1;
     }
     std::string out = "{\"options\":[";
@@ -120,8 +120,8 @@ int dumpLoadedFile(const char *path) {
 }
 
 int dumpValues(const fcitx::RawConfig &raw) {
-    WowtypeConfig config;
-    loadWowtypeConfig(config, raw);
+    ArchtypeConfig config;
+    loadArchtypeConfig(config, raw);
     fcitx::RawConfig saved;
     config.save(saved);
     std::string out = "{\"values\":{";

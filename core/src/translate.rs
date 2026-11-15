@@ -45,7 +45,7 @@ pub const LANGUAGES: &[(&str, &str, &str)] = &[
 /// 缓存多少条原文的结果（来回删改同一句话时不必重新请求）。
 const CACHE_LIMIT: usize = 64;
 
-const HTTP_MARK: &str = "<<<WOWTYPE-HTTP ";
+const HTTP_MARK: &str = "<<<ARCHTYPE-HTTP ";
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct TranslateConfig {
@@ -527,9 +527,9 @@ impl Translator {
         if !inner.config.is_ready() {
             inner.job.state = JobState::Error;
             inner.job.error = if inner.config.local.is_some() {
-                "还没下载本地翻译模型（WowType 设置 → 翻译）".to_string()
+                "还没下载本地翻译模型（ArchType 设置 → 翻译）".to_string()
             } else {
-                "还没配置翻译服务（WowType 设置 → 翻译）".to_string()
+                "还没配置翻译服务（ArchType 设置 → 翻译）".to_string()
             };
             return;
         }
@@ -539,7 +539,7 @@ impl Translator {
         let source = source.to_string();
         drop(inner);
         thread::Builder::new()
-            .name("wowtype-translate".into())
+            .name("archtype-translate".into())
             .spawn(move || run_local_or_remote(shared, local, id, config, source, cache_key))
             .ok();
     }
@@ -678,7 +678,7 @@ fn run_job(
             "--max-time",
             "45",
             "-w",
-            "\n<<<WOWTYPE-HTTP %{http_code}>>>\n",
+            "\n<<<ARCHTYPE-HTTP %{http_code}>>>\n",
             "-K",
             "-",
         ])
@@ -846,7 +846,7 @@ mod tests {
         {
             return;
         }
-        let dir = std::env::temp_dir().join(format!("wowtype-local-mt-{}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!("archtype-local-mt-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
         let server = crate::llama::test_support::fake_server(&dir);
         let model = dir.join("model.gguf");
@@ -1162,7 +1162,7 @@ mod tests {
         ];
         let base = mock_server(chunks, "200 OK", Arc::clone(&seen));
         let dir =
-            std::env::temp_dir().join(format!("wowtype-translate-test-{}", std::process::id()));
+            std::env::temp_dir().join(format!("archtype-translate-test-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
         let key_file = dir.join("key");
         std::fs::write(&key_file, "sk-test-123\n").unwrap();

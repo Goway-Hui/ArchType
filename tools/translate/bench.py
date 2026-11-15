@@ -2,7 +2,7 @@
 """本地翻译模型的基准：载入时间、首个字、整句耗时、内存，以及空闲释放后的内存。
 
 用法：
-    tools/translate/bench.py --server llama-server --model ~/.local/share/wowtype/models/HY-MT1.5-1.8B-Q4_K_M.gguf
+    tools/translate/bench.py --server llama-server --model ~/.local/share/archtype/models/HY-MT1.5-1.8B-Q4_K_M.gguf
     [--sentences tools/translate/sentences.tsv] [--threads N]
 
 和输入法用的是同一套启动参数与提示词（core/src/llama.rs、core/src/translate.rs）。

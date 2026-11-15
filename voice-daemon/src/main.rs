@@ -1,7 +1,7 @@
-//! wowtype-voiced：语音输入常驻进程。
+//! archtype-voiced：语音输入常驻进程。
 //!
 //! ```
-//! wowtype-voiced --hotkey alt_r --mode tap --silence-ms 1500
+//! archtype-voiced --hotkey alt_r --mode tap --silence-ms 1500
 //! ```
 //!
 //! 链路：全局热键 -> 采集 -> 重采样/分帧 -> VAD -> 识别 -> 上屏。
@@ -20,7 +20,7 @@ use other as imp;
 
 use std::process::ExitCode;
 use std::time::Duration;
-use wowtype_voice::TriggerConfig;
+use archtype_voice::TriggerConfig;
 
 /// 启动参数
 #[derive(Debug, Clone)]
@@ -33,7 +33,7 @@ pub struct Options {
     pub asr_cmd: Option<String>,
     /// 识别渠道：mock / cmd / wtlocal（微信离线）。为空时按 asr_cmd 自动判断。
     pub asr: Option<String>,
-    /// 微信离线模型的目录，默认 ~/.local/share/wowtype/wtlocal。
+    /// 微信离线模型的目录，默认 ~/.local/share/archtype/wtlocal。
     pub asr_dir: Option<std::path::PathBuf>,
 }
 
@@ -67,11 +67,11 @@ fn parse_args() -> Options {
             "--asr-dir" => opt.asr_dir = it.next().map(std::path::PathBuf::from),
             "--help" | "-h" => {
                 println!(
-                    "wowtype-voiced --hotkey alt_r|ctrl_r --mode tap|hold --silence-ms 1500 [--device 名称] [--asr-cmd '命令 参数']"
+                    "archtype-voiced --hotkey alt_r|ctrl_r --mode tap|hold --silence-ms 1500 [--device 名称] [--asr-cmd '命令 参数']"
                 );
                 println!("  --asr mock|cmd|wtlocal  识别渠道（wtlocal = 微信输入法离线，首次会下载约 100MB）");
                 println!(
-                    "  --asr-dir <目录>        离线模型目录，默认 ~/.local/share/wowtype/wtlocal"
+                    "  --asr-dir <目录>        离线模型目录，默认 ~/.local/share/archtype/wtlocal"
                 );
                 println!("  例：--asr-cmd 'whisper-cli -m ggml-large-v3-turbo.bin -l zh -nt -f'");
                 std::process::exit(0);
@@ -92,7 +92,7 @@ pub fn trigger_config(opt: &Options) -> TriggerConfig {
 fn main() -> ExitCode {
     let opt = parse_args();
     println!(
-        "wowtype-voiced 启动：hotkey={} mode={} silence={}ms",
+        "archtype-voiced 启动：hotkey={} mode={} silence={}ms",
         opt.hotkey, opt.mode, opt.silence_ms
     );
     match imp::run(opt) {

@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """设置界面的无头冒烟测试：打开每一页、动一下各种控件、点开每个对话框再关掉，有报错就失败。
 
-    dbus-run-session -- xvfb-run -a python3 scripts/test-settings-gui.py [wowtype-config 的路径]
+    dbus-run-session -- xvfb-run -a python3 scripts/test-settings-gui.py [archtype-config 的路径]
 
-主要防的是老系统：Ubuntu 22.04 是 GTK 4.6、libadwaita 1.1，好些控件要用 wowtype-config 里的替身；
+主要防的是老系统：Ubuntu 22.04 是 GTK 4.6、libadwaita 1.1，好些控件要用 archtype-config 里的替身；
 新系统用原生控件。两边都要能把每一页、每个对话框走一遍。对话框里的回答只在替身（真窗口）上点得到，
 原生的 Adw 对话框画在设置窗口里面，这里只检查打得开。
 """
@@ -20,18 +20,18 @@ errors = []
 sys.excepthook = lambda t, v, tb: errors.append("".join(traceback.format_exception(t, v, tb)))
 
 # 会改设置、加自定义词：放到临时目录里，不动本机的
-home = tempfile.mkdtemp(prefix="wowtype-gui-test-")
+home = tempfile.mkdtemp(prefix="archtype-gui-test-")
 os.environ.update(HOME=home, XDG_CONFIG_HOME=f"{home}/.config", XDG_DATA_HOME=f"{home}/.local/share",
                   XDG_CACHE_HOME=f"{home}/.cache", XDG_STATE_HOME=f"{home}/.local/state")
 
 # 五笔码表放进数据目录：「五笔输入」能选（没有码表时灰掉，下面也试）
-wubi_table = f"{home}/.local/share/wowtype/wubi86.tsv"
+wubi_table = f"{home}/.local/share/archtype/wubi86.tsv"
 os.makedirs(os.path.dirname(wubi_table))
 with open(wubi_table, "w", encoding="utf-8") as f:
     f.write("g\t一\t1\n")
 
-path = sys.argv[1] if len(sys.argv) > 1 else os.path.join(os.path.dirname(__file__), "..", "settings", "wowtype-config")
-ns = runpy.run_path(path, run_name="wowtype_settings_test")
+path = sys.argv[1] if len(sys.argv) > 1 else os.path.join(os.path.dirname(__file__), "..", "settings", "archtype-config")
+ns = runpy.run_path(path, run_name="archtype_settings_test")
 from gi.repository import Adw, Gio, GLib, Gtk  # noqa: E402
 
 print(f"GTK 4.{Gtk.get_minor_version()}，libadwaita 1.{Adw.get_minor_version()}")
@@ -161,7 +161,7 @@ def run(app):
     step("开关", switches)
 
     def toggle_key():
-        # 设成 fcitx5 也在用的键：提示 WowType 收不到。fcitx5 的快捷键直接给定，不看这台机器
+        # 设成 fcitx5 也在用的键：提示 ArchType 收不到。fcitx5 的快捷键直接给定，不看这台机器
         # （/etc/xdg 里可能改过）；预设里没有 fcitx5 默认占着的键，这里假装用户在 fcitx5 里设了它
         win.fcitx_hotkey = {"TriggerKeys": {"0": "Control+Shift+space"}}
         toggle = win.key_rows["ToggleKey"]
@@ -253,7 +253,7 @@ def run(app):
             check(pump_until(lambda: os.path.exists(target)), "导出自定义词没写出文件")
         finally:
             Gtk.FileChooserNative = real
-        check(asked.get("name") == "wowtype-custom-words.tsv", "保存窗口里没填默认文件名")
+        check(asked.get("name") == "archtype-custom-words.tsv", "保存窗口里没填默认文件名")
         with open(target, encoding="utf-8") as f:
             check("测试" in f.read(), "导出的文件里没有刚加的自定义词")
     step("导出自定义词（保存）", export_words)
@@ -266,7 +266,7 @@ def run(app):
 
 app = ns["SettingsApp"]()
 app.connect("activate", lambda a: GLib.timeout_add(800, run, a))
-app.run(["wowtype-config"])
+app.run(["archtype-config"])
 if not ran:
     errors.append("设置窗口没打开就退出了")
 print(f"\n{len(errors)} 个报错")

@@ -1,7 +1,7 @@
 /*
- * WowType 主题：给 Input Method Panel（kimpanel@kde.org）画的候选框换颜色。
+ * ArchType 主题：给 Input Method Panel（kimpanel@kde.org）画的候选框换颜色。
  * 只用 kimpanel 自己的样式类，不影响 GNOME Shell 的其它菜单。
- * 主色取自 WowType 图标：#2F6FED。
+ * 主色取自 ArchType 图标：#2F6FED。
  * Yaru 给 .popup-menu-item:hover 写了 !important，这里的背景色也得带上才盖得住。
  */
 
@@ -33,7 +33,7 @@
 }
 
 /* 语音输入浮条（voice.js），配色和尺寸照宣传片 */
-.wowtype-voice-pill {
+.archtype-voice-pill {
   background-color: #ffffff;
   border: 1.5px solid #dce3df;
   border-radius: 14px;
@@ -41,29 +41,29 @@
   padding: 3px 16px 3px 4px;
 }
 
-.wowtype-voice-mic {
+.archtype-voice-mic {
   width: 46px;
   height: 46px;
 }
 
-.wowtype-voice-label {
+.archtype-voice-label {
   color: #1d2321;
   font-size: 15px;
   font-weight: 500;
   margin-left: 4px;
 }
 
-.wowtype-voice-label.wowtype-voice-error {
+.archtype-voice-label.archtype-voice-error {
   color: #e5484d;
 }
 
-.wowtype-voice-tag {
+.archtype-voice-tag {
   color: #7a8580;
   font-size: 12.5px;
   margin-left: 8px;
 }
 
-.wowtype-voice-wave {
+.archtype-voice-wave {
   width: 130px;
   height: 34px;
   margin-left: 18px;

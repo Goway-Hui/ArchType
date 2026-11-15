@@ -7,7 +7,7 @@ use crate::Options;
 use anyhow::{anyhow, Context, Result};
 use std::sync::mpsc::{channel, Receiver, Sender};
 use std::time::{Duration, Instant};
-use wowtype_voice::{
+use archtype_voice::{
     asr::{MockChannel, MultiChannel, ProcessChannel},
     ClipboardSink, CommandSink, TextSink, VoiceSession,
 };
@@ -65,11 +65,11 @@ pub fn run(opt: Options) -> Result<()> {
     }
 }
 
-fn stops(actions: &[wowtype_voice::Action]) -> bool {
-    actions.iter().any(|a| *a == wowtype_voice::Action::Stop)
+fn stops(actions: &[archtype_voice::Action]) -> bool {
+    actions.iter().any(|a| *a == archtype_voice::Action::Stop)
 }
 
-fn log_actions(actions: &[wowtype_voice::Action]) {
+fn log_actions(actions: &[archtype_voice::Action]) {
     for a in actions {
         println!("[热键] {:?}", a);
     }
@@ -111,13 +111,13 @@ pub fn build_channel(opt: &Options) -> MultiChannel {
             let dir = opt
                 .asr_dir
                 .clone()
-                .unwrap_or_else(wowtype_voice::wtlocal::download::default_dir);
+                .unwrap_or_else(archtype_voice::wtlocal::download::default_dir);
             println!("识别渠道：微信离线（{}）", dir.display());
-            if let Err(e) = wowtype_voice::wtlocal::download::ensure(&dir) {
+            if let Err(e) = archtype_voice::wtlocal::download::ensure(&dir) {
                 eprintln!("离线模型不可用：{e:#}");
                 std::process::exit(1);
             }
-            match wowtype_voice::wtlocal::WtLocalChannel::new(dir) {
+            match archtype_voice::wtlocal::WtLocalChannel::new(dir) {
                 Ok(ch) => MultiChannel::new(vec![Box::new(ch)]),
                 Err(e) => {
                     eprintln!("加载离线模型失败：{e:#}");
@@ -147,9 +147,9 @@ pub fn build_channel(opt: &Options) -> MultiChannel {
 /// 上屏后端选择。
 ///
 /// 默认走剪贴板：`ydotool type` 靠键码模拟按键，发不出汉字；
-/// 环境变量 `WOWTYPE_SINK` 可以强制指定 wtype / ydotool / clipboard / x11 / wl。
+/// 环境变量 `ARCHTYPE_SINK` 可以强制指定 wtype / ydotool / clipboard / x11 / wl。
 fn build_sink() -> Box<dyn TextSink> {
-    let choice = std::env::var("WOWTYPE_SINK").unwrap_or_default();
+    let choice = std::env::var("ARCHTYPE_SINK").unwrap_or_default();
     let wayland = std::env::var_os("WAYLAND_DISPLAY").is_some();
     match choice.as_str() {
         "wtype" => Box::new(CommandSink::wtype()),
@@ -170,7 +170,7 @@ fn build_sink() -> Box<dyn TextSink> {
 }
 
 fn start_capture(device: Option<String>, tx: Sender<Vec<i16>>) -> Result<()> {
-    let cap = wowtype_voice::capture::start(device.as_deref(), move |pcm| {
+    let cap = archtype_voice::capture::start(device.as_deref(), move |pcm| {
         let _ = tx.send(pcm);
     })
     .context("启动麦克风失败")?;

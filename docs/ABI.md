@@ -1,38 +1,38 @@
-# C 接口（`core/include/wowtype_core.h`）
+# C 接口（`core/include/archtype_core.h`）
 
 fcitx5 插件通过这组 C 函数用 Rust 核心。这里写的是承诺：外壳按这些规则用，核心升级时不会悄悄改掉。
 
 ## 版本
 
-- 头文件里的 `WOWTYPE_ABI_VERSION_MAJOR` / `WOWTYPE_ABI_VERSION_MINOR` 是接口版本，和 WowType 的版本号无关。
-- 库里的 `wowtype_abi_version()` 返回 `主版本 * 1000 + 次版本`。外壳启动时比一下主版本，不一样就别用。
+- 头文件里的 `ARCHTYPE_ABI_VERSION_MAJOR` / `ARCHTYPE_ABI_VERSION_MINOR` 是接口版本，和 ArchType 的版本号无关。
+- 库里的 `archtype_abi_version()` 返回 `主版本 * 1000 + 次版本`。外壳启动时比一下主版本，不一样就别用。
 - 同一个主版本里只会：加函数、在结构体末尾加字段（带 `size` 字段的结构体）、给原来返回 NULL 的情况加结果。次版本加一。
 - 删函数、改参数或返回值的含义、改结构体已有字段：主版本加一，CHANGELOG 里写清楚。
 - `scripts/abi-smoke.sh` 用 C 编译器直接链库跑一遍，CI 跑。
 
 ### 版本记录
 
-| 版本 | WowType | 变化 |
+| 版本 | ArchType | 变化 |
 |---|---|---|
 | 1.0 | 0.3.11 | 第一版带版本号的接口 |
-| 1.1 | 0.3.11 | 加 `wowtype_translate_configure_local`、`wowtype_translate_local_running`（本地翻译模型） |
-| 1.2 | 0.3.11 | 加 `wowtype_autospace`（中英文之间自动加空格）、`wowtype_symbol_list`、`wowtype_clipboard_*`（剪贴板历史）、`wowtype_engine_custom_phrases`（按文件顺序的常用语） |
-| 1.3 | 0.3.11 | 加输入会话 `wowtype_session_*`（暂定，见下面「输入会话」）：编辑区、已选词栈、字母 / 退格 / Esc |
-| 1.4 | 0.3.11 | 候选列表和编辑区分音节挪进会话：加 `_set_engine`、`_configure`、`_frame`，`WowtypeSessionConfig` 加 `page_size`、`calculator`、`date_time`、`emoji_suggest`，`frame->preedit` 分好音节；过渡函数加 `_set_context`、`_candidate_total`、`_candidate_info` |
+| 1.1 | 0.3.11 | 加 `archtype_translate_configure_local`、`archtype_translate_local_running`（本地翻译模型） |
+| 1.2 | 0.3.11 | 加 `archtype_autospace`（中英文之间自动加空格）、`archtype_symbol_list`、`archtype_clipboard_*`（剪贴板历史）、`archtype_engine_custom_phrases`（按文件顺序的常用语） |
+| 1.3 | 0.3.11 | 加输入会话 `archtype_session_*`（暂定，见下面「输入会话」）：编辑区、已选词栈、字母 / 退格 / Esc |
+| 1.4 | 0.3.11 | 候选列表和编辑区分音节挪进会话：加 `_set_engine`、`_configure`、`_frame`，`ArchtypeSessionConfig` 加 `page_size`、`calculator`、`date_time`、`emoji_suggest`，`frame->preedit` 分好音节；过渡函数加 `_set_context`、`_candidate_total`、`_candidate_info` |
 | 1.5 | 0.3.11 | 选词、整句上屏和学习挪进会话：加 `_choose`（按候选序号选，句首词进已选栈，选完上屏并记选词）、`_commit_input`（已选的词 + 原始输入上屏）；删掉过渡函数 `_selection_count`、`_selection_pinyin`、`_push_selection` |
-| 1.6 | 0.3.11 | 空格、回车、数字、分号引号选词、翻页和展开面板挪进 `_key`：`WowtypeKey` 加 `action`（`WOWTYPE_KEY_ACTION_*`，外壳的全局翻页 / 移光标键），`WowtypeSessionConfig` 加 `horizontal`、`page_keys`（`WOWTYPE_PAGE_KEYS_*`）、`select_keys`（`WOWTYPE_SELECT_KEYS_*`），frame 的 `panel`、`cand_count`、`cand_cursor`、`has_prev`、`has_next` 开始填；加 `_select`（按显示的序号选）、`_candidate`；过渡函数加 `_view`、`_last_choice`，删掉 `_commit_input`（用 `_key` 发回车或 `_reset(s, 1)`） |
-| 1.7 | 0.3.11 | 打字途中 `Ctrl+Delete`、`Ctrl+退格`、`Shift+Delete` 忘掉光标处学错的词（会话里处理，带 Ctrl 的这几个键外壳也要交给 `_key`），`WowtypeFrame` 末尾加 `forgot`：1 时外壳马上存用户词库和输入习惯；`wowtype_engine_save_user_dict` 用户词库空的时候也写（只有注释行）、返回 0，以前返回 -1 |
-| 1.8 | 0.3.11 | 以词定字：`WowtypeSessionConfig` 末尾加 `pick_char`（默认 1），打拼音途中 `[` `]` 上屏光标处候选的第一个、最后一个字（`page_keys` 带 `[ ]` 时让给翻页） |
-| 1.9 | 0.3.11 | 加 `wowtype_engine_set_rare_ext_chars`：是否出 CJK 扩展 B 区及以后的单字（通用规范汉字表里的除外），默认不出（以前总是出） |
-| 1.10 | 下一版 | 输入会话接管标点、自动空格、上文、中 / 英 / 译和单按 Shift、互译、工具栏和表情面板：`WowtypeKey` 加 `hints`、`code`、`repeat`、`time_ms`（`KEY_HINT_*`、`KEY_ACTION_OBSERVE`、`KEY_ACTION_TOGGLE_MODE`、`KEY_ACTION_TOGGLE_TRANSLATE`；`KEY_HINT_SURROUNDING`：读得到周围文字时拿 `prev_char` 核对会话记的上文），`WowtypeSessionConfig` 加 `punct_style`、`auto_space`、`shift_toggle`、`shift_tap_ms`、`translate_mode`、`toolbar`、`clipboard_history`，`WowtypeFrame` 加 `learned`、`mode`、`mode_changed`、`translating`、`translate_*`（`aux`、`wake_after_ms` 开始用，`panel` 加 2 表情面板、3 工具栏）；加 `wowtype_session_set_mode`、`_mode`、`_set_translator`、`_set_translate_backend`、`_tick`、`_commit_text`、`_translate_clear`、`_translate_source`、`_toggle_emoji_panel`、`_open_tool`、`_open_panel`、`wowtype_recent_emoji_path`、`_list`、`wowtype_custom_code`、`wowtype_guess_pinyin`（自定义词的编码整理、猜拼音，macOS 设置不再自己抄音节表），`wowtype_engine_set_domain_lm`（混上用户自己训的领域词级模型），`WowtypeSessionConfig` 加 `shuangpin_keys`（双拼编辑区显示打的键）；五笔：加 `wowtype_engine_load_wubi`，`WowtypeSessionConfig` 加 `wubi`、`wubi_auto_commit`、`wubi_hint`，`translate_key`（另设了进出「译」的键，单按 Shift 只切中 / 英），`WowtypeCandidateInfo` 加 `comment`、加 `wowtype_session_candidate_comment`（候选后面的小字）；删掉会话的过渡函数 `_append`、`_set_context`、`_last_choice` || 1.11 | 0.4.0 | 加 `wowtype_stats_*`（打字统计：按天聚合字符类别、活跃时长、按键次数、候选位置，不保存输入内容）；`WowtypeCandidateInfo` 末尾加 `index`（候选在列表里的位置，1 起）；`WowtypeFrame` 末尾加 `choice_index`（这次上屏的候选位置，不是选候选为 0） |
+| 1.6 | 0.3.11 | 空格、回车、数字、分号引号选词、翻页和展开面板挪进 `_key`：`ArchtypeKey` 加 `action`（`ARCHTYPE_KEY_ACTION_*`，外壳的全局翻页 / 移光标键），`ArchtypeSessionConfig` 加 `horizontal`、`page_keys`（`ARCHTYPE_PAGE_KEYS_*`）、`select_keys`（`ARCHTYPE_SELECT_KEYS_*`），frame 的 `panel`、`cand_count`、`cand_cursor`、`has_prev`、`has_next` 开始填；加 `_select`（按显示的序号选）、`_candidate`；过渡函数加 `_view`、`_last_choice`，删掉 `_commit_input`（用 `_key` 发回车或 `_reset(s, 1)`） |
+| 1.7 | 0.3.11 | 打字途中 `Ctrl+Delete`、`Ctrl+退格`、`Shift+Delete` 忘掉光标处学错的词（会话里处理，带 Ctrl 的这几个键外壳也要交给 `_key`），`ArchtypeFrame` 末尾加 `forgot`：1 时外壳马上存用户词库和输入习惯；`archtype_engine_save_user_dict` 用户词库空的时候也写（只有注释行）、返回 0，以前返回 -1 |
+| 1.8 | 0.3.11 | 以词定字：`ArchtypeSessionConfig` 末尾加 `pick_char`（默认 1），打拼音途中 `[` `]` 上屏光标处候选的第一个、最后一个字（`page_keys` 带 `[ ]` 时让给翻页） |
+| 1.9 | 0.3.11 | 加 `archtype_engine_set_rare_ext_chars`：是否出 CJK 扩展 B 区及以后的单字（通用规范汉字表里的除外），默认不出（以前总是出） |
+| 1.10 | 下一版 | 输入会话接管标点、自动空格、上文、中 / 英 / 译和单按 Shift、互译、工具栏和表情面板：`ArchtypeKey` 加 `hints`、`code`、`repeat`、`time_ms`（`KEY_HINT_*`、`KEY_ACTION_OBSERVE`、`KEY_ACTION_TOGGLE_MODE`、`KEY_ACTION_TOGGLE_TRANSLATE`；`KEY_HINT_SURROUNDING`：读得到周围文字时拿 `prev_char` 核对会话记的上文），`ArchtypeSessionConfig` 加 `punct_style`、`auto_space`、`shift_toggle`、`shift_tap_ms`、`translate_mode`、`toolbar`、`clipboard_history`，`ArchtypeFrame` 加 `learned`、`mode`、`mode_changed`、`translating`、`translate_*`（`aux`、`wake_after_ms` 开始用，`panel` 加 2 表情面板、3 工具栏）；加 `archtype_session_set_mode`、`_mode`、`_set_translator`、`_set_translate_backend`、`_tick`、`_commit_text`、`_translate_clear`、`_translate_source`、`_toggle_emoji_panel`、`_open_tool`、`_open_panel`、`archtype_recent_emoji_path`、`_list`、`archtype_custom_code`、`archtype_guess_pinyin`（自定义词的编码整理、猜拼音，macOS 设置不再自己抄音节表），`archtype_engine_set_domain_lm`（混上用户自己训的领域词级模型），`ArchtypeSessionConfig` 加 `shuangpin_keys`（双拼编辑区显示打的键）；五笔：加 `archtype_engine_load_wubi`，`ArchtypeSessionConfig` 加 `wubi`、`wubi_auto_commit`、`wubi_hint`，`translate_key`（另设了进出「译」的键，单按 Shift 只切中 / 英），`ArchtypeCandidateInfo` 加 `comment`、加 `archtype_session_candidate_comment`（候选后面的小字）；删掉会话的过渡函数 `_append`、`_set_context`、`_last_choice` || 1.11 | 0.4.0 | 加 `archtype_stats_*`（打字统计：按天聚合字符类别、活跃时长、按键次数、候选位置，不保存输入内容）；`ArchtypeCandidateInfo` 末尾加 `index`（候选在列表里的位置，1 起）；`ArchtypeFrame` 末尾加 `choice_index`（这次上屏的候选位置，不是选候选为 0） |
 
 
 ## 所有权和生命周期
 
-- `wowtype_engine_new` 返回的句柄用 `wowtype_engine_free` 释放；`wowtype_voice_new`、`wowtype_translate_new` 同理各配各的 `_free`。
-- 返回 `WowtypeCandidates *` 的函数（`wowtype_engine_input`、`wowtype_symbol_search`、`wowtype_emoji_recommend` 等），结果用 `wowtype_candidates_free` 释放；从里面取出的字符串在释放前有效。
-- 返回 `const char *` 而且不属于某个句柄的（`wowtype_fullwidth_punct`、`wowtype_punct`、`wowtype_segment_input`、`wowtype_engine_shuangpin_display`、`wowtype_last_error`），指针在**同一线程**下一次调用同一个函数前有效，要留着就自己拷一份。
-- `wowtype_version()` 返回静态字符串，一直有效。
+- `archtype_engine_new` 返回的句柄用 `archtype_engine_free` 释放；`archtype_voice_new`、`archtype_translate_new` 同理各配各的 `_free`。
+- 返回 `ArchtypeCandidates *` 的函数（`archtype_engine_input`、`archtype_symbol_search`、`archtype_emoji_recommend` 等），结果用 `archtype_candidates_free` 释放；从里面取出的字符串在释放前有效。
+- 返回 `const char *` 而且不属于某个句柄的（`archtype_fullwidth_punct`、`archtype_punct`、`archtype_segment_input`、`archtype_engine_shuangpin_display`、`archtype_last_error`），指针在**同一线程**下一次调用同一个函数前有效，要留着就自己拷一份。
+- `archtype_version()` 返回静态字符串，一直有效。
 - 外壳传进来的字符串都是 UTF-8、以 0 结尾，函数返回后核心不再持有。
 
 ## 线程
@@ -44,22 +44,22 @@ fcitx5 插件通过这组 C 函数用 Rust 核心。这里写的是承诺：外�
 ## 错误
 
 - 返回指针的函数失败时返回 NULL，返回 `int` 的失败时返回负数（个别函数的约定写在头文件注释里）。
-- 失败原因用 `wowtype_last_error()` 取（线程局部）。
+- 失败原因用 `archtype_last_error()` 取（线程局部）。
 
-## 输入会话（`wowtype_session_*`，1.3 起，1.4 加候选，1.5 加选词，1.6 加选词键、翻页和展开面板，1.7 加 Ctrl+Delete 忘掉学错的词，1.10 加标点、自动空格、上文、中 / 英 / 译和单按 Shift、互译、工具栏和表情面板）
+## 输入会话（`archtype_session_*`，1.3 起，1.4 加候选，1.5 加选词，1.6 加选词键、翻页和展开面板，1.7 加 Ctrl+Delete 忘掉学错的词，1.10 加标点、自动空格、上文、中 / 英 / 译和单按 Shift、互译、工具栏和表情面板）
 
 输入行为都在会话里，fcitx5 外壳只把平台的按键翻成键码交给会话、照 frame 画编辑区和候选框、上屏、读周围文字和系统剪贴板、排定时器。
 
-- **1.10 删掉的过渡函数**：`wowtype_session_append`、`_set_context`（上文由会话自己记，表情面板的搜索词也在会话里）、`_last_choice`（学没学到词看 `frame->learned`，选了 emoji 由会话记进最近用过）。fcitx5 外壳和核心一起发版，不受影响。
+- **1.10 删掉的过渡函数**：`archtype_session_append`、`_set_context`（上文由会话自己记，表情面板的搜索词也在会话里）、`_last_choice`（学没学到词看 `frame->learned`，选了 emoji 由会话记进最近用过）。fcitx5 外壳和核心一起发版，不受影响。
 - **留着的读法**：`_input`、`_remaining`、`_selected_text`（外壳判断在不在打字、拼编辑区），以及整个候选列表 `_candidate_total`、`_candidate_info`、`_choose`、`_view`（fcitx5 的候选框 CommonCandidateList 要整个列表和页码、光标）。这些和别的会话函数一样按上面「只加不删」的规矩来。
 - **`handled`**：0 就是「交给应用」。还在外壳里的只有语音键（录音、浮条和平台的麦克风绑在一起）。
-- **候选框**（1.6）：frame 的 `cand_count` 是候选框里显示的个数（一页，或展开面板的一屏），`cand_cursor` 是光标在里面的位置（光标不在这一页上时是 -1），`has_prev` / `has_next` 是还能不能往前 / 往后翻，`panel` 说现在是普通候选框还是展开面板；显示的第 i 个用 `wowtype_session_candidate(s, i)` 取，点它用 `wowtype_session_select(s, i)`。
-- **结构体**：`WowtypeKey`、`WowtypeSessionConfig`、`WowtypeFrame`、`WowtypeCandidateInfo` 第一个字段都是 `size`。外壳填 `sizeof`，核心按它读，缺的字段当 0（`WowtypeSessionConfig` 例外：缺的字段用默认值）；核心返回的 frame 也带 `size`，外壳读新字段前先看它。
-- **所有权**：`wowtype_session_new` 的结果用 `wowtype_session_free` 释放。`_key`、`_reset` 返回的 `WowtypeFrame *`、里面的字符串、过渡函数返回的字符串，都归会话所有，**在同一个会话的下一次调用前有效**（包括松开键那一次），不是线程局部缓冲。要留着就自己拷。
-- **引擎**：候选和分音节要用引擎。`wowtype_session_new` 的 engine 可以传 NULL（词库在后台载入，载入好之前也要能打字，这时没有候选，编辑区是原始输入），载入好了用 `wowtype_session_set_engine` 补上。引擎要比会话活得久（或者先 `set_engine(NULL)`）。双拼开不开看引擎（`wowtype_engine_set_shuangpin`）；会话算候选时会把引擎的上文设成「已上屏的字 + 已选的词」的尾部。
+- **候选框**（1.6）：frame 的 `cand_count` 是候选框里显示的个数（一页，或展开面板的一屏），`cand_cursor` 是光标在里面的位置（光标不在这一页上时是 -1），`has_prev` / `has_next` 是还能不能往前 / 往后翻，`panel` 说现在是普通候选框还是展开面板；显示的第 i 个用 `archtype_session_candidate(s, i)` 取，点它用 `archtype_session_select(s, i)`。
+- **结构体**：`ArchtypeKey`、`ArchtypeSessionConfig`、`ArchtypeFrame`、`ArchtypeCandidateInfo` 第一个字段都是 `size`。外壳填 `sizeof`，核心按它读，缺的字段当 0（`ArchtypeSessionConfig` 例外：缺的字段用默认值）；核心返回的 frame 也带 `size`，外壳读新字段前先看它。
+- **所有权**：`archtype_session_new` 的结果用 `archtype_session_free` 释放。`_key`、`_reset` 返回的 `ArchtypeFrame *`、里面的字符串、过渡函数返回的字符串，都归会话所有，**在同一个会话的下一次调用前有效**（包括松开键那一次），不是线程局部缓冲。要留着就自己拷。
+- **引擎**：候选和分音节要用引擎。`archtype_session_new` 的 engine 可以传 NULL（词库在后台载入，载入好之前也要能打字，这时没有候选，编辑区是原始输入），载入好了用 `archtype_session_set_engine` 补上。引擎要比会话活得久（或者先 `set_engine(NULL)`）。双拼开不开看引擎（`archtype_engine_set_shuangpin`）；会话算候选时会把引擎的上文设成「已上屏的字 + 已选的词」的尾部。
 - **候选缓存**：候选用到的时候才算（`_key`、`_frame` 要分音节时，或读候选时），编辑区、上文、引擎、设置都没变就不重算。
 - **线程**：一个会话只在一个线程里用。
-- **键码**：`keysym` 是 XKB keysym 的子集，`modifiers` 是 `WOWTYPE_MOD_*`（取值和 X11 / fcitx5 的 KeyState 一样）。
+- **键码**：`keysym` 是 XKB keysym 的子集，`modifiers` 是 `ARCHTYPE_MOD_*`（取值和 X11 / fcitx5 的 KeyState 一样）。
 
 会话的行为（`core/tests/session_keys.rs` 测，和 `fcitx5-addon/test/key_harness.cpp` 里的同名用例对应）：
 

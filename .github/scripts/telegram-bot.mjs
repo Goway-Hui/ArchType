@@ -43,7 +43,7 @@ if (!TG) {
 const tgUrl = (method) => `https://api.telegram.org/bot${TG}/${method}`;
 const ghHeaders = {
   accept: 'application/vnd.github+json',
-  'user-agent': 'wowtype-telegram-bot',
+  'user-agent': 'archtype-telegram-bot',
   ...(GH ? { authorization: `Bearer ${GH}` } : {}),
 };
 
@@ -64,7 +64,7 @@ const trunc = (s, n) => (s && s.length > n ? s.slice(0, n) + '…' : s || '');
 const send = (chatId, text) => tg('sendMessage', { chat_id: chatId, text, disable_web_page_preview: true });
 
 const HELP = [
-  '🤖 WowType 机器人命令：',
+  '🤖 ArchType 机器人命令：',
   '',
   '/releases — 最近发布列表',
   '/release <tag> — 某版本详情（省略 = 最新）',
@@ -158,7 +158,7 @@ function captchaKeyboard(chatId, userId, tries) {
 
 const captchaText = (q, tries) =>
   [
-    '👋 欢迎申请加入「WowType 交流群」。',
+    '👋 欢迎申请加入「ArchType 交流群」。',
     '',
     '为了拦截广告号，请先做一道题（点下面的按钮作答）：',
     '',

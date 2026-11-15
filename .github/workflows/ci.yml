@@ -152,7 +152,7 @@ jobs:
           name: data
           path: dist/data
       - name: 按键测试（私有 fcitx5 实例 + 真实词库和语言模型）
-        run: WOWTYPE_LM="$PWD/dist/data/words.lm" scripts/addon-test.sh "$PWD/dist/data/lexicon.tsv" "$PWD/dist/data/english.txt"
+        run: ARCHTYPE_LM="$PWD/dist/data/words.lm" scripts/addon-test.sh "$PWD/dist/data/lexicon.tsv" "$PWD/dist/data/english.txt"
       - uses: actions/download-artifact@v4
         if: matrix.distro == 'ubuntu26.04'
         with:
@@ -160,7 +160,7 @@ jobs:
           path: dist/wanxiang
       - name: 按键测试（万象词库）
         if: matrix.distro == 'ubuntu26.04'
-        run: WOWTYPE_LM="$PWD/dist/data/words.lm" scripts/addon-test.sh "$PWD/dist/wanxiang/lexicon.tsv" "$PWD/dist/data/english.txt"
+        run: ARCHTYPE_LM="$PWD/dist/data/words.lm" scripts/addon-test.sh "$PWD/dist/wanxiang/lexicon.tsv" "$PWD/dist/data/english.txt"
       - name: 版本号
         run: |
           if [ "${GITHUB_REF_TYPE}" = tag ]; then
@@ -171,32 +171,32 @@ jobs:
           fi
           echo "VERSION=$version" >> "$GITHUB_ENV"
       - name: 打包
-        run: WOWTYPE_DISTRO=${{ matrix.distro }} scripts/package-deb.sh engine "$VERSION" dist/pkg
+        run: ARCHTYPE_DISTRO=${{ matrix.distro }} scripts/package-deb.sh engine "$VERSION" dist/pkg
       - name: 用一键安装脚本装上试一下
         run: |
-          mkdir -p /tmp/inst && cp dist/pkg/wowtype_*.deb /tmp/inst/
+          mkdir -p /tmp/inst && cp dist/pkg/archtype_*.deb /tmp/inst/
           (cd /tmp/inst && sha256sum -- *.deb > SHA256SUMS)
-          WOWTYPE_VERSION="$VERSION" WOWTYPE_BASE_URL=file:///tmp/inst WOWTYPE_YES=1 ./install.sh
-          # fcitx5 没在跑：脚本直接把 WowType 写进 fcitx5 的输入法列表
-          grep -qx 'Name=wowtype' "$HOME/.config/fcitx5/profile"
-          ls /usr/lib/*/fcitx5/libwowtype.so
+          ARCHTYPE_VERSION="$VERSION" ARCHTYPE_BASE_URL=file:///tmp/inst ARCHTYPE_YES=1 ./install.sh
+          # fcitx5 没在跑：脚本直接把 ArchType 写进 fcitx5 的输入法列表
+          grep -qx 'Name=archtype' "$HOME/.config/fcitx5/profile"
+          ls /usr/lib/*/fcitx5/libarchtype.so
           # 词库和语言模型在安装包里
-          test -s /usr/share/wowtype/words.lm && test -s /usr/share/wowtype/english.txt
-          cmp /usr/share/wowtype/lexicon.tsv dist/data/lexicon.tsv
-          cmp /usr/share/wowtype/wubi86.tsv dist/data/wubi86.tsv
-          wowtype-check --lexicon /usr/share/wowtype/lexicon.tsv --s2t /usr/share/wowtype/s2t.tsv
-          wowtype-show --lexicon /usr/share/wowtype/lexicon.tsv nihao | tee /tmp/show.txt
+          test -s /usr/share/archtype/words.lm && test -s /usr/share/archtype/english.txt
+          cmp /usr/share/archtype/lexicon.tsv dist/data/lexicon.tsv
+          cmp /usr/share/archtype/wubi86.tsv dist/data/wubi86.tsv
+          archtype-check --lexicon /usr/share/archtype/lexicon.tsv --s2t /usr/share/archtype/s2t.tsv
+          archtype-show --lexicon /usr/share/archtype/lexicon.tsv nihao | tee /tmp/show.txt
           grep -q '1\.你好' /tmp/show.txt
           # 设置界面：能 import GTK 4 / libadwaita，拼音整理逻辑正确
-          wowtype-config --self-test
+          archtype-config --self-test
           # 图标装到 hicolor，输入法和设置界面都指向它
-          test -f /usr/share/icons/hicolor/scalable/apps/wowtype.svg
-          test -f /usr/share/icons/hicolor/22x22/apps/wowtype.png
-          grep -qx 'Icon=wowtype' /usr/share/fcitx5/inputmethod/wowtype.conf
+          test -f /usr/share/icons/hicolor/scalable/apps/archtype.svg
+          test -f /usr/share/icons/hicolor/22x22/apps/archtype.png
+          grep -qx 'Icon=archtype' /usr/share/fcitx5/inputmethod/archtype.conf
           # 插件清单要求编译时 fcitx5 的「主.次.0」（22.04 是 5.0.0），fcitx5 小版本落后一点的系统也能加载
-          grep -qx "0=core:$(pkg-config --modversion Fcitx5Core | cut -d. -f1,2).0" /usr/share/fcitx5/addon/wowtype.conf
+          grep -qx "0=core:$(pkg-config --modversion Fcitx5Core | cut -d. -f1,2).0" /usr/share/fcitx5/addon/archtype.conf
       - name: 设置界面：每页、每个对话框点一遍（无头；22.04 的老 libadwaita 用替身控件）
-        run: timeout 300 dbus-run-session -- xvfb-run -a python3 scripts/test-settings-gui.py /usr/bin/wowtype-config
+        run: timeout 300 dbus-run-session -- xvfb-run -a python3 scripts/test-settings-gui.py /usr/bin/archtype-config
       - uses: actions/upload-artifact@v4
         with:
           name: pkg-${{ matrix.distro }}-${{ matrix.arch }}
@@ -225,7 +225,7 @@ jobs:
           name: data
           path: dist/data
       - name: 按键测试（私有 fcitx5 实例 + 真实词库和语言模型）
-        run: WOWTYPE_LM="$PWD/dist/data/words.lm" scripts/addon-test.sh "$PWD/dist/data/lexicon.tsv" "$PWD/dist/data/english.txt"
+        run: ARCHTYPE_LM="$PWD/dist/data/words.lm" scripts/addon-test.sh "$PWD/dist/data/lexicon.tsv" "$PWD/dist/data/english.txt"
       - name: 版本号
         run: |
           if [ "${GITHUB_REF_TYPE}" = tag ]; then
@@ -245,29 +245,29 @@ jobs:
           # 不去掉的话 pacman -Qkk 会把没解出来的文档当成文件缺失
           sed -i '/^NoExtract/d' /etc/pacman.conf
           (cd dist/pkg && sha256sum -- *.pkg.tar.zst > SHA256SUMS)
-          WOWTYPE_VERSION="$VERSION" WOWTYPE_BASE_URL="file://$PWD/dist/pkg" WOWTYPE_YES=1 ./install.sh
-          pacman -Qip dist/pkg/wowtype-*.pkg.tar.zst
-          pacman -Qkk wowtype
-          test -f /usr/lib/fcitx5/libwowtype.so
-          ldd /usr/lib/fcitx5/libwowtype.so | tee dist/ldd.txt
+          ARCHTYPE_VERSION="$VERSION" ARCHTYPE_BASE_URL="file://$PWD/dist/pkg" ARCHTYPE_YES=1 ./install.sh
+          pacman -Qip dist/pkg/archtype-*.pkg.tar.zst
+          pacman -Qkk archtype
+          test -f /usr/lib/fcitx5/libarchtype.so
+          ldd /usr/lib/fcitx5/libarchtype.so | tee dist/ldd.txt
           if grep -q 'not found' dist/ldd.txt; then
             echo '插件有未解析的动态库依赖' >&2
             exit 1
           fi
-          test -s /usr/share/wowtype/words.lm
-          test -s /usr/share/wowtype/english.txt
-          cmp /usr/share/wowtype/lexicon.tsv dist/data/lexicon.tsv
-          cmp /usr/share/wowtype/words.lm dist/data/words.lm
-          cmp /usr/share/wowtype/wubi86.tsv dist/data/wubi86.tsv
-          test -s /usr/share/licenses/wowtype/LICENSE.rime-wubi
-          wowtype-check --lexicon /usr/share/wowtype/lexicon.tsv --s2t /usr/share/wowtype/s2t.tsv
+          test -s /usr/share/archtype/words.lm
+          test -s /usr/share/archtype/english.txt
+          cmp /usr/share/archtype/lexicon.tsv dist/data/lexicon.tsv
+          cmp /usr/share/archtype/words.lm dist/data/words.lm
+          cmp /usr/share/archtype/wubi86.tsv dist/data/wubi86.tsv
+          test -s /usr/share/licenses/archtype/LICENSE.rime-wubi
+          archtype-check --lexicon /usr/share/archtype/lexicon.tsv --s2t /usr/share/archtype/s2t.tsv
           # 不用 grep -q 直接接在管道后面，避免 pipefail 把上游 SIGPIPE 当成测试失败。
-          wowtype-show --lexicon /usr/share/wowtype/lexicon.tsv nihao | tee dist/show.txt
+          archtype-show --lexicon /usr/share/archtype/lexicon.tsv nihao | tee dist/show.txt
           grep -q '1\.你好' dist/show.txt
-          wowtype-config --self-test
-          test -f /usr/share/icons/hicolor/scalable/apps/wowtype.svg
-          test -f /usr/share/icons/hicolor/22x22/apps/wowtype.png
-          grep -qx 'Icon=wowtype' /usr/share/fcitx5/inputmethod/wowtype.conf
+          archtype-config --self-test
+          test -f /usr/share/icons/hicolor/scalable/apps/archtype.svg
+          test -f /usr/share/icons/hicolor/22x22/apps/archtype.png
+          grep -qx 'Icon=archtype' /usr/share/fcitx5/inputmethod/archtype.conf
       - uses: actions/upload-artifact@v4
         with:
           name: pkg-archlinux
@@ -303,7 +303,7 @@ jobs:
           name: data
           path: dist/data
       - name: 按键测试（私有 fcitx5 实例 + 真实词库和语言模型）
-        run: WOWTYPE_LM="$PWD/dist/data/words.lm" scripts/addon-test.sh "$PWD/dist/data/lexicon.tsv" "$PWD/dist/data/english.txt"
+        run: ARCHTYPE_LM="$PWD/dist/data/words.lm" scripts/addon-test.sh "$PWD/dist/data/lexicon.tsv" "$PWD/dist/data/english.txt"
       - name: 版本号
         run: |
           if [ "${GITHUB_REF_TYPE}" = tag ]; then
@@ -320,34 +320,34 @@ jobs:
           # fedora 容器的 dnf 默认 tsflags=nodocs，去掉免得 rpm -V 把没装的文档当成缺失
           sed -i '/^tsflags=nodocs/d' /etc/dnf/dnf.conf
           (cd dist/pkg && sha256sum -- *.rpm > SHA256SUMS)
-          WOWTYPE_VERSION="$VERSION" WOWTYPE_BASE_URL="file://$PWD/dist/pkg" WOWTYPE_YES=1 ./install.sh
-          rpm -qip dist/pkg/wowtype-*.rpm
-          rpm -V wowtype
+          ARCHTYPE_VERSION="$VERSION" ARCHTYPE_BASE_URL="file://$PWD/dist/pkg" ARCHTYPE_YES=1 ./install.sh
+          rpm -qip dist/pkg/archtype-*.rpm
+          rpm -V archtype
           # Fedora 的 fcitx5 插件目录是 /usr/lib64/fcitx5
           test "$(pkg-config --variable=libdir Fcitx5Core)/fcitx5" = /usr/lib64/fcitx5
-          test -f /usr/lib64/fcitx5/libwowtype.so
-          ldd /usr/lib64/fcitx5/libwowtype.so | tee dist/ldd.txt
+          test -f /usr/lib64/fcitx5/libarchtype.so
+          ldd /usr/lib64/fcitx5/libarchtype.so | tee dist/ldd.txt
           if grep -q 'not found' dist/ldd.txt; then
             echo '插件有未解析的动态库依赖' >&2
             exit 1
           fi
-          test -s /usr/share/wowtype/words.lm
-          test -s /usr/share/wowtype/english.txt
-          cmp /usr/share/wowtype/lexicon.tsv dist/data/lexicon.tsv
-          cmp /usr/share/wowtype/words.lm dist/data/words.lm
-          cmp /usr/share/wowtype/wubi86.tsv dist/data/wubi86.tsv
-          test -s /usr/share/licenses/wowtype/LICENSE.rime-wubi
-          wowtype-check --lexicon /usr/share/wowtype/lexicon.tsv --s2t /usr/share/wowtype/s2t.tsv
+          test -s /usr/share/archtype/words.lm
+          test -s /usr/share/archtype/english.txt
+          cmp /usr/share/archtype/lexicon.tsv dist/data/lexicon.tsv
+          cmp /usr/share/archtype/words.lm dist/data/words.lm
+          cmp /usr/share/archtype/wubi86.tsv dist/data/wubi86.tsv
+          test -s /usr/share/licenses/archtype/LICENSE.rime-wubi
+          archtype-check --lexicon /usr/share/archtype/lexicon.tsv --s2t /usr/share/archtype/s2t.tsv
           # 不用 grep -q 直接接在管道后面，避免 pipefail 把上游 SIGPIPE 当成测试失败。
-          wowtype-show --lexicon /usr/share/wowtype/lexicon.tsv nihao | tee dist/show.txt
+          archtype-show --lexicon /usr/share/archtype/lexicon.tsv nihao | tee dist/show.txt
           grep -q '1\.你好' dist/show.txt
-          wowtype-config --self-test
-          # fcitx5 没在跑：直接把 WowType 写进 fcitx5 的输入法列表
-          wowtype-config --add-to-group
-          grep -qx 'Name=wowtype' "$HOME/.config/fcitx5/profile"
-          test -f /usr/share/icons/hicolor/scalable/apps/wowtype.svg
-          test -f /usr/share/icons/hicolor/22x22/apps/wowtype.png
-          grep -qx 'Icon=wowtype' /usr/share/fcitx5/inputmethod/wowtype.conf
+          archtype-config --self-test
+          # fcitx5 没在跑：直接把 ArchType 写进 fcitx5 的输入法列表
+          archtype-config --add-to-group
+          grep -qx 'Name=archtype' "$HOME/.config/fcitx5/profile"
+          test -f /usr/share/icons/hicolor/scalable/apps/archtype.svg
+          test -f /usr/share/icons/hicolor/22x22/apps/archtype.png
+          grep -qx 'Icon=archtype' /usr/share/fcitx5/inputmethod/archtype.conf
       - uses: actions/upload-artifact@v4
         with:
           name: pkg-fedora${{ matrix.version }}-${{ matrix.arch }}
@@ -377,24 +377,24 @@ jobs:
           path: dist/data
       - name: 编译并安装到系统 Fcitx 目录
         run: |
-          cargo build --release --locked -p wowtype-core
+          cargo build --release --locked -p archtype-core
           cmake -S fcitx5-addon -B build -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/usr
           cmake --build build -j"$(nproc)"
           cmake --install build
-          install -m755 target/release/wowtype-check target/release/wowtype-show /usr/bin/
-          install -m644 dist/data/lexicon.tsv dist/data/english.txt dist/data/words.lm dist/data/wubi86.tsv /usr/share/wowtype/
+          install -m755 target/release/archtype-check target/release/archtype-show /usr/bin/
+          install -m644 dist/data/lexicon.tsv dist/data/english.txt dist/data/words.lm dist/data/wubi86.tsv /usr/share/archtype/
       - name: 插件路径、依赖、真实词库和设置界面
         run: |
           addon_dir="$(pkg-config --variable=libdir Fcitx5Core)/fcitx5"
-          test -f "$addon_dir/libwowtype.so"
-          ldd "$addon_dir/libwowtype.so" | tee dist/ldd.txt
+          test -f "$addon_dir/libarchtype.so"
+          ldd "$addon_dir/libarchtype.so" | tee dist/ldd.txt
           if grep -q 'not found' dist/ldd.txt; then exit 1; fi
-          test -f /usr/share/fcitx5/addon/wowtype.conf
-          test -f /usr/share/fcitx5/inputmethod/wowtype.conf
-          wowtype-check --lexicon /usr/share/wowtype/lexicon.tsv --s2t /usr/share/wowtype/s2t.tsv
-          wowtype-show --lexicon /usr/share/wowtype/lexicon.tsv nihao | tee dist/show.txt
+          test -f /usr/share/fcitx5/addon/archtype.conf
+          test -f /usr/share/fcitx5/inputmethod/archtype.conf
+          archtype-check --lexicon /usr/share/archtype/lexicon.tsv --s2t /usr/share/archtype/s2t.tsv
+          archtype-show --lexicon /usr/share/archtype/lexicon.tsv nihao | tee dist/show.txt
           grep -q '1\.你好' dist/show.txt
-          wowtype-config --self-test
+          archtype-config --self-test
 
   nix:
     # flake.lock 固定的是 nixos-unstable；用户一般用 inputs.nixpkgs.follows 跟自己系统的 nixpkgs，
@@ -435,6 +435,14 @@ jobs:
       pull-requests: write
     steps:
       - uses: actions/checkout@v4
+      - name: 版本号与 tag 一致
+        run: |
+          manifest=$(sed -n 's/^version = "\(.*\)"/\1/p' core/Cargo.toml | head -1)
+          tag=${GITHUB_REF_NAME#v}
+          if [ "$manifest" != "$tag" ]; then
+            echo "core/Cargo.toml 的版本是 $manifest，tag 是 $tag；发版前先把 core/Cargo.toml 改成 tag 版本" >&2
+            exit 1
+          fi
       - uses: actions/download-artifact@v4
         with:
           pattern: pkg-*
@@ -460,21 +468,21 @@ jobs:
           curl -fsSL https://raw.githubusercontent.com/${GITHUB_REPOSITORY}/main/install.sh | bash
           \`\`\`
 
-          或者手动下载和你系统对应的一个 \`wowtype_<版本>_<发行版>_<架构>.deb\`（词库已经在包里），然后 \`sudo apt install ./wowtype_*.deb\`。
+          或者手动下载和你系统对应的一个 \`archtype_<版本>_<发行版>_<架构>.deb\`（词库已经在包里），然后 \`sudo apt install ./archtype_*.deb\`。
           Ubuntu / Debian 的 deb 和 Fedora RPM 有 x86_64（amd64）和 arm64（aarch64）两种，一键脚本按本机架构选；Arch 包和 deepin 包只有 x86_64。
           Arch Linux / EndeavourOS / Garuda / CachyOS：一键脚本用 pacman 安装对应包，不替你整机升级；依赖装不上时按提示先运行 \`sudo pacman -Syu\`。
           Fedora 43 / 44 / 45：自动选择与系统版本一致的 RPM。Debian 13、Ubuntu 22.04 / 24.04 / 26.04 及明确声明兼容基线的衍生版、deepin 23 / 25 使用对应 deb。
           Manjaro：按安装说明在本机用 makepkg 打包；openSUSE Tumbleweed：按安装说明从源码构建。
-          NixOS（x86_64、aarch64）：flake 输入写 \`github:${GITHUB_REPOSITORY}/release\`（跟正式版）或 \`github:${GITHUB_REPOSITORY}/${GITHUB_REF_NAME}\`（锁这一版），把 \`inputs.wowtype.packages.<system>.default\` 加进 \`i18n.inputMethod.fcitx5.addons\`，见[安装说明](https://github.com/${GITHUB_REPOSITORY}/blob/main/docs/INSTALL.md#nixos--nix)。
+          NixOS（x86_64、aarch64）：flake 输入写 \`github:${GITHUB_REPOSITORY}/release\`（跟正式版）或 \`github:${GITHUB_REPOSITORY}/${GITHUB_REF_NAME}\`（锁这一版），把 \`inputs.archtype.packages.<system>.default\` 加进 \`i18n.inputMethod.fcitx5.addons\`，见[安装说明](https://github.com/${GITHUB_REPOSITORY}/blob/main/docs/INSTALL.md#nixos--nix)。
           完整步骤见 [README](https://github.com/${GITHUB_REPOSITORY}#安装)。
 
-          可选词库：\`wowtype-data-wanxiang-*.tar.gz\` 是从[万象拼音](https://github.com/amzxyz/rime_wanxiang)（CC BY 4.0）转换的词库，不在安装包里。
-          想用的话在「WowType 设置 → 输入 → 词库」里选「万象拼音」并下载，或运行 \`wowtype-config --install-lexicon wanxiang\`；随时可以切回默认的雾凇。
+          可选词库：\`archtype-data-wanxiang-*.tar.gz\` 是从[万象拼音](https://github.com/amzxyz/rime_wanxiang)（CC BY 4.0）转换的词库，不在安装包里。
+          想用的话在「ArchType 设置 → 输入 → 词库」里选「万象拼音」并下载，或运行 \`archtype-config --install-lexicon wanxiang\`；随时可以切回默认的雾凇。
 
           EOF
           gh release create "$GITHUB_REF_NAME" dist/* \
             --repo "$GITHUB_REPOSITORY" --verify-tag \
-            --title "WowType $GITHUB_REF_NAME" \
+            --title "ArchType $GITHUB_REF_NAME" \
             --notes-file notes.md --generate-notes
       - name: 通知 Telegram 群
         # GITHUB_TOKEN 发的 release 不会触发 telegram-notify.yml，所以在这里直接发。
@@ -517,4 +525,4 @@ jobs:
         continue-on-error: true
         env:
           GH_TOKEN: ${{ github.token }}
-        run: .github/scripts/nix-data-pr.sh dist/wowtype-data-rime-ice-*.tar.gz
+        run: .github/scripts/nix-data-pr.sh dist/archtype-data-rime-ice-*.tar.gz

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""「Shift 只给 WowType 用」回归测试：只加载设置脚本里的纯函数，不依赖 GTK 或 fcitx5。"""
+"""「Shift 只给 ArchType 用」回归测试：只加载设置脚本里的纯函数，不依赖 GTK 或 fcitx5。"""
 
 import ast
 import os
@@ -9,7 +9,7 @@ import unittest
 from unittest.mock import patch
 
 
-SCRIPT = Path(__file__).resolve().parents[1] / "settings" / "wowtype-config"
+SCRIPT = Path(__file__).resolve().parents[1] / "settings" / "archtype-config"
 source = SCRIPT.read_text(encoding="utf-8")
 tree = ast.parse(source, filename=str(SCRIPT))
 functions = {

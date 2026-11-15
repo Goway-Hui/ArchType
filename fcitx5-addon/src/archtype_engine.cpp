@@ -1,6 +1,6 @@
-#include "wowtype_engine.h"
+#include "archtype_engine.h"
 #include "clipboard_copy.h"
-#include "wowtype_log.h"
+#include "archtype_log.h"
 
 #include <algorithm>
 #include <chrono>
@@ -43,10 +43,10 @@ FCITX_ADDON_DECLARE_FUNCTION(Clipboard, clipboard, std::string(const fcitx::Inpu
 namespace {
 
 // 系统词库目录：CMake 按安装前缀传进来（Nix 等不装在 /usr 的发行版）
-#ifndef WOWTYPE_SYSTEM_DATA_DIR
-#define WOWTYPE_SYSTEM_DATA_DIR "/usr/share/wowtype"
+#ifndef ARCHTYPE_SYSTEM_DATA_DIR
+#define ARCHTYPE_SYSTEM_DATA_DIR "/usr/share/archtype"
 #endif
-constexpr const char *kSystemDataDir = WOWTYPE_SYSTEM_DATA_DIR;
+constexpr const char *kSystemDataDir = ARCHTYPE_SYSTEM_DATA_DIR;
 /// 展开的候选面板：每行几个、一屏几行（照微信输入法：6 × 6）。
 constexpr std::size_t kGridCols = 6;
 constexpr std::size_t kGridRows = 6;
@@ -64,7 +64,7 @@ bool envFlag(const char *name, bool fallback) {
     return *value != '0';
 }
 
-constexpr const char *kConfigFile = "conf/wowtype.conf";
+constexpr const char *kConfigFile = "conf/archtype.conf";
 
 /// 统计用的墙上时间（Unix 毫秒）：日界和 10 秒间隔都按它算。
 int64_t statsNowMs() {
@@ -82,7 +82,17 @@ std::string userDataDir() {
     } else {
         return {};
     }
-    return base + "/wowtype";
+    const std::string dir = base + "/archtype";
+    std::error_code ec;
+    if (!std::filesystem::exists(dir, ec)) {
+        // 从旧品牌 WowType 升级：设置程序会把旧目录复制成 archtype；插件先照旧读，
+        // 免得在设置程序跑之前，自定义词、输入习惯、统计看起来像丢了。
+        const std::string legacy = base + "/wowtype";
+        if (std::filesystem::exists(legacy, ec)) {
+            return legacy;
+        }
+    }
+    return dir;
 }
 
 /// 按顺序找第一个存在的文件：环境变量 > 用户数据目录 > 系统目录。
@@ -149,22 +159,22 @@ void setClientPreedit(fcitx::InputPanel &panel, const fcitx::Text &text) {
 
 std::string userConfigDir() {
     if (const char *config = std::getenv("XDG_CONFIG_HOME"); config && *config) {
-        return std::string(config) + "/wowtype";
+        return std::string(config) + "/archtype";
     }
     if (const char *home = std::getenv("HOME"); home && *home) {
-        return std::string(home) + "/.config/wowtype";
+        return std::string(home) + "/.config/archtype";
     }
     return {};
 }
 
-// 语音浮条：WowType 的 GNOME 扩展注册这个名字，插件把语音状态发给它画。
+// 语音浮条：ArchType 的 GNOME 扩展注册这个名字，插件把语音状态发给它画。
 // 信号 State(u 状态, s 文字, i 音量 0–100, i x, i y, i w, i h, b 相对窗口, d 缩放)，
 // x/y/w/h 是光标矩形，和 kimpanel 的 SetSpotRect / SetRelativeSpotRectV2 同一个意思。
 // 扩展画好了回一个 Ack(u 状态) 给插件；一次说话里等了 kOverlayAckUsec 还没有回执（扩展在这个
 // GNOME 上画出错、或者是不会回执的旧版扩展），就改在候选框里提示，不会什么都不显示（#170）。
-constexpr const char *kOverlayService = "io.github.gloridust.WowType.VoiceOverlay";
-constexpr const char *kOverlayPath = "/io/github/gloridust/WowType";
-constexpr const char *kOverlayInterface = "io.github.gloridust.WowType.Voice1";
+constexpr const char *kOverlayService = "io.github.gowayhui.ArchType.VoiceOverlay";
+constexpr const char *kOverlayPath = "/io/github/gowayhui/ArchType";
+constexpr const char *kOverlayInterface = "io.github.gowayhui.ArchType.Voice1";
 constexpr uint32_t kOverlayHide = 0;
 constexpr uint32_t kOverlayListening = 1;
 constexpr uint32_t kOverlayRecognizing = 2;
@@ -174,7 +184,7 @@ constexpr uint64_t kOverlayAckUsec = 800 * 1000;
 
 /// 用户输入习惯（词的热度、词搭配）和用户词库放在同一个目录：history.tsv。
 std::string historyPathFor(const std::string &userDict) {
-    if (const char *env = std::getenv("WOWTYPE_HISTORY"); env && *env) {
+    if (const char *env = std::getenv("ARCHTYPE_HISTORY"); env && *env) {
         return env;
     }
     if (userDict.empty()) {
@@ -185,16 +195,16 @@ std::string historyPathFor(const std::string &userDict) {
 
 /// 默认词库：用户数据目录或系统目录里的 lexicon.tsv（雾凇），都没有就用 demo 词典。
 std::string defaultLexicon() {
-    std::string lexicon = findDataFile("WOWTYPE_LEXICON", "lexicon.tsv");
+    std::string lexicon = findDataFile("ARCHTYPE_LEXICON", "lexicon.tsv");
     if (lexicon.empty()) {
         lexicon = std::string(kSystemDataDir) + "/demo_lexicon.tsv";
     }
     return lexicon;
 }
 
-/// 实际用哪个词库：环境变量 WOWTYPE_LEXICON > 配置里的 Lexicon（文件在才用）> 默认。
+/// 实际用哪个词库：环境变量 ARCHTYPE_LEXICON > 配置里的 Lexicon（文件在才用）> 默认。
 std::string resolveLexicon(const std::string &configured) {
-    if (const char *env = std::getenv("WOWTYPE_LEXICON"); env && *env) {
+    if (const char *env = std::getenv("ARCHTYPE_LEXICON"); env && *env) {
         return env;
     }
     if (!configured.empty()) {
@@ -208,7 +218,7 @@ std::string resolveLexicon(const std::string &configured) {
         if (std::filesystem::is_regular_file(path, ec)) {
             return path;
         }
-        WLOG_W() << "WowType: 配置里的词库 " << path << " 不在，用默认词库";
+        WLOG_W() << "ArchType: 配置里的词库 " << path << " 不在，用默认词库";
     }
     return defaultLexicon();
 }
@@ -229,36 +239,36 @@ std::pair<std::uintmax_t, long long> fileStamp(const std::string &path) {
 
 /// 用这个词库建核心；语言模型坏了（版本不对、文件不完整）不该让输入法整个用不了，
 /// 不带它再试一次（这时 lm 清空）。
-WowtypeEngineHandle *openCore(const std::string &lexicon, std::string &lm) {
-    WowtypeEngineHandle *core =
-        wowtype_engine_new(lexicon.c_str(), lm.empty() ? nullptr : lm.c_str());
+ArchtypeEngineHandle *openCore(const std::string &lexicon, std::string &lm) {
+    ArchtypeEngineHandle *core =
+        archtype_engine_new(lexicon.c_str(), lm.empty() ? nullptr : lm.c_str());
     if (!core && !lm.empty()) {
-        WLOG_W() << "WowType: 语言模型载入失败，不用它，文件=" << lm << "，错误="
-                     << (wowtype_last_error() ? wowtype_last_error() : "unknown");
+        WLOG_W() << "ArchType: 语言模型载入失败，不用它，文件=" << lm << "，错误="
+                     << (archtype_last_error() ? archtype_last_error() : "unknown");
         lm.clear();
-        core = wowtype_engine_new(lexicon.c_str(), nullptr);
+        core = archtype_engine_new(lexicon.c_str(), nullptr);
     }
     return core;
 }
 
 /// 在后台线程里做的事：载入词库、语言模型、各种开关和用户词。
-WowtypeEngineHandle *loadCore(const std::string &userDict, std::string lexicon) {
+ArchtypeEngineHandle *loadCore(const std::string &userDict, std::string lexicon) {
     if (lexicon.ends_with("/demo_lexicon.tsv")) {
-        WLOG_W() << "WowType: 没找到 lexicon.tsv，用 demo 词典（只有几十个词）";
+        WLOG_W() << "ArchType: 没找到 lexicon.tsv，用 demo 词典（只有几十个词）";
     }
-    // 词级语言模型：wowtype-lmbuild 生成的 words.lm；没有就找旧的 bigram.tsv
-    std::string lm = findDataFile("WOWTYPE_LM", "words.lm");
+    // 词级语言模型：archtype-lmbuild 生成的 words.lm；没有就找旧的 bigram.tsv
+    std::string lm = findDataFile("ARCHTYPE_LM", "words.lm");
     if (lm.empty()) {
-        lm = findDataFile("WOWTYPE_LM", "bigram.tsv");
+        lm = findDataFile("ARCHTYPE_LM", "bigram.tsv");
     }
     const std::string lmFile = lm;
     const auto started = std::chrono::steady_clock::now();
-    WowtypeEngineHandle *core = openCore(lexicon, lm);
+    ArchtypeEngineHandle *core = openCore(lexicon, lm);
     if (!core) {
         // 选的词库（比如下载的万象）坏了：退回默认词库，别让输入法用不了
         if (const std::string fallback = defaultLexicon(); fallback != lexicon) {
-            WLOG_W() << "WowType: 词库 " << lexicon << " 载入失败（"
-                         << (wowtype_last_error() ? wowtype_last_error() : "unknown")
+            WLOG_W() << "ArchType: 词库 " << lexicon << " 载入失败（"
+                         << (archtype_last_error() ? archtype_last_error() : "unknown")
                          << "），改用默认词库 " << fallback;
             lexicon = fallback;
             lm = lmFile;
@@ -266,60 +276,60 @@ WowtypeEngineHandle *loadCore(const std::string &userDict, std::string lexicon) 
         }
     }
     if (!core) {
-        WLOG_E() << "WowType: 初始化 Rust 核心失败，词典=" << lexicon
+        WLOG_E() << "ArchType: 初始化 Rust 核心失败，词典=" << lexicon
                       << "，错误="
-                      << (wowtype_last_error() ? wowtype_last_error() : "unknown");
+                      << (archtype_last_error() ? archtype_last_error() : "unknown");
         return nullptr;
     }
 
-    const std::string english = findDataFile("WOWTYPE_ENGLISH", "english.txt");
+    const std::string english = findDataFile("ARCHTYPE_ENGLISH", "english.txt");
     if (!english.empty()) {
-        const int loaded = wowtype_engine_load_english(core, english.c_str());
+        const int loaded = archtype_engine_load_english(core, english.c_str());
         if (loaded > 0) {
-            WLOG_I() << "WowType: 载入英文词 " << loaded << " 个";
+            WLOG_I() << "ArchType: 载入英文词 " << loaded << " 个";
         }
     }
-    // 微信输入法的字级神经语言模型（不随 WowType 分发，本机有才用）
-    if (const std::string nnlm = findDataFile("WOWTYPE_NNLM", "wetype/nlrgpt2_nnlm.bin");
+    // 微信输入法的字级神经语言模型（不随 ArchType 分发，本机有才用）
+    if (const std::string nnlm = findDataFile("ARCHTYPE_NNLM", "wetype/nlrgpt2_nnlm.bin");
         !nnlm.empty()) {
-        const int loaded = wowtype_engine_load_nnlm(core, nnlm.c_str());
+        const int loaded = archtype_engine_load_nnlm(core, nnlm.c_str());
         if (loaded > 0) {
-            WLOG_I() << "WowType: 载入神经语言模型（" << loaded << " 字）";
+            WLOG_I() << "ArchType: 载入神经语言模型（" << loaded << " 字）";
         } else {
-            WLOG_W() << "WowType: 神经语言模型载入失败 " << nnlm << "："
-                         << (wowtype_last_error() ? wowtype_last_error() : "unknown");
+            WLOG_W() << "ArchType: 神经语言模型载入失败 " << nnlm << "："
+                         << (archtype_last_error() ? archtype_last_error() : "unknown");
         }
     }
     // 用户自己训的领域词级模型（可选），和 words.lm 混着用
-    if (const std::string domain = findDataFile("WOWTYPE_DOMAIN_LM", "words.domain.lm");
+    if (const std::string domain = findDataFile("ARCHTYPE_DOMAIN_LM", "words.domain.lm");
         !domain.empty()) {
-        if (wowtype_engine_set_domain_lm(core, domain.c_str()) == 0) {
-            WLOG_I() << "WowType: 载入领域词级模型 " << domain;
+        if (archtype_engine_set_domain_lm(core, domain.c_str()) == 0) {
+            WLOG_I() << "ArchType: 载入领域词级模型 " << domain;
         } else {
-            WLOG_W() << "WowType: 领域词级模型载入失败 " << domain << "："
-                         << (wowtype_last_error() ? wowtype_last_error() : "unknown");
+            WLOG_W() << "ArchType: 领域词级模型载入失败 " << domain << "："
+                         << (archtype_last_error() ? archtype_last_error() : "unknown");
         }
     }
     if (!userDict.empty()) {
-        const int loaded = wowtype_engine_load_user_dict(core, userDict.c_str());
+        const int loaded = archtype_engine_load_user_dict(core, userDict.c_str());
         if (loaded > 0) {
-            WLOG_I() << "WowType: 载入用户词 " << loaded << " 条";
+            WLOG_I() << "ArchType: 载入用户词 " << loaded << " 条";
         }
     }
     if (const std::string history = historyPathFor(userDict);
         !history.empty() && std::filesystem::exists(history)) {
-        const int loaded = wowtype_engine_load_history(core, history.c_str());
+        const int loaded = archtype_engine_load_history(core, history.c_str());
         if (loaded >= 0) {
-            WLOG_I() << "WowType: 载入输入习惯 " << loaded << " 条";
+            WLOG_I() << "ArchType: 载入输入习惯 " << loaded << " 条";
         } else {
-            WLOG_W() << "WowType: 输入习惯载入失败 " << history << "："
-                         << (wowtype_last_error() ? wowtype_last_error() : "unknown");
+            WLOG_W() << "ArchType: 输入习惯载入失败 " << history << "："
+                         << (archtype_last_error() ? archtype_last_error() : "unknown");
         }
     }
     const auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(
                         std::chrono::steady_clock::now() - started)
                         .count();
-    WLOG_I() << "WowType: 词典 " << lexicon << " 载入完成，用时 " << ms << " ms"
+    WLOG_I() << "ArchType: 词典 " << lexicon << " 载入完成，用时 " << ms << " ms"
                  << (lm.empty() ? "（没有语言模型）" : "，语言模型 " + lm);
     return core;
 }
@@ -342,10 +352,10 @@ std::string shownText(const std::string &text) {
     return out;
 }
 
-class WowtypeCandidateWord final : public fcitx::CandidateWord {
+class ArchtypeCandidateWord final : public fcitx::CandidateWord {
 public:
     /// shown 是 shownCandidate 画好的样子。
-    WowtypeCandidateWord(WowtypeEngine *engine, WowtypeState *state,
+    ArchtypeCandidateWord(ArchtypeEngine *engine, ArchtypeState *state,
                          std::size_t index, fcitx::Text shown)
         : engine_(engine), state_(state), index_(index) {
         setText(std::move(shown));
@@ -356,15 +366,15 @@ public:
     }
 
 private:
-    WowtypeEngine *engine_;
-    WowtypeState *state_;
+    ArchtypeEngine *engine_;
+    ArchtypeState *state_;
     std::size_t index_;
 };
 
 /// 展开面板的一行（一行里有好几个词）。
-class WowtypeGridRow final : public fcitx::CandidateWord {
+class ArchtypeGridRow final : public fcitx::CandidateWord {
 public:
-    WowtypeGridRow(WowtypeEngine *engine, WowtypeState *state, std::size_t row, fcitx::Text text)
+    ArchtypeGridRow(ArchtypeEngine *engine, ArchtypeState *state, std::size_t row, fcitx::Text text)
         : engine_(engine), state_(state), row_(row) {
         setText(std::move(text));
     }
@@ -374,15 +384,15 @@ public:
     }
 
 private:
-    WowtypeEngine *engine_;
-    WowtypeState *state_;
+    ArchtypeEngine *engine_;
+    ArchtypeState *state_;
     std::size_t row_;
 };
 
 /// 工具栏列表里的一项（菜单、剪贴板历史、常用语）。
-class WowtypeToolWord final : public fcitx::CandidateWord {
+class ArchtypeToolWord final : public fcitx::CandidateWord {
 public:
-    WowtypeToolWord(WowtypeEngine *engine, WowtypeState *state, std::size_t index,
+    ArchtypeToolWord(ArchtypeEngine *engine, ArchtypeState *state, std::size_t index,
                     const std::string &text)
         : engine_(engine), state_(state), index_(index) {
         setText(fcitx::Text(text));
@@ -393,8 +403,8 @@ public:
     }
 
 private:
-    WowtypeEngine *engine_;
-    WowtypeState *state_;
+    ArchtypeEngine *engine_;
+    ArchtypeState *state_;
     std::size_t index_;
 };
 
@@ -451,7 +461,7 @@ void padTo(std::string &out, std::size_t have, std::size_t width) {
 
 } // namespace
 
-struct WowtypeCandidate {
+struct ArchtypeCandidate {
     std::string text;
     std::string pinyin;
     /// 用掉了剩余输入的多少字节；小于剩余长度说明是句首词候选。
@@ -472,7 +482,7 @@ namespace {
 /// 候选框里一个候选的样子：字（换行画成 ⏎），后面空一格是斜体的编码提示，和字分得开。
 /// fcitx5 5.1.9 以前候选没有注释位，经典界面也只认粗体、斜体、下划线、删除线，画不了浅色，
 /// 斜体是各个版本都一样的那个。
-fcitx::Text shownCandidate(const WowtypeCandidate &candidate) {
+fcitx::Text shownCandidate(const ArchtypeCandidate &candidate) {
     fcitx::Text out(shownText(candidate.text));
     if (!candidate.comment.empty()) {
         out.append(" " + candidate.comment, fcitx::TextFormatFlag::Italic);
@@ -483,17 +493,17 @@ fcitx::Text shownCandidate(const WowtypeCandidate &candidate) {
 } // namespace
 
 /// 每个输入上下文独立保存的缓冲区和候选。
-class WowtypeState final : public fcitx::InputContextProperty {
+class ArchtypeState final : public fcitx::InputContextProperty {
 public:
-    WowtypeState() : session_(wowtype_session_new(nullptr, nullptr)) {}
-    ~WowtypeState() override { wowtype_session_free(session_); }
-    WowtypeState(const WowtypeState &) = delete;
-    WowtypeState &operator=(const WowtypeState &) = delete;
+    ArchtypeState() : session_(archtype_session_new(nullptr, nullptr)) {}
+    ~ArchtypeState() override { archtype_session_free(session_); }
+    ArchtypeState(const ArchtypeState &) = delete;
+    ArchtypeState &operator=(const ArchtypeState &) = delete;
 
     /// 核心的输入会话：编辑区的原始输入和已选词栈在这里（见 docs/PORTING.md）。
     /// 表情面板开着时，原始输入就是搜索词。
-    WowtypeSession *session_;
-    std::vector<WowtypeCandidate> candidates_;
+    ArchtypeSession *session_;
+    std::vector<ArchtypeCandidate> candidates_;
     /// 展开的面板（普通候选下键展开，或表情面板）；gridCursor_ 是光标所在候选的全局下标。
     /// 普通候选的这些（连同下面的页码、光标）是会话的候选框状态的拷贝，见 syncView。
     bool expanded_ = false;
@@ -501,25 +511,25 @@ public:
     /// 普通候选列表的页码和光标（全局下标，可以不在这一页上）；工具栏也用 panelCursor_。
     std::size_t panelPage_ = 0;
     std::size_t panelCursor_ = 0;
-    /// candidates_ 抄的是会话第几次重算的候选（WowtypeSessionView.generation）。
+    /// candidates_ 抄的是会话第几次重算的候选（ArchtypeSessionView.generation）。
     uint64_t candGeneration_ = UINT64_MAX;
-    /// 开着的工具栏 / 表情面板（WOWTYPE_TOOL_*），会话管。
-    int panel() const { return wowtype_session_open_panel(session_); }
+    /// 开着的工具栏 / 表情面板（ARCHTYPE_TOOL_*），会话管。
+    int panel() const { return archtype_session_open_panel(session_); }
 
     /// 全部原始输入（包括已经选过词的部分）。
-    std::string input() const { return wowtype_session_input(session_); }
+    std::string input() const { return archtype_session_input(session_); }
     /// 还没选词的那部分输入。
-    std::string remaining() const { return wowtype_session_remaining(session_); }
-    std::string selectedText() const { return wowtype_session_selected_text(session_); }
+    std::string remaining() const { return archtype_session_remaining(session_); }
+    std::string selectedText() const { return archtype_session_selected_text(session_); }
     bool hasSelections() const { return !selectedText().empty(); }
-    bool composing() const { return *wowtype_session_input(session_) != '\0'; }
-    /// 交给会话处理一个按下的键（keysym 为 0 时只有动作）。先用 WowtypeEngine::sessionKey
+    bool composing() const { return *archtype_session_input(session_) != '\0'; }
+    /// 交给会话处理一个按下的键（keysym 为 0 时只有动作）。先用 ArchtypeEngine::sessionKey
     /// 同步引擎和设置。返回的 frame 归会话，下一次调会话前有效。
-    /// prev_char：应用里光标前一个字（读不到给 0）；hints：WOWTYPE_KEY_HINT_*。
-    const WowtypeFrame *sessionKey(uint32_t keysym, uint32_t modifiers, uint32_t action,
+    /// prev_char：应用里光标前一个字（读不到给 0）；hints：ARCHTYPE_KEY_HINT_*。
+    const ArchtypeFrame *sessionKey(uint32_t keysym, uint32_t modifiers, uint32_t action,
                                    uint32_t prevChar = 0, uint32_t hints = 0,
                                    uint64_t timeMs = 0) {
-        WowtypeKey raw{};
+        ArchtypeKey raw{};
         raw.time_ms = timeMs;
         raw.size = sizeof(raw);
         raw.keysym = keysym;
@@ -527,10 +537,10 @@ public:
         raw.action = action;
         raw.prev_char = prevChar;
         raw.hints = hints;
-        return wowtype_session_key(session_, &raw);
+        return archtype_session_key(session_, &raw);
     }
     void clear() {
-        wowtype_session_reset(session_, 0);
+        archtype_session_reset(session_, 0);
         forgetCandidates();
     }
 
@@ -549,14 +559,14 @@ namespace {
 
 /// 普通候选的列表：翻页、移动光标交给会话，再照会话的页码和光标摆好自己。
 /// 键盘上的翻页键由会话直接处理；这里接的是鼠标点翻页按钮、滚轮，和直接调候选列表的。
-class WowtypeSessionList final : public fcitx::CommonCandidateList {
+class ArchtypeSessionList final : public fcitx::CommonCandidateList {
 public:
-    explicit WowtypeSessionList(WowtypeState *state) : state_(state) {}
+    explicit ArchtypeSessionList(ArchtypeState *state) : state_(state) {}
 
-    void prev() override { act(WOWTYPE_KEY_ACTION_PREV_PAGE); }
-    void next() override { act(WOWTYPE_KEY_ACTION_NEXT_PAGE); }
-    void prevCandidate() override { act(WOWTYPE_KEY_ACTION_PREV_CANDIDATE); }
-    void nextCandidate() override { act(WOWTYPE_KEY_ACTION_NEXT_CANDIDATE); }
+    void prev() override { act(ARCHTYPE_KEY_ACTION_PREV_PAGE); }
+    void next() override { act(ARCHTYPE_KEY_ACTION_NEXT_PAGE); }
+    void prevCandidate() override { act(ARCHTYPE_KEY_ACTION_PREV_CANDIDATE); }
+    void nextCandidate() override { act(ARCHTYPE_KEY_ACTION_NEXT_CANDIDATE); }
     void setPage(int page) override {
         if (mirroring_) {
             // mirror 里调的 CommonCandidateList::next() 会走到这里：只摆自己，不再翻会话
@@ -565,7 +575,7 @@ public:
         }
         for (int guard = 0; guard < 1000 && page != currentPage(); ++guard) {
             const int before = currentPage();
-            act(page < before ? WOWTYPE_KEY_ACTION_PREV_PAGE : WOWTYPE_KEY_ACTION_NEXT_PAGE);
+            act(page < before ? ARCHTYPE_KEY_ACTION_PREV_PAGE : ARCHTYPE_KEY_ACTION_NEXT_PAGE);
             if (currentPage() == before) {
                 break;
             }
@@ -592,9 +602,9 @@ public:
 private:
     void act(uint32_t action) {
         state_->sessionKey(0, 0, action);
-        WowtypeSessionView view{};
+        ArchtypeSessionView view{};
         view.size = sizeof(view);
-        if (wowtype_session_view(state_->session_, &view) != 0) {
+        if (archtype_session_view(state_->session_, &view) != 0) {
             return;
         }
         state_->panelPage_ = view.page;
@@ -602,22 +612,22 @@ private:
         mirror(view.page, view.cursor);
     }
 
-    WowtypeState *state_;
+    ArchtypeState *state_;
     bool mirroring_ = false;
 };
 
 } // namespace
 
-WowtypeEngine::WowtypeEngine(fcitx::Instance *instance)
+ArchtypeEngine::ArchtypeEngine(fcitx::Instance *instance)
     : instance_(instance),
       core_(nullptr),
-      factory_([](fcitx::InputContext &) { return new WowtypeState(); }) {
-    instance_->inputContextManager().registerProperty("wowtype", &factory_);
-    WLOG_I() << "WowType " << WOWTYPE_ADDON_VERSION << " 启动（fcitx5 " << fcitx::Instance::version()
+      factory_([](fcitx::InputContext &) { return new ArchtypeState(); }) {
+    instance_->inputContextManager().registerProperty("archtype", &factory_);
+    WLOG_I() << "ArchType " << ARCHTYPE_ADDON_VERSION << " 启动（fcitx5 " << fcitx::Instance::version()
              << "）";
     fcitx::RawConfig raw;
     fcitx::readAsIni(raw, kConfigFile);
-    loadWowtypeConfig(config_, raw);
+    loadArchtypeConfig(config_, raw);
     // 全量词库载入要几百毫秒，放后台，别卡住 fcitx 启动
     lexicon_ = wantedLexicon_ = resolveLexicon(*config_.lexicon);
     lexiconStamp_ = fileStamp(lexicon_);
@@ -628,23 +638,23 @@ WowtypeEngine::WowtypeEngine(fcitx::Instance *instance)
     const std::string statsDir = userDataDir();
     if (!statsDir.empty()) {
         const std::string statsPath = statsDir + "/stats.json";
-        stats_ = wowtype_stats_new(statsPath.c_str());
+        stats_ = archtype_stats_new(statsPath.c_str());
         if (!stats_) {
-            WLOG_W() << "WowType: 建不了打字统计 " << statsPath << "："
-                     << (wowtype_last_error() ? wowtype_last_error() : "unknown");
+            WLOG_W() << "ArchType: 建不了打字统计 " << statsPath << "："
+                     << (archtype_last_error() ? archtype_last_error() : "unknown");
         }
     }
 }
 
 namespace {
-constexpr char kControlService[] = "org.wowtype.Input";
-constexpr char kControlPath[] = "/org/wowtype/Input";
-constexpr char kControlInterface[] = "org.wowtype.Input1";
+constexpr char kControlService[] = "org.archtype.Input";
+constexpr char kControlPath[] = "/org/archtype/Input";
+constexpr char kControlInterface[] = "org.archtype.Input1";
 } // namespace
 
-std::string WowtypeControl::mode() { return engine_->modeName(); }
+std::string ArchtypeControl::mode() { return engine_->modeName(); }
 
-std::string WowtypeControl::setMode(const std::string &mode) {
+std::string ArchtypeControl::setMode(const std::string &mode) {
     if (!engine_->setModeByName(mode)) {
         throw fcitx::dbus::MethodCallError("org.freedesktop.DBus.Error.InvalidArgs",
                                            ("不认识的模式或现在切不了：" + mode +
@@ -654,34 +664,34 @@ std::string WowtypeControl::setMode(const std::string &mode) {
     return engine_->modeName();
 }
 
-void WowtypeEngine::setupControl() {
+void ArchtypeEngine::setupControl() {
     try {
         auto bus = std::make_unique<fcitx::dbus::Bus>(fcitx::dbus::BusType::Session);
         if (!bus->isOpen()) {
             return;
         }
         bus->attachEventLoop(&instance_->eventLoop());
-        auto control = std::make_unique<WowtypeControl>(this);
+        auto control = std::make_unique<ArchtypeControl>(this);
         if (!bus->addObjectVTable(kControlPath, kControlInterface, *control) ||
             !bus->requestName(kControlService,
                               fcitx::Flags<fcitx::dbus::RequestNameFlag>{
                                   fcitx::dbus::RequestNameFlag::ReplaceExisting,
                                   fcitx::dbus::RequestNameFlag::AllowReplacement})) {
-            WLOG_W() << "WowType: 登记 " << kControlService << " 失败，外部命令切不了模式";
+            WLOG_W() << "ArchType: 登记 " << kControlService << " 失败，外部命令切不了模式";
             return;
         }
         controlBus_ = std::move(bus);
         control_ = std::move(control);
     } catch (const std::exception &e) {
-        WLOG_I() << "WowType: 连不上会话总线，外部命令切不了模式：" << e.what();
+        WLOG_I() << "ArchType: 连不上会话总线，外部命令切不了模式：" << e.what();
     }
 }
 
-std::string WowtypeEngine::modeName() const {
+std::string ArchtypeEngine::modeName() const {
     return translateMode_ ? "translate" : asciiMode_ ? "en" : "zh";
 }
 
-bool WowtypeEngine::setModeByName(const std::string &mode) {
+bool ArchtypeEngine::setModeByName(const std::string &mode) {
     bool ascii = false;
     bool translate = false;
     if (mode == "en") {
@@ -699,16 +709,16 @@ bool WowtypeEngine::setModeByName(const std::string &mode) {
     if (ascii == asciiMode_ && translate == translateMode_) {
         return true;
     }
-    // 切的是最近用过的输入框（vim 所在的终端）；它没在用 WowType 时只改模式
+    // 切的是最近用过的输入框（vim 所在的终端）；它没在用 ArchType 时只改模式
     fcitx::InputContext *ic = instance_->mostRecentInputContext();
-    WowtypeState *state = ic ? ic->propertyFor(&factory_) : nullptr;
+    ArchtypeState *state = ic ? ic->propertyFor(&factory_) : nullptr;
     switchMode(ic, state, ascii, translate, false);
     return true;
 }
 
-void WowtypeEngine::setupVoiceOverlay() {
-    // WOWTYPE_VOICE_OVERLAY=0：不用 GNOME 扩展的浮条，一直用候选框里的文字提示
-    if (!envFlag("WOWTYPE_VOICE_OVERLAY", true)) {
+void ArchtypeEngine::setupVoiceOverlay() {
+    // ARCHTYPE_VOICE_OVERLAY=0：不用 GNOME 扩展的浮条，一直用候选框里的文字提示
+    if (!envFlag("ARCHTYPE_VOICE_OVERLAY", true)) {
         return;
     }
     try {
@@ -728,7 +738,7 @@ void WowtypeEngine::setupVoiceOverlay() {
                     overlayBroken_ = false;
                     overlayAcked_ = false;
                     overlaySentAt_ = 0;
-                    WLOG_I() << "WowType: 语音浮条" << (owner.empty() ? "不在了" : "就绪");
+                    WLOG_I() << "ArchType: 语音浮条" << (owner.empty() ? "不在了" : "就绪");
                 }
             });
         overlayAckSlot_ = overlayBus_->addMatch(
@@ -745,7 +755,7 @@ void WowtypeEngine::setupVoiceOverlay() {
             });
     } catch (const std::exception &e) {
         // 没有会话总线（比如测试里）：用文字提示
-        WLOG_I() << "WowType: 连不上会话总线，语音用文字提示：" << e.what();
+        WLOG_I() << "ArchType: 连不上会话总线，语音用文字提示：" << e.what();
         overlayAckSlot_.reset();
         overlayWatch_.reset();
         overlayWatcher_.reset();
@@ -753,7 +763,7 @@ void WowtypeEngine::setupVoiceOverlay() {
     }
 }
 
-void WowtypeEngine::sendVoiceOverlay(fcitx::InputContext *ic, uint32_t state,
+void ArchtypeEngine::sendVoiceOverlay(fcitx::InputContext *ic, uint32_t state,
                                      const std::string &label, int level) {
     if (!overlayBus_ || overlayOwner_.empty()) {
         return;
@@ -780,13 +790,13 @@ void WowtypeEngine::sendVoiceOverlay(fcitx::InputContext *ic, uint32_t state,
     }
 }
 
-void WowtypeEngine::checkOverlayAck(fcitx::InputContext *ic) {
+void ArchtypeEngine::checkOverlayAck(fcitx::InputContext *ic) {
     if (!overlaySentAt_ || overlayAcked_ || overlayBroken_ ||
         fcitx::now(CLOCK_MONOTONIC) - overlaySentAt_ < kOverlayAckUsec) {
         return;
     }
     overlayBroken_ = true;
-    WLOG_W() << "WowType: 语音浮条没有回应（GNOME 扩展画的时候出错了？），改在候选框里提示；"
+    WLOG_W() << "ArchType: 语音浮条没有回应（GNOME 扩展画的时候出错了？），改在候选框里提示；"
                 "重新登录后会再试浮条";
     // 正留着的错误提示马上换到候选框里；录音、识别中的提示下一轮就按候选框画
     if (voiceErrorUntil_ && !voiceErrorText_.empty()) {
@@ -794,24 +804,24 @@ void WowtypeEngine::checkOverlayAck(fcitx::InputContext *ic) {
     }
 }
 
-void WowtypeEngine::setConfig(const fcitx::RawConfig &config) {
+void ArchtypeEngine::setConfig(const fcitx::RawConfig &config) {
     config_.load(config, true);
     fcitx::safeSaveAsIni(config_, kConfigFile);
     applyConfig();
 }
 
-void WowtypeEngine::reloadConfig() {
+void ArchtypeEngine::reloadConfig() {
     // 文件里没写的项回到默认值（设置界面删掉一项就是想恢复默认）
-    config_ = WowtypeConfig();
+    config_ = ArchtypeConfig();
     fcitx::RawConfig raw;
     fcitx::readAsIni(raw, kConfigFile);
-    loadWowtypeConfig(config_, raw);
+    loadArchtypeConfig(config_, raw);
     applyConfig();
     wantedLexicon_ = resolveLexicon(*config_.lexicon);
     maybeSwitchLexicon();
 }
 
-void WowtypeEngine::maybeSwitchLexicon() {
+void ArchtypeEngine::maybeSwitchLexicon() {
     if (wantedLexicon_ == lexicon_ && fileStamp(lexicon_) == lexiconStamp_) {
         return;
     }
@@ -830,41 +840,41 @@ void WowtypeEngine::maybeSwitchLexicon() {
         state->clear();
         clearTranslation(state);
         // 会话借用引擎：先让它放开，再释放（ABI.md：引擎要比会话活得久）
-        wowtype_session_set_engine(state->session_, nullptr);
+        archtype_session_set_engine(state->session_, nullptr);
         ic->inputPanel().reset();
         ic->updatePreedit();
         ic->updateUserInterface(fcitx::UserInterfaceComponent::InputPanel);
         return true;
     });
     if (core_) {
-        wowtype_engine_free(core_);
+        archtype_engine_free(core_);
         core_ = nullptr;
         // 简繁表、五笔码表是载进这个引擎的，新引擎载好后 applyCoreSettings 再载
         conversionLoaded_ = false;
         wubiLoaded_ = false;
     }
     if (lexicon_ == wantedLexicon_) {
-        WLOG_I() << "WowType: 词库文件换了，重新载入 " << lexicon_;
+        WLOG_I() << "ArchType: 词库文件换了，重新载入 " << lexicon_;
     } else {
-        WLOG_I() << "WowType: 换词库 " << lexicon_ << " -> " << wantedLexicon_;
+        WLOG_I() << "ArchType: 换词库 " << lexicon_ << " -> " << wantedLexicon_;
     }
     lexicon_ = wantedLexicon_;
     lexiconStamp_ = fileStamp(lexicon_);
     loading_ = std::async(std::launch::async, loadCore, userDictPath(), lexicon_);
 }
 
-void WowtypeEngine::applyConfig() {
+void ArchtypeEngine::applyConfig() {
     const auto envOr = [](const char *name, bool configured) {
         return envFlag(name, configured);
     };
-    horizontal_ = !envOr("WOWTYPE_VERTICAL", *config_.layout == WowtypeLayout::Vertical);
+    horizontal_ = !envOr("ARCHTYPE_VERTICAL", *config_.layout == ArchtypeLayout::Vertical);
     arrowKeys_ = *config_.arrowKeys;
     pageSize_ = static_cast<std::size_t>(std::clamp(*config_.pageSize, 3, 9));
     pageMinus_ = *config_.pageKeysMinus;
     pageBracket_ = *config_.pageKeysBracket;
     pageComma_ = *config_.pageKeysComma;
     pageTab_ = *config_.pageKeysTab;
-    if (const char *env = std::getenv("WOWTYPE_PAGE_KEYS"); env && *env) {
+    if (const char *env = std::getenv("ARCHTYPE_PAGE_KEYS"); env && *env) {
         // 逗号分隔：minus,bracket,comma,tab
         const std::string keys = std::string(",") + env + ",";
         pageMinus_ = keys.find(",minus,") != std::string::npos;
@@ -872,7 +882,7 @@ void WowtypeEngine::applyConfig() {
         pageComma_ = keys.find(",comma,") != std::string::npos;
         pageTab_ = keys.find(",tab,") != std::string::npos;
     }
-    fuzzy_ = envOr("WOWTYPE_FUZZY", *config_.fuzzy);
+    fuzzy_ = envOr("ARCHTYPE_FUZZY", *config_.fuzzy);
     // 位掩码，和核心的 syllable::fuzzy 一致
     fuzzyGroups_ = (*config_.fuzzyZh ? 1u : 0u) | (*config_.fuzzyCh ? 2u : 0u) |
                    (*config_.fuzzySh ? 4u : 0u) | (*config_.fuzzyNL ? 8u : 0u) |
@@ -882,49 +892,49 @@ void WowtypeEngine::applyConfig() {
                    (*config_.fuzzyUan ? 1024u : 0u) | (*config_.fuzzyUn ? 2048u : 0u) |
                    (*config_.fuzzyAnAi ? 4096u : 0u) | (*config_.fuzzyHuangWang ? 8192u : 0u) |
                    (*config_.fuzzyUnIong ? 16384u : 0u) | (*config_.fuzzyEngOng ? 32768u : 0u);
-    if (const char *env = std::getenv("WOWTYPE_FUZZY_GROUPS"); env && *env) {
+    if (const char *env = std::getenv("ARCHTYPE_FUZZY_GROUPS"); env && *env) {
         fuzzyGroups_ = static_cast<unsigned>(std::strtoul(env, nullptr, 0));
     }
     selectKeys_ = *config_.selectKeys;
-    if (const char *env = std::getenv("WOWTYPE_SELECT_KEYS"); env && *env) {
+    if (const char *env = std::getenv("ARCHTYPE_SELECT_KEYS"); env && *env) {
         const std::string name = env;
-        selectKeys_ = name == "semicolon"   ? WowtypeSelectKeys::Semicolon
-                      : name == "quote"     ? WowtypeSelectKeys::SemicolonQuote
-                                            : WowtypeSelectKeys::Off;
+        selectKeys_ = name == "semicolon"   ? ArchtypeSelectKeys::Semicolon
+                      : name == "quote"     ? ArchtypeSelectKeys::SemicolonQuote
+                                            : ArchtypeSelectKeys::Off;
     }
-    pickChar_ = envOr("WOWTYPE_PICK_CHAR", *config_.pickChar);
-    dateTime_ = envOr("WOWTYPE_DATETIME", *config_.dateTime);
-    calculator_ = envOr("WOWTYPE_CALC", *config_.calculator);
-    toolbar_ = envOr("WOWTYPE_TOOLBAR", *config_.toolbar);
-    clipboardHistory_ = envOr("WOWTYPE_CLIPBOARD_HISTORY", *config_.clipboardHistory);
+    pickChar_ = envOr("ARCHTYPE_PICK_CHAR", *config_.pickChar);
+    dateTime_ = envOr("ARCHTYPE_DATETIME", *config_.dateTime);
+    calculator_ = envOr("ARCHTYPE_CALC", *config_.calculator);
+    toolbar_ = envOr("ARCHTYPE_TOOLBAR", *config_.toolbar);
+    clipboardHistory_ = envOr("ARCHTYPE_CLIPBOARD_HISTORY", *config_.clipboardHistory);
     shuangpinShowKeys_ = *config_.shuangpinShowKeys;
     if (!clipboardHistory_) {
-        wowtype_clipboard_clear();
+        archtype_clipboard_clear();
     }
     autoSpaceFlags_ = *config_.autoSpace ? (*config_.autoSpaceLetters ? 1 : 0) |
                                                (*config_.autoSpaceDigits ? 2 : 0)
                                          : 0;
-    if (const char *env = std::getenv("WOWTYPE_AUTOSPACE"); env && *env) {
+    if (const char *env = std::getenv("ARCHTYPE_AUTOSPACE"); env && *env) {
         autoSpaceFlags_ = static_cast<int>(std::strtol(env, nullptr, 0)) & 3;
     }
-    typo_ = envOr("WOWTYPE_TYPO", *config_.typo);
-    rareExt_ = envOr("WOWTYPE_RARE_EXT", *config_.rareExt);
-    shuangpin_ = envOr("WOWTYPE_SHUANGPIN", *config_.inputScheme == WowtypeInputScheme::Shuangpin);
-    shuangpinScheme_ = WowtypeShuangpinSchemeToString(*config_.shuangpinScheme);
-    if (const char *env = std::getenv("WOWTYPE_SHUANGPIN_SCHEME"); env && *env) {
+    typo_ = envOr("ARCHTYPE_TYPO", *config_.typo);
+    rareExt_ = envOr("ARCHTYPE_RARE_EXT", *config_.rareExt);
+    shuangpin_ = envOr("ARCHTYPE_SHUANGPIN", *config_.inputScheme == ArchtypeInputScheme::Shuangpin);
+    shuangpinScheme_ = ArchtypeShuangpinSchemeToString(*config_.shuangpinScheme);
+    if (const char *env = std::getenv("ARCHTYPE_SHUANGPIN_SCHEME"); env && *env) {
         // 环境变量设了方案就当作打开双拼（方便测试）
         shuangpinScheme_ = env;
         shuangpin_ = true;
     }
     // 双拼和五笔只能选一个（环境变量打开了双拼时就不是五笔）
-    wubi_ = !shuangpin_ && *config_.inputScheme == WowtypeInputScheme::Wubi86;
+    wubi_ = !shuangpin_ && *config_.inputScheme == ArchtypeInputScheme::Wubi86;
     shiftToggle_ = *config_.shiftToggle;
-    if (const char *env = std::getenv("WOWTYPE_SHIFT_TOGGLE"); env && *env) {
+    if (const char *env = std::getenv("ARCHTYPE_SHIFT_TOGGLE"); env && *env) {
         const std::string name = env;
-        shiftToggle_ = name == "left"    ? WowtypeShiftToggle::Left
-                       : name == "right" ? WowtypeShiftToggle::Right
-                       : name == "off" || name == "0" ? WowtypeShiftToggle::Off
-                                                      : WowtypeShiftToggle::Both;
+        shiftToggle_ = name == "left"    ? ArchtypeShiftToggle::Left
+                       : name == "right" ? ArchtypeShiftToggle::Right
+                       : name == "off" || name == "0" ? ArchtypeShiftToggle::Off
+                                                      : ArchtypeShiftToggle::Both;
     }
     toggleKey_ = *config_.toggleKey;
     translateModeKey_ = *config_.translateModeKey;
@@ -934,22 +944,22 @@ void WowtypeEngine::applyConfig() {
     }
     initialMode_ = *config_.initialMode;
     punctStyle_ = *config_.punctStyle;
-    if (const char *env = std::getenv("WOWTYPE_PUNCT_STYLE"); env && *env) {
+    if (const char *env = std::getenv("ARCHTYPE_PUNCT_STYLE"); env && *env) {
         const std::string name = env;
-        punctStyle_ = name == "half" || name == "halfwidth" ? WowtypePunctStyle::Halfwidth
-                                                            : WowtypePunctStyle::Fullwidth;
+        punctStyle_ = name == "half" || name == "halfwidth" ? ArchtypePunctStyle::Halfwidth
+                                                            : ArchtypePunctStyle::Fullwidth;
     }
-    traditional_ = envOr("WOWTYPE_TRADITIONAL", *config_.traditional);
-    emojiSuggest_ = envOr("WOWTYPE_EMOJI", *config_.emojiSuggest);
+    traditional_ = envOr("ARCHTYPE_TRADITIONAL", *config_.traditional);
+    emojiSuggest_ = envOr("ARCHTYPE_EMOJI", *config_.emojiSuggest);
     emojiKey_ = *config_.emojiKey;
 
-    // 语音热键：WOWTYPE_VOICE_KEY（fcitx 键名，如 Alt_R、Control_R、F8）优先，none 关掉
+    // 语音热键：ARCHTYPE_VOICE_KEY（fcitx 键名，如 Alt_R、Control_R、F8）优先，none 关掉
     fcitx::Key key = *config_.voice ? *config_.voiceKey : fcitx::Key();
-    if (const char *env = std::getenv("WOWTYPE_VOICE_KEY"); env && *env) {
+    if (const char *env = std::getenv("ARCHTYPE_VOICE_KEY"); env && *env) {
         const std::string name = env;
         key = name == "none" || name == "0" ? fcitx::Key() : fcitx::Key(name);
         if (key.sym() == FcitxKey_None && name != "none" && name != "0") {
-            WLOG_W() << "WowType: 不认识语音热键 " << name << "，改用 Alt_R";
+            WLOG_W() << "ArchType: 不认识语音热键 " << name << "，改用 Alt_R";
             key = fcitx::Key(FcitxKey_Alt_R);
         }
     }
@@ -960,32 +970,32 @@ void WowtypeEngine::applyConfig() {
         voiceKeyDown_ = false;
     }
     voiceKey_ = key;
-    voiceCopy_ = envOr("WOWTYPE_VOICE_COPY", *config_.voiceCopy);
+    voiceCopy_ = envOr("ARCHTYPE_VOICE_COPY", *config_.voiceCopy);
     if (voiceKey_.sym() != FcitxKey_None && !voice_) {
         // 只建句柄：不开麦克风、不读模型，第一次按热键时才读。模型从来不在这里下载，
-        // 没下载时按热键只提示去「WowType 设置 → 语音」里下载
-        const char *dir = std::getenv("WOWTYPE_VOICE_MODEL_DIR");
-        voice_ = wowtype_voice_new(dir);
+        // 没下载时按热键只提示去「ArchType 设置 → 语音」里下载
+        const char *dir = std::getenv("ARCHTYPE_VOICE_MODEL_DIR");
+        voice_ = archtype_voice_new(dir);
     }
-    // 互译：环境变量 WOWTYPE_TRANSLATE_URL / _MODEL / _TARGET / _KEY_FILE 覆盖（测试用）
-    translateEnabled_ = envOr("WOWTYPE_TRANSLATE", *config_.translate);
+    // 互译：环境变量 ARCHTYPE_TRANSLATE_URL / _MODEL / _TARGET / _KEY_FILE 覆盖（测试用）
+    translateEnabled_ = envOr("ARCHTYPE_TRANSLATE", *config_.translate);
     std::string translateUrl = *config_.translateBaseUrl;
     std::string translateModel = *config_.translateModel;
-    std::string translateTarget = WowtypeTranslateTargetToString(*config_.translateTarget);
-    if (const char *env = std::getenv("WOWTYPE_TRANSLATE_URL"); env && *env) {
+    std::string translateTarget = ArchtypeTranslateTargetToString(*config_.translateTarget);
+    if (const char *env = std::getenv("ARCHTYPE_TRANSLATE_URL"); env && *env) {
         translateUrl = env;
     }
-    if (const char *env = std::getenv("WOWTYPE_TRANSLATE_MODEL"); env && *env) {
+    if (const char *env = std::getenv("ARCHTYPE_TRANSLATE_MODEL"); env && *env) {
         translateModel = env;
     }
-    if (const char *env = std::getenv("WOWTYPE_TRANSLATE_TARGET"); env && *env) {
+    if (const char *env = std::getenv("ARCHTYPE_TRANSLATE_TARGET"); env && *env) {
         translateTarget = env;
     }
     if (translateEnabled_ && !translator_) {
-        translator_ = wowtype_translate_new();
+        translator_ = archtype_translate_new();
     }
     if (translator_) {
-        wowtype_translate_configure(translator_, translateUrl.c_str(), translateModel.c_str(),
+        archtype_translate_configure(translator_, translateUrl.c_str(), translateModel.c_str(),
                                     translateTarget.c_str(), *config_.translateFormal ? 1 : 0,
                                     translateKeyFile().c_str());
         std::string localModel;
@@ -997,7 +1007,7 @@ void WowtypeEngine::applyConfig() {
             translateModel = "本地 HY-MT";
         }
         // 没选本地模型时传空串：不起进程、不占端口（已经起了的马上停掉）
-        wowtype_translate_configure_local(
+        archtype_translate_configure_local(
             translator_, localModel.c_str(), (*config_.translateLlamaServer).c_str(),
             static_cast<unsigned>(*config_.translateIdleMinutes) * 60u);
     }
@@ -1005,8 +1015,8 @@ void WowtypeEngine::applyConfig() {
         translateMode_ = false;
     }
 
-    WLOG_I() << "WowType: 设置 " << (horizontal_ ? "横排" : "竖排")
-             << (arrowKeys_ == WowtypeArrowKeys::Caret ? " 左右键移光标" : "") << " 每页" << pageSize_
+    WLOG_I() << "ArchType: 设置 " << (horizontal_ ? "横排" : "竖排")
+             << (arrowKeys_ == ArchtypeArrowKeys::Caret ? " 左右键移光标" : "") << " 每页" << pageSize_
              << " 模糊音=" << fuzzy_ << "(" << fuzzyGroups_ << ")" << " 纠错=" << typo_ << " 扩展区生僻字=" << rareExt_ << " 双拼=" << shuangpin_
              << "(" << shuangpinScheme_ << ")" << " 五笔=" << wubi_ << " Shift切换=" << static_cast<int>(shiftToggle_)
              << " 繁体=" << traditional_ << " 语音键=" << voiceKey_.toString()
@@ -1023,64 +1033,64 @@ void WowtypeEngine::applyConfig() {
     }
 }
 
-void WowtypeEngine::applyCoreSettings() {
+void ArchtypeEngine::applyCoreSettings() {
     // 前两页是排好序的整句、词和句首词，后面把能对上的同音词、句首词、单字全补上，
     // 翻页能一直翻到生僻字（每次按键多花不到 1ms）
-    wowtype_engine_set_max_candidates(core_, kMaxCandidates);
-    wowtype_engine_set_fuzzy(core_, fuzzy_ ? 1 : 0);
-    wowtype_engine_set_fuzzy_groups(core_, fuzzyGroups_);
-    wowtype_engine_set_shuangpin(core_, shuangpin_ ? 1 : 0);
-    if (wowtype_engine_set_shuangpin_scheme(core_, shuangpinScheme_.c_str()) != 0) {
-        WLOG_W() << "WowType: 不认识双拼方案 " << shuangpinScheme_ << "，用自然码";
-        wowtype_engine_set_shuangpin_scheme(core_, "ziranma");
+    archtype_engine_set_max_candidates(core_, kMaxCandidates);
+    archtype_engine_set_fuzzy(core_, fuzzy_ ? 1 : 0);
+    archtype_engine_set_fuzzy_groups(core_, fuzzyGroups_);
+    archtype_engine_set_shuangpin(core_, shuangpin_ ? 1 : 0);
+    if (archtype_engine_set_shuangpin_scheme(core_, shuangpinScheme_.c_str()) != 0) {
+        WLOG_W() << "ArchType: 不认识双拼方案 " << shuangpinScheme_ << "，用自然码";
+        archtype_engine_set_shuangpin_scheme(core_, "ziranma");
     }
-    wowtype_engine_set_typo_correction(core_, typo_ ? 1 : 0);
-    wowtype_engine_set_rare_ext_chars(core_, rareExt_ ? 1 : 0);
+    archtype_engine_set_typo_correction(core_, typo_ ? 1 : 0);
+    archtype_engine_set_rare_ext_chars(core_, rareExt_ ? 1 : 0);
     if (traditional_ && !conversionLoaded_) {
-        const std::string s2t = findDataFile("WOWTYPE_S2T", "s2t.tsv");
+        const std::string s2t = findDataFile("ARCHTYPE_S2T", "s2t.tsv");
         const int loaded =
-            s2t.empty() ? -1 : wowtype_engine_load_conversion(core_, s2t.c_str());
+            s2t.empty() ? -1 : archtype_engine_load_conversion(core_, s2t.c_str());
         if (loaded > 0) {
             conversionLoaded_ = true;
-            WLOG_I() << "WowType: 载入简繁表 " << loaded << " 条";
+            WLOG_I() << "ArchType: 载入简繁表 " << loaded << " 条";
         } else {
-            WLOG_W() << "WowType: 简繁表载入失败 " << s2t;
+            WLOG_W() << "ArchType: 简繁表载入失败 " << s2t;
         }
     }
-    wowtype_engine_set_traditional(core_, traditional_ && conversionLoaded_ ? 1 : 0);
+    archtype_engine_set_traditional(core_, traditional_ && conversionLoaded_ ? 1 : 0);
     if (wubi_ && !wubiLoaded_) {
         // 选了五笔才载（九万多条，约 20ms、3MB）；没有码表时会话照全拼打，候选框上方说为什么
-        const std::string wubi = findDataFile("WOWTYPE_WUBI", "wubi86.tsv");
-        const int loaded = wubi.empty() ? -1 : wowtype_engine_load_wubi(core_, wubi.c_str());
+        const std::string wubi = findDataFile("ARCHTYPE_WUBI", "wubi86.tsv");
+        const int loaded = wubi.empty() ? -1 : archtype_engine_load_wubi(core_, wubi.c_str());
         if (loaded > 0) {
             wubiLoaded_ = true;
-            WLOG_I() << "WowType: 载入五笔码表 " << wubi << "，" << loaded << " 条";
+            WLOG_I() << "ArchType: 载入五笔码表 " << wubi << "，" << loaded << " 条";
         } else {
-            WLOG_W() << "WowType: 五笔码表载入失败 " << (wubi.empty() ? "（没有 wubi86.tsv）" : wubi)
+            WLOG_W() << "ArchType: 五笔码表载入失败 " << (wubi.empty() ? "（没有 wubi86.tsv）" : wubi)
                      << "，先按全拼打";
         }
     }
 
     if (const std::string custom = customWordsPath(); !custom.empty()) {
-        const int loaded = wowtype_engine_load_custom_words(core_, custom.c_str());
+        const int loaded = archtype_engine_load_custom_words(core_, custom.c_str());
         if (loaded < 0) {
-            WLOG_W() << "WowType: 自定义词载入失败 " << custom << "："
-                         << (wowtype_last_error() ? wowtype_last_error() : "unknown");
+            WLOG_W() << "ArchType: 自定义词载入失败 " << custom << "："
+                         << (archtype_last_error() ? archtype_last_error() : "unknown");
         } else if (loaded > 0) {
-            WLOG_I() << "WowType: 载入自定义词 " << loaded << " 条";
+            WLOG_I() << "ArchType: 载入自定义词 " << loaded << " 条";
         }
     }
 }
 
-std::string WowtypeEngine::customWordsPath() const {
-    if (const char *env = std::getenv("WOWTYPE_CUSTOM"); env && *env) {
+std::string ArchtypeEngine::customWordsPath() const {
+    if (const char *env = std::getenv("ARCHTYPE_CUSTOM"); env && *env) {
         return env;
     }
     const std::string dir = userDataDir();
     return dir.empty() ? std::string() : dir + "/custom.tsv";
 }
 
-bool WowtypeEngine::isVoiceKey(const fcitx::Key &key) const {
+bool ArchtypeEngine::isVoiceKey(const fcitx::Key &key) const {
     if (voiceKey_.sym() == FcitxKey_None || key.sym() != voiceKey_.sym()) {
         return false;
     }
@@ -1092,57 +1102,57 @@ bool WowtypeEngine::isVoiceKey(const fcitx::Key &key) const {
     return (key.states() & mask) == (voiceKey_.states() & mask);
 }
 
-bool WowtypeEngine::isEmojiKey(const fcitx::Key &key) const {
+bool ArchtypeEngine::isEmojiKey(const fcitx::Key &key) const {
     return emojiKey_.sym() != FcitxKey_None && key.checkKeyList(fcitx::KeyList{emojiKey_});
 }
 
-uint32_t WowtypeEngine::modeKeyAction(const fcitx::Key &key) const {
+uint32_t ArchtypeEngine::modeKeyAction(const fcitx::Key &key) const {
     auto is = [&key](const fcitx::Key &want) {
         return want.sym() != FcitxKey_None && key.checkKeyList(fcitx::KeyList{want});
     };
-    return is(translateModeKey_) ? WOWTYPE_KEY_ACTION_TOGGLE_TRANSLATE
-           : is(toggleKey_)      ? WOWTYPE_KEY_ACTION_TOGGLE_MODE
-                                 : WOWTYPE_KEY_ACTION_NONE;
+    return is(translateModeKey_) ? ARCHTYPE_KEY_ACTION_TOGGLE_TRANSLATE
+           : is(toggleKey_)      ? ARCHTYPE_KEY_ACTION_TOGGLE_MODE
+                                 : ARCHTYPE_KEY_ACTION_NONE;
 }
 
-bool WowtypeEngine::canToggleMode() const {
-    return shiftToggle_ != WowtypeShiftToggle::Off || toggleKey_.sym() != FcitxKey_None;
+bool ArchtypeEngine::canToggleMode() const {
+    return shiftToggle_ != ArchtypeShiftToggle::Off || toggleKey_.sym() != FcitxKey_None;
 }
 
-WowtypeEngine::~WowtypeEngine() {
+ArchtypeEngine::~ArchtypeEngine() {
     if (loading_.valid()) {
         core_ = loading_.get();
     }
     // 会话借用引擎和翻译器：先让它们放开，再释放（ABI.md：要比会话活得久）
     instance_->inputContextManager().foreach([this](fcitx::InputContext *ic) {
         auto *state = ic->propertyFor(&factory_);
-        wowtype_session_set_translator(state->session_, nullptr);
-        wowtype_session_set_engine(state->session_, nullptr);
+        archtype_session_set_translator(state->session_, nullptr);
+        archtype_session_set_engine(state->session_, nullptr);
         return true;
     });
     if (core_) {
         maybeSaveUserDict(true);
-        wowtype_engine_free(core_);
+        archtype_engine_free(core_);
         core_ = nullptr;
     }
     flushStats();
     if (stats_) {
-        wowtype_stats_free(stats_);
+        archtype_stats_free(stats_);
         stats_ = nullptr;
     }
     voiceTimer_.reset();
     if (voice_) {
-        wowtype_voice_free(voice_);
+        archtype_voice_free(voice_);
         voice_ = nullptr;
     }
     translateTimer_.reset();
     if (translator_) {
-        wowtype_translate_free(translator_);
+        archtype_translate_free(translator_);
         translator_ = nullptr;
     }
 }
 
-bool WowtypeEngine::coreReady() {
+bool ArchtypeEngine::coreReady() {
     if (core_) {
         return true;
     }
@@ -1161,8 +1171,8 @@ bool WowtypeEngine::coreReady() {
     return core_ != nullptr;
 }
 
-std::string WowtypeEngine::userDictPath() const {
-    if (const char *env = std::getenv("WOWTYPE_USER_DICT"); env && *env) {
+std::string ArchtypeEngine::userDictPath() const {
+    if (const char *env = std::getenv("ARCHTYPE_USER_DICT"); env && *env) {
         return env;
     }
     const std::string dir = userDataDir();
@@ -1174,7 +1184,7 @@ std::string WowtypeEngine::userDictPath() const {
     return dir + "/user.tsv";
 }
 
-void WowtypeEngine::maybeSaveUserDict(bool force) {
+void ArchtypeEngine::maybeSaveUserDict(bool force) {
     if (!core_ || (!force && unsavedCommits_ < kSaveEvery) || unsavedCommits_ == 0) {
         return;
     }
@@ -1182,21 +1192,21 @@ void WowtypeEngine::maybeSaveUserDict(bool force) {
     if (path.empty()) {
         return;
     }
-    const bool dictSaved = wowtype_engine_save_user_dict(core_, path.c_str()) == 0;
+    const bool dictSaved = archtype_engine_save_user_dict(core_, path.c_str()) == 0;
     const std::string history = historyPathFor(path);
     const bool historySaved =
-        !history.empty() && wowtype_engine_save_history(core_, history.c_str()) == 0;
+        !history.empty() && archtype_engine_save_history(core_, history.c_str()) == 0;
     if (!historySaved) {
-        WLOG_W() << "WowType: 输入习惯保存失败 " << history << "："
-                     << (wowtype_last_error() ? wowtype_last_error() : "unknown");
+        WLOG_W() << "ArchType: 输入习惯保存失败 " << history << "："
+                     << (archtype_last_error() ? archtype_last_error() : "unknown");
     }
     if (dictSaved && historySaved) {
         unsavedCommits_ = 0;
     }
 }
 
-void WowtypeEngine::finishCommit(fcitx::InputContext *ic, WowtypeState *state,
-                                 const WowtypeFrame *frame) {
+void ArchtypeEngine::finishCommit(fcitx::InputContext *ic, ArchtypeState *state,
+                                 const ArchtypeFrame *frame) {
     // 会话已经清空编辑区、记过选词和上文、补好了空格；这里上屏、攒着存用户词库
     const std::string text = frame && frame->commit ? frame->commit : "";
     const bool learned = frame && frame->learned;
@@ -1219,40 +1229,40 @@ void WowtypeEngine::finishCommit(fcitx::InputContext *ic, WowtypeState *state,
     }
 }
 
-void WowtypeEngine::commitInput(fcitx::InputContext *ic, WowtypeState *state) {
+void ArchtypeEngine::commitInput(fcitx::InputContext *ic, ArchtypeState *state) {
     if (!ic) {
         return;
     }
-    finishCommit(ic, state, wowtype_session_reset(state->session_, 1));
+    finishCommit(ic, state, archtype_session_reset(state->session_, 1));
 }
 
-void WowtypeEngine::syncSession(WowtypeState *state) {
-    wowtype_session_set_engine(state->session_, core_);
-    wowtype_session_set_translator(state->session_, translator_);
-    WowtypeSessionConfig config{};
+void ArchtypeEngine::syncSession(ArchtypeState *state) {
+    archtype_session_set_engine(state->session_, core_);
+    archtype_session_set_translator(state->session_, translator_);
+    ArchtypeSessionConfig config{};
     config.size = sizeof(config);
     config.page_size = static_cast<uint32_t>(pageSize_);
     config.calculator = calculator_ ? 1 : 0;
     config.date_time = dateTime_ ? 1 : 0;
     config.emoji_suggest = emojiSuggest_ ? 1 : 0;
     config.horizontal = horizontal_ ? 1 : 0;
-    config.arrow_keys = arrowKeys_ == WowtypeArrowKeys::Caret ? WOWTYPE_ARROW_KEYS_CARET
-                                                             : WOWTYPE_ARROW_KEYS_CANDIDATES;
-    config.page_keys = (pageMinus_ ? WOWTYPE_PAGE_KEYS_MINUS : 0u) |
-                       (pageBracket_ ? WOWTYPE_PAGE_KEYS_BRACKET : 0u) |
-                       (pageComma_ ? WOWTYPE_PAGE_KEYS_COMMA : 0u) |
-                       (pageTab_ ? WOWTYPE_PAGE_KEYS_TAB : 0u);
-    config.select_keys = selectKeys_ == WowtypeSelectKeys::Semicolon ? WOWTYPE_SELECT_KEYS_SEMICOLON
-                         : selectKeys_ == WowtypeSelectKeys::SemicolonQuote
-                             ? WOWTYPE_SELECT_KEYS_SEMICOLON_QUOTE
-                             : WOWTYPE_SELECT_KEYS_OFF;
+    config.arrow_keys = arrowKeys_ == ArchtypeArrowKeys::Caret ? ARCHTYPE_ARROW_KEYS_CARET
+                                                             : ARCHTYPE_ARROW_KEYS_CANDIDATES;
+    config.page_keys = (pageMinus_ ? ARCHTYPE_PAGE_KEYS_MINUS : 0u) |
+                       (pageBracket_ ? ARCHTYPE_PAGE_KEYS_BRACKET : 0u) |
+                       (pageComma_ ? ARCHTYPE_PAGE_KEYS_COMMA : 0u) |
+                       (pageTab_ ? ARCHTYPE_PAGE_KEYS_TAB : 0u);
+    config.select_keys = selectKeys_ == ArchtypeSelectKeys::Semicolon ? ARCHTYPE_SELECT_KEYS_SEMICOLON
+                         : selectKeys_ == ArchtypeSelectKeys::SemicolonQuote
+                             ? ARCHTYPE_SELECT_KEYS_SEMICOLON_QUOTE
+                             : ARCHTYPE_SELECT_KEYS_OFF;
     config.pick_char = pickChar_ ? 1 : 0;
-    config.punct_style = punctStyle_ == WowtypePunctStyle::Halfwidth ? 1 : 0;
+    config.punct_style = punctStyle_ == ArchtypePunctStyle::Halfwidth ? 1 : 0;
     config.auto_space = static_cast<uint32_t>(autoSpaceFlags_);
-    config.shift_toggle = shiftToggle_ == WowtypeShiftToggle::Left    ? WOWTYPE_SHIFT_TOGGLE_LEFT
-                          : shiftToggle_ == WowtypeShiftToggle::Right ? WOWTYPE_SHIFT_TOGGLE_RIGHT
-                          : shiftToggle_ == WowtypeShiftToggle::Off   ? WOWTYPE_SHIFT_TOGGLE_OFF
-                                                                      : WOWTYPE_SHIFT_TOGGLE_BOTH;
+    config.shift_toggle = shiftToggle_ == ArchtypeShiftToggle::Left    ? ARCHTYPE_SHIFT_TOGGLE_LEFT
+                          : shiftToggle_ == ArchtypeShiftToggle::Right ? ARCHTYPE_SHIFT_TOGGLE_RIGHT
+                          : shiftToggle_ == ArchtypeShiftToggle::Off   ? ARCHTYPE_SHIFT_TOGGLE_OFF
+                                                                      : ARCHTYPE_SHIFT_TOGGLE_BOTH;
     config.translate_mode = translateAvailable() ? 1 : 0;
     config.translate_key = translateModeKey_.sym() != FcitxKey_None ? 1 : 0;
     config.toolbar = toolbar_ ? 1 : 0;
@@ -1261,10 +1271,10 @@ void WowtypeEngine::syncSession(WowtypeState *state) {
     config.wubi = wubi_ ? 1 : 0;
     config.wubi_auto_commit = *config_.wubiAutoCommit ? 1 : 0;
     config.wubi_hint = *config_.wubiHint ? 1 : 0;
-    wowtype_session_configure(state->session_, &config);
+    archtype_session_configure(state->session_, &config);
 }
 
-const WowtypeFrame *WowtypeEngine::sessionKey(fcitx::InputContext *ic, WowtypeState *state,
+const ArchtypeFrame *ArchtypeEngine::sessionKey(fcitx::InputContext *ic, ArchtypeState *state,
                                               const fcitx::Key &key, uint32_t action) {
     coreReady();
     syncSession(state);
@@ -1274,17 +1284,17 @@ const WowtypeFrame *WowtypeEngine::sessionKey(fcitx::InputContext *ic, WowtypeSt
     if (!ic || ic->capabilityFlags().testAny(fcitx::CapabilityFlags{
                    fcitx::CapabilityFlag::PasswordOrSensitive, fcitx::CapabilityFlag::Url,
                    fcitx::CapabilityFlag::Email})) {
-        hints |= WOWTYPE_KEY_HINT_NO_AUTO_SPACE;
+        hints |= ARCHTYPE_KEY_HINT_NO_AUTO_SPACE;
     }
     if (ic && !translatable(ic)) {
-        hints |= WOWTYPE_KEY_HINT_NO_TRANSLATE;
+        hints |= ARCHTYPE_KEY_HINT_NO_TRANSLATE;
     }
     // 读得到周围文字时会话拿光标前的字核对自己记的上文（在应用里删过、改过就作废）
     const auto prev = prevChar(ic);
     if (prev) {
-        hints |= WOWTYPE_KEY_HINT_SURROUNDING;
+        hints |= ARCHTYPE_KEY_HINT_SURROUNDING;
     }
-    const WowtypeFrame *frame =
+    const ArchtypeFrame *frame =
         state->sessionKey(static_cast<uint32_t>(key.sym()), static_cast<uint32_t>(key.states()),
                           action, prev.value_or(0), hints, nowMs());
     if (frame && frame->wake_after_ms > 0) {
@@ -1293,7 +1303,7 @@ const WowtypeFrame *WowtypeEngine::sessionKey(fcitx::InputContext *ic, WowtypeSt
     return frame;
 }
 
-std::optional<uint32_t> WowtypeEngine::prevChar(fcitx::InputContext *ic) const {
+std::optional<uint32_t> ArchtypeEngine::prevChar(fcitx::InputContext *ic) const {
     // 应用报告了周围文字才知道光标前是什么；选中了文字时看选区前面那个字
     if (!ic || !ic->capabilityFlags().test(fcitx::CapabilityFlag::SurroundingText)) {
         return std::nullopt;
@@ -1315,31 +1325,31 @@ std::optional<uint32_t> WowtypeEngine::prevChar(fcitx::InputContext *ic) const {
     return fcitx::utf8::isValidChar(prev) ? std::optional<uint32_t>(prev) : std::nullopt;
 }
 
-uint32_t WowtypeEngine::keyAction(const fcitx::Key &key) const {
+uint32_t ArchtypeEngine::keyAction(const fcitx::Key &key) const {
     const auto sym = key.sym();
     if (sym == FcitxKey_Up || sym == FcitxKey_Down || sym == FcitxKey_Left ||
         sym == FcitxKey_Right) {
-        return WOWTYPE_KEY_ACTION_NONE;
+        return ARCHTYPE_KEY_ACTION_NONE;
     }
     const auto &global = instance_->globalConfig();
     if (key.checkKeyList(global.defaultPrevPage())) {
-        return WOWTYPE_KEY_ACTION_PREV_PAGE;
+        return ARCHTYPE_KEY_ACTION_PREV_PAGE;
     }
     if (key.checkKeyList(global.defaultNextPage())) {
-        return WOWTYPE_KEY_ACTION_NEXT_PAGE;
+        return ARCHTYPE_KEY_ACTION_NEXT_PAGE;
     }
     if (key.checkKeyList(global.defaultPrevCandidate())) {
-        return WOWTYPE_KEY_ACTION_PREV_CANDIDATE;
+        return ARCHTYPE_KEY_ACTION_PREV_CANDIDATE;
     }
     if (key.checkKeyList(global.defaultNextCandidate())) {
-        return WOWTYPE_KEY_ACTION_NEXT_CANDIDATE;
+        return ARCHTYPE_KEY_ACTION_NEXT_CANDIDATE;
     }
-    return WOWTYPE_KEY_ACTION_NONE;
+    return ARCHTYPE_KEY_ACTION_NONE;
 }
 
-void WowtypeEngine::applySessionFrame(fcitx::InputContext *ic, WowtypeState *state,
-                                      const WowtypeFrame *frame) {
-    if (frame && frame->size >= offsetof(WowtypeFrame, forgot) + sizeof(frame->forgot) &&
+void ArchtypeEngine::applySessionFrame(fcitx::InputContext *ic, ArchtypeState *state,
+                                      const ArchtypeFrame *frame) {
+    if (frame && frame->size >= offsetof(ArchtypeFrame, forgot) + sizeof(frame->forgot) &&
         frame->forgot) {
         // Ctrl+Delete 忘掉了学错的词：马上存，免得 fcitx5 退出前没存上、重启又回来
         ++unsavedCommits_;
@@ -1365,7 +1375,7 @@ void WowtypeEngine::applySessionFrame(fcitx::InputContext *ic, WowtypeState *sta
     }
     // 编辑区里的光标动了（左右键移进拼音，#129）：重画编辑区。只在左右键移光标时看
     //（「译」里画的是原文框和译文，光标一直在末尾）
-    if (arrowKeys_ == WowtypeArrowKeys::Caret && !translating(ic) && frame && frame->preedit) {
+    if (arrowKeys_ == ArchtypeArrowKeys::Caret && !translating(ic) && frame && frame->preedit) {
         const fcitx::Text &shown =
             inlinePreedit(ic) ? ic->inputPanel().clientPreedit() : ic->inputPanel().preedit();
         if (shown.cursor() != frame->preedit_cursor) {
@@ -1374,7 +1384,7 @@ void WowtypeEngine::applySessionFrame(fcitx::InputContext *ic, WowtypeState *sta
         }
     }
     // 只是翻页、挪候选光标：原地摆好候选框
-    if (auto *list = dynamic_cast<WowtypeSessionList *>(ic->inputPanel().candidateList().get())) {
+    if (auto *list = dynamic_cast<ArchtypeSessionList *>(ic->inputPanel().candidateList().get())) {
         list->mirror(state->panelPage_, state->panelCursor_);
         ic->updateUserInterface(fcitx::UserInterfaceComponent::InputPanel);
     } else {
@@ -1382,10 +1392,10 @@ void WowtypeEngine::applySessionFrame(fcitx::InputContext *ic, WowtypeState *sta
     }
 }
 
-bool WowtypeEngine::syncView(WowtypeState *state) {
-    WowtypeSessionView view{};
+bool ArchtypeEngine::syncView(ArchtypeState *state) {
+    ArchtypeSessionView view{};
     view.size = sizeof(view);
-    if (wowtype_session_view(state->session_, &view) != 0) {
+    if (archtype_session_view(state->session_, &view) != 0) {
         return false;
     }
     const bool recopy = view.generation != state->candGeneration_;
@@ -1400,40 +1410,40 @@ bool WowtypeEngine::syncView(WowtypeState *state) {
     return recopy;
 }
 
-void WowtypeEngine::refreshCandidates(WowtypeState *state) {
+void ArchtypeEngine::refreshCandidates(ArchtypeState *state) {
     state->candidates_.clear();
     state->candGeneration_ = UINT64_MAX;
     state->expanded_ = false;
     state->gridCursor_ = 0;
     state->panelPage_ = 0;
     state->panelCursor_ = 0;
-    const bool panelOpen = state->panel() != WOWTYPE_TOOL_NONE;
+    const bool panelOpen = state->panel() != ARCHTYPE_TOOL_NONE;
     if (!panelOpen && (state->remaining().empty() || !coreReady())) {
         return;
     }
     // 候选（引擎候选 + 计算器、emoji 推荐、数字按键 emoji、日期时间，或者开着的工具栏 / 表情面板的条目）由会话算，
     // fcitx5 的候选框要整个列表，抄一份过来；点候选按这份拷贝的序号调会话
     syncSession(state);
-    WowtypeSessionView view{};
+    ArchtypeSessionView view{};
     view.size = sizeof(view);
-    if (wowtype_session_view(state->session_, &view) == 0) {
+    if (archtype_session_view(state->session_, &view) == 0) {
         state->candGeneration_ = view.generation;
         state->panelPage_ = view.page;
         state->panelCursor_ = view.cursor;
         state->gridCursor_ = view.grid_cursor;
     }
-    const std::size_t total = wowtype_session_candidate_total(state->session_);
+    const std::size_t total = archtype_session_candidate_total(state->session_);
     state->candidates_.reserve(total);
     for (std::size_t i = 0; i < total; ++i) {
-        WowtypeCandidateInfo info{};
+        ArchtypeCandidateInfo info{};
         info.size = sizeof(info);
-        if (wowtype_session_candidate_info(state->session_, i, &info) != 0) {
+        if (archtype_session_candidate_info(state->session_, i, &info) != 0) {
             continue;
         }
-        WowtypeCandidate candidate{info.text, info.pinyin, info.consumed};
+        ArchtypeCandidate candidate{info.text, info.pinyin, info.consumed};
         candidate.comment = info.comment;
-        candidate.plain = info.kind == WOWTYPE_CAND_PLAIN;
-        if (info.kind == WOWTYPE_CAND_EMOJI) {
+        candidate.plain = info.kind == ARCHTYPE_CAND_PLAIN;
+        if (info.kind == ARCHTYPE_CAND_EMOJI) {
             candidate.emoji = true;
             candidate.commit = info.commit;
             candidate.emojiText = info.emoji;
@@ -1442,12 +1452,12 @@ void WowtypeEngine::refreshCandidates(WowtypeState *state) {
     }
 }
 
-std::string WowtypeEngine::recentEmojiPath() const {
+std::string ArchtypeEngine::recentEmojiPath() const {
     const std::string dir = userDataDir();
     return dir.empty() ? std::string() : dir + "/emoji-recent.txt";
 }
 
-void WowtypeEngine::sampleClipboard(fcitx::InputContext *ic) {
+void ArchtypeEngine::sampleClipboard(fcitx::InputContext *ic) {
     if (!clipboardHistory_ || !ic) {
         return;
     }
@@ -1461,11 +1471,11 @@ void WowtypeEngine::sampleClipboard(fcitx::InputContext *ic) {
     }
     const std::string text = addon->call<fcitx::IClipboard::clipboard>(ic);
     if (!text.empty()) {
-        wowtype_clipboard_remember(text.c_str());
+        archtype_clipboard_remember(text.c_str());
     }
 }
 
-void WowtypeEngine::fillToolPanel(fcitx::InputPanel &panel, WowtypeState *state) {
+void ArchtypeEngine::fillToolPanel(fcitx::InputPanel &panel, ArchtypeState *state) {
     // 工具栏（菜单、剪贴板、常用语）：竖排一列，一页 9 个，数字键选这一页的
     constexpr std::size_t kToolPageSize = 9;
     const std::size_t n = state->candidates_.size();
@@ -1478,7 +1488,7 @@ void WowtypeEngine::fillToolPanel(fcitx::InputPanel &panel, WowtypeState *state)
     list->setPageSize(static_cast<int>(kToolPageSize));
     list->setSelectionKey(fcitx::Key::keyListFromString("1 2 3 4 5 6 7 8 9"));
     for (std::size_t i = 0; i < n; ++i) {
-        list->append<WowtypeToolWord>(this, state, i, state->candidates_[i].text);
+        list->append<ArchtypeToolWord>(this, state, i, state->candidates_[i].text);
     }
     // setGlobalCursorIndex 只设光标、不翻页：先翻到光标那一页，不然光标走到后面几页时看不到
     list->setPage(static_cast<int>(cursor / kToolPageSize));
@@ -1486,16 +1496,16 @@ void WowtypeEngine::fillToolPanel(fcitx::InputPanel &panel, WowtypeState *state)
     panel.setCandidateList(std::move(list));
 }
 
-void WowtypeEngine::choosePanelItem(fcitx::InputContext *ic, WowtypeState *state,
+void ArchtypeEngine::choosePanelItem(fcitx::InputContext *ic, ArchtypeState *state,
                                     std::size_t index) {
     // 点了工具栏 / 表情面板的一项：菜单进下一层，别的上屏（会话做，表情记进最近用过）
     if (!ic) {
         return;
     }
-    if (state->panel() == WOWTYPE_TOOL_MENU) {
+    if (state->panel() == ARCHTYPE_TOOL_MENU) {
         sampleClipboard(ic);
     }
-    const WowtypeFrame *frame = wowtype_session_choose(state->session_, index);
+    const ArchtypeFrame *frame = archtype_session_choose(state->session_, index);
     if (frame && frame->handled) {
         applySessionFrame(ic, state, frame);
     }
@@ -1503,10 +1513,10 @@ void WowtypeEngine::choosePanelItem(fcitx::InputContext *ic, WowtypeState *state
 
 /// 还没选词的拼音，按第一个用完它的候选分好音节（hengxiang -> heng'xiang）。
 /// 显示的还是用户打的字母；英文、双拼等切不了的原样显示。
-std::string WowtypeEngine::segmentedRemaining(WowtypeState *state) {
+std::string ArchtypeEngine::segmentedRemaining(ArchtypeState *state) {
     // 会话的编辑区 = 已选的词 + 分好音节的剩余部分（双拼显示成全拼），这里只要后半截
     syncSession(state);
-    const WowtypeFrame *frame = wowtype_session_frame(state->session_);
+    const ArchtypeFrame *frame = archtype_session_frame(state->session_);
     const std::string selected = state->selectedText();
     const std::string shown = frame && frame->preedit ? frame->preedit : "";
     if (shown.compare(0, selected.size(), selected) == 0) {
@@ -1515,12 +1525,12 @@ std::string WowtypeEngine::segmentedRemaining(WowtypeState *state) {
     return state->remaining();
 }
 
-bool WowtypeEngine::inlinePreedit(fcitx::InputContext *ic) const {
+bool ArchtypeEngine::inlinePreedit(fcitx::InputContext *ic) const {
     return instance_->globalConfig().preeditEnabledByDefault() &&
            ic->capabilityFlags().test(fcitx::CapabilityFlag::Preedit);
 }
 
-void WowtypeEngine::sendPreedit(fcitx::InputContext *ic,
+void ArchtypeEngine::sendPreedit(fcitx::InputContext *ic,
                                 const fcitx::Text &preedit) {
     auto &panel = ic->inputPanel();
     if (inlinePreedit(ic)) {
@@ -1530,15 +1540,15 @@ void WowtypeEngine::sendPreedit(fcitx::InputContext *ic,
     }
 }
 
-void WowtypeEngine::updateInputPanel(fcitx::InputContext *ic,
-                                     WowtypeState *state) {
+void ArchtypeEngine::updateInputPanel(fcitx::InputContext *ic,
+                                     ArchtypeState *state) {
     auto &panel = ic->inputPanel();
     panel.reset();
 
-    if (const int open = state->panel(); open != WOWTYPE_TOOL_NONE) {
+    if (const int open = state->panel(); open != ARCHTYPE_TOOL_NONE) {
         // 工具栏 / 表情面板：条目、光标、提示、搜索词都是会话给的
         syncView(state);
-        const WowtypeFrame *frame = wowtype_session_frame(state->session_);
+        const ArchtypeFrame *frame = archtype_session_frame(state->session_);
         fcitx::Text preedit;
         preedit.append(frame && frame->preedit ? frame->preedit : "", fcitx::TextFormatFlag::Underline);
         preedit.setCursor(static_cast<int>(preedit.textLength()));
@@ -1547,7 +1557,7 @@ void WowtypeEngine::updateInputPanel(fcitx::InputContext *ic,
             panel.setAuxUp(fcitx::Text(frame->aux));
         }
         if (!state->candidates_.empty()) {
-            if (open == WOWTYPE_TOOL_EMOJI || open == WOWTYPE_TOOL_SYMBOLS) {
+            if (open == ARCHTYPE_TOOL_EMOJI || open == ARCHTYPE_TOOL_SYMBOLS) {
                 fillGridPanel(panel, state);
             } else {
                 fillToolPanel(panel, state);
@@ -1576,7 +1586,7 @@ void WowtypeEngine::updateInputPanel(fcitx::InputContext *ic,
         fcitx::Text preedit;
         preedit.append(state->selectedText());
         preedit.append(segmentedRemaining(state), fcitx::TextFormatFlag::Underline);
-        const WowtypeFrame *frame = wowtype_session_frame(state->session_);
+        const ArchtypeFrame *frame = archtype_session_frame(state->session_);
         const std::size_t cursor = frame && frame->preedit ? frame->preedit_cursor : preedit.textLength();
         preedit.setCursor(static_cast<int>(std::min(cursor, preedit.textLength())));
         sendPreedit(ic, preedit);
@@ -1589,7 +1599,7 @@ void WowtypeEngine::updateInputPanel(fcitx::InputContext *ic,
     if (state->expanded_ && !state->candidates_.empty()) {
         fillGridPanel(panel, state);
     } else if (!state->candidates_.empty()) {
-        auto candidates = std::make_unique<WowtypeSessionList>(state);
+        auto candidates = std::make_unique<ArchtypeSessionList>(state);
         candidates->setLayoutHint(horizontal_
                                       ? fcitx::CandidateLayoutHint::Horizontal
                                       : fcitx::CandidateLayoutHint::Vertical);
@@ -1601,7 +1611,7 @@ void WowtypeEngine::updateInputPanel(fcitx::InputContext *ic,
         candidates->setCursorPositionAfterPaging(
             fcitx::CursorPositionAfterPaging::ResetToFirst);
         for (std::size_t i = 0; i < state->candidates_.size(); ++i) {
-            candidates->append<WowtypeCandidateWord>(this, state, i,
+            candidates->append<ArchtypeCandidateWord>(this, state, i,
                                                     shownCandidate(state->candidates_[i]));
         }
         // 页码和光标照会话的（展开面板里走到后面再收起时，会话翻到光标那一页）
@@ -1619,7 +1629,7 @@ void WowtypeEngine::updateInputPanel(fcitx::InputContext *ic,
 /// 照微信输入法的样子：光标所在行标 １–６，光标处的词用〔〕框起来；同一屏里各列
 /// 按最宽的词补齐，这样上下键在同一列里走。classic UI 和 kimpanel 都只会画一行或
 /// 一列，画不了真正的网格，所以用全角字符拼出来。
-void WowtypeEngine::fillGridPanel(fcitx::InputPanel &panel, WowtypeState *state) {
+void ArchtypeEngine::fillGridPanel(fcitx::InputPanel &panel, ArchtypeState *state) {
     static const char *kLabels[] = {"\uFF11", "\uFF12", "\uFF13",
                                     "\uFF14", "\uFF15", "\uFF16"};
     static_assert(sizeof(kLabels) / sizeof(kLabels[0]) == kGridCols);
@@ -1655,7 +1665,7 @@ void WowtypeEngine::fillGridPanel(fcitx::InputPanel &panel, WowtypeState *state)
                 }
                 line.append(after + (here ? "" : "\u3000"));
             }
-            list->append<WowtypeGridRow>(this, state, r, std::move(line));
+            list->append<ArchtypeGridRow>(this, state, r, std::move(line));
         }
     }
     // 先翻到光标所在的那一屏（setGlobalCursorIndex 不翻页），下键走到第 7 行以后才看得到
@@ -1664,7 +1674,7 @@ void WowtypeEngine::fillGridPanel(fcitx::InputPanel &panel, WowtypeState *state)
     panel.setCandidateList(std::move(list));
 }
 
-void WowtypeEngine::selectGridRow(fcitx::InputContext *ic, WowtypeState *state,
+void ArchtypeEngine::selectGridRow(fcitx::InputContext *ic, ArchtypeState *state,
                                   std::size_t row) {
     if (!state || state->candidates_.empty()) {
         return;
@@ -1678,34 +1688,34 @@ void WowtypeEngine::selectGridRow(fcitx::InputContext *ic, WowtypeState *state,
 namespace {
 
 /// 会话第 index 个候选还是不是外壳显示的那个。
-bool sameCandidate(WowtypeState *state, std::size_t index, const WowtypeCandidate &shown) {
-    WowtypeCandidateInfo info{};
+bool sameCandidate(ArchtypeState *state, std::size_t index, const ArchtypeCandidate &shown) {
+    ArchtypeCandidateInfo info{};
     info.size = sizeof(info);
-    if (wowtype_session_candidate_info(state->session_, index, &info) != 0) {
+    if (archtype_session_candidate_info(state->session_, index, &info) != 0) {
         return false;
     }
     return shown.text == info.text && shown.pinyin == info.pinyin && shown.comment == info.comment &&
-           shown.consumed == info.consumed && shown.plain == (info.kind == WOWTYPE_CAND_PLAIN) &&
-           shown.emoji == (info.kind == WOWTYPE_CAND_EMOJI);
+           shown.consumed == info.consumed && shown.plain == (info.kind == ARCHTYPE_CAND_PLAIN) &&
+           shown.emoji == (info.kind == ARCHTYPE_CAND_EMOJI);
 }
 
 } // namespace
 
-void WowtypeEngine::commitCandidate(fcitx::InputContext *ic,
-                                    WowtypeState *state, std::size_t index) {
+void ArchtypeEngine::commitCandidate(fcitx::InputContext *ic,
+                                    ArchtypeState *state, std::size_t index) {
     if (!ic || !state || index >= state->candidates_.size()) {
         return;
     }
-    if (state->panel() != WOWTYPE_TOOL_NONE) {
+    if (state->panel() != ARCHTYPE_TOOL_NONE) {
         choosePanelItem(ic, state, index);
         return;
     }
     // 选词、上屏、学习由会话做；外壳的候选是会话候选的一份拷贝，序号一样
-    const WowtypeCandidate chosen = state->candidates_[index];
+    const ArchtypeCandidate chosen = state->candidates_[index];
     if (!sameCandidate(state, index, chosen)) {
         // 会话的候选在显示以后变了（上文、设置、引擎变了又没刷新）：选同一个词，找不到就只刷新显示
         index = SIZE_MAX;
-        const std::size_t total = wowtype_session_candidate_total(state->session_);
+        const std::size_t total = archtype_session_candidate_total(state->session_);
         for (std::size_t i = 0; i < total; ++i) {
             if (sameCandidate(state, i, chosen)) {
                 index = i;
@@ -1718,7 +1728,7 @@ void WowtypeEngine::commitCandidate(fcitx::InputContext *ic,
             return;
         }
     }
-    const WowtypeFrame *frame = wowtype_session_choose(state->session_, index);
+    const ArchtypeFrame *frame = archtype_session_choose(state->session_, index);
     if (!frame || !frame->handled) {
         return;
     }
@@ -1731,15 +1741,15 @@ void WowtypeEngine::commitCandidate(fcitx::InputContext *ic,
     updateInputPanel(ic, state);
 }
 
-void WowtypeEngine::commitCurrent(fcitx::InputContext *ic, WowtypeState *state) {
+void ArchtypeEngine::commitCurrent(fcitx::InputContext *ic, ArchtypeState *state) {
     // 和按空格一样：上屏光标处的候选，没有候选时上屏原始输入
-    const WowtypeFrame *frame = sessionKey(ic, state, fcitx::Key(FcitxKey_space));
+    const ArchtypeFrame *frame = sessionKey(ic, state, fcitx::Key(FcitxKey_space));
     if (frame && frame->handled) {
         applySessionFrame(ic, state, frame);
     }
 }
 
-void WowtypeEngine::keyEvent(const fcitx::InputMethodEntry & /*entry*/,
+void ArchtypeEngine::keyEvent(const fcitx::InputMethodEntry & /*entry*/,
                              fcitx::KeyEvent &event) {
     auto *ic = event.inputContext();
     if (!ic) {
@@ -1757,7 +1767,7 @@ void WowtypeEngine::keyEvent(const fcitx::InputMethodEntry & /*entry*/,
         return;
     }
 
-    // 单按 Shift 切中英文（WowType 自己的英文模式），由会话判断。fcitx 的「临时切换输入法」热键
+    // 单按 Shift 切中英文（ArchType 自己的英文模式），由会话判断。fcitx 的「临时切换输入法」热键
     // （默认左 Shift）生效时 fcitx 会先把 Shift 吃掉，这里就收不到，两者不会重复切换。
     if (handleShiftKey(ic, state, event)) {
         return;
@@ -1771,26 +1781,26 @@ void WowtypeEngine::keyEvent(const fcitx::InputMethodEntry & /*entry*/,
         // 表情面板快捷键：开着就关上；打了一半的拼音当搜索词（会话做）
         coreReady();
         syncSession(state);
-        applySessionFrame(ic, state, wowtype_session_toggle_emoji_panel(state->session_));
+        applySessionFrame(ic, state, archtype_session_toggle_emoji_panel(state->session_));
         event.filterAndAccept();
         return;
     }
-    if (const uint32_t action = modeKeyAction(key); action && state->panel() == WOWTYPE_TOOL_NONE) {
+    if (const uint32_t action = modeKeyAction(key); action && state->panel() == ARCHTYPE_TOOL_NONE) {
         // 另设的切换键（中 ↔ 英，在「译」里回中文）、互译键（进出「译」）：会话切；
         // 进不了「译」（没配好、密码框）时交给应用
-        const WowtypeFrame *frame = sessionKey(ic, state, key, action);
+        const ArchtypeFrame *frame = sessionKey(ic, state, key, action);
         if (frame && frame->handled) {
             followSessionMode(ic, state, frame);
             event.filterAndAccept();
         }
         return;
     }
-    if (state->panel() != WOWTYPE_TOOL_NONE) {
+    if (state->panel() != ARCHTYPE_TOOL_NONE) {
         // 工具栏 / 表情面板开着：按键都归它（会话管）；带 Ctrl / Alt / Super 的收起面板、交给应用
-        if (state->panel() == WOWTYPE_TOOL_MENU) {
+        if (state->panel() == ARCHTYPE_TOOL_MENU) {
             sampleClipboard(ic); // 下一步可能进「剪贴板」页
         }
-        const WowtypeFrame *frame = sessionKey(ic, state, key);
+        const ArchtypeFrame *frame = sessionKey(ic, state, key);
         if (frame && frame->handled) {
             applySessionFrame(ic, state, frame);
             event.filterAndAccept();
@@ -1805,7 +1815,7 @@ void WowtypeEngine::keyEvent(const fcitx::InputMethodEntry & /*entry*/,
     if (translating(ic) && !state->composing() && !key.states().testAny(fcitx::KeyStates{
                                                       fcitx::KeyState::Ctrl, fcitx::KeyState::Alt,
                                                       fcitx::KeyState::Super})) {
-        if (const WowtypeFrame *frame = sessionKey(ic, state, key); frame && frame->handled) {
+        if (const ArchtypeFrame *frame = sessionKey(ic, state, key); frame && frame->handled) {
             applySessionFrame(ic, state, frame);
             event.filterAndAccept();
             return;
@@ -1815,7 +1825,7 @@ void WowtypeEngine::keyEvent(const fcitx::InputMethodEntry & /*entry*/,
     // 英文模式：按键原样交给应用（字母、半角标点都直接上屏）；汉字后面打字母、数字要补空格时
     // 会话连空格一起上屏
     if (asciiMode_ && !state->composing()) {
-        if (const WowtypeFrame *frame = sessionKey(ic, state, key); frame && frame->handled) {
+        if (const ArchtypeFrame *frame = sessionKey(ic, state, key); frame && frame->handled) {
             applySessionFrame(ic, state, frame);
             event.filterAndAccept();
         }
@@ -1826,7 +1836,7 @@ void WowtypeEngine::keyEvent(const fcitx::InputMethodEntry & /*entry*/,
     // 别的交给应用或 fcitx 的其他处理器（没在打字时会话借这一下知道应用里的字可能变了）
     if (key.states().testAny(fcitx::KeyStates{fcitx::KeyState::Ctrl, fcitx::KeyState::Alt,
                                               fcitx::KeyState::Super})) {
-        if (const WowtypeFrame *frame = sessionKey(ic, state, key); frame && frame->handled) {
+        if (const ArchtypeFrame *frame = sessionKey(ic, state, key); frame && frame->handled) {
             applySessionFrame(ic, state, frame);
             event.filterAndAccept();
         }
@@ -1843,7 +1853,7 @@ void WowtypeEngine::keyEvent(const fcitx::InputMethodEntry & /*entry*/,
         // （[Hotkey/PrevPage] 等，比如 , . 翻页）翻成动作一起交给会话：按了就算翻不动也吃掉，
         // 不让它变成标点把字上屏
         const bool wasExpanded = state->expanded_;
-        const WowtypeFrame *frame = sessionKey(ic, state, key, keyAction(key));
+        const ArchtypeFrame *frame = sessionKey(ic, state, key, keyAction(key));
         if (frame && frame->handled) {
             applySessionFrame(ic, state, frame);
             event.filterAndAccept();
@@ -1870,14 +1880,14 @@ void WowtypeEngine::keyEvent(const fcitx::InputMethodEntry & /*entry*/,
     if (state->composing()) {
         return;
     }
-    if (const WowtypeFrame *frame = sessionKey(ic, state, key); frame && frame->handled) {
+    if (const ArchtypeFrame *frame = sessionKey(ic, state, key); frame && frame->handled) {
         applySessionFrame(ic, state, frame);
         event.filterAndAccept();
         return;
     }
 }
 
-void WowtypeEngine::activate(const fcitx::InputMethodEntry & /*entry*/,
+void ArchtypeEngine::activate(const fcitx::InputMethodEntry & /*entry*/,
                              fcitx::InputContextEvent &event) {
     auto *ic = event.inputContext();
     if (!ic) {
@@ -1887,7 +1897,7 @@ void WowtypeEngine::activate(const fcitx::InputMethodEntry & /*entry*/,
     state->clear();
     clearTranslation(state);
     coreReady();
-    // 从别的输入法切回来（不是换窗口获得焦点）、启动后第一次用：按「切到 WowType 时」定中 / 英
+    // 从别的输入法切回来（不是换窗口获得焦点）、启动后第一次用：按「切到 ArchType 时」定中 / 英
     // （#158：切走时是英文，切回来还是英文，打不了中文）。换窗口不动，模式照旧全局保持；
     // 进出密码框时 fcitx5 自己换成键盘布局再换回来（CapabilityChanged），也不算用户切回来。
     bool switchedBack = false;
@@ -1899,18 +1909,18 @@ void WowtypeEngine::activate(const fcitx::InputMethodEntry & /*entry*/,
         initialModeApplied_ = true;
         applyInitialMode(ic, state);
     }
-    // 最近用过的 emoji 在核心里（所有输入框共用），存在 ~/.local/share/wowtype/emoji-recent.txt
-    wowtype_recent_emoji_path(recentEmojiPath().c_str());
+    // 最近用过的 emoji 在核心里（所有输入框共用），存在 ~/.local/share/archtype/emoji-recent.txt
+    archtype_recent_emoji_path(recentEmojiPath().c_str());
     sampleClipboard(ic);
     maybeCheckUpdate();
 }
 
-/// 后台的小事交给设置界面（wowtype-config --startup）：第一次用时打开 WowType 主题、
+/// 后台的小事交给设置界面（archtype-config --startup）：第一次用时打开 ArchType 主题、
 /// 检查更新（它自己看「自动检查更新」开关，最多一小时查一次，有新版本时发桌面通知）。
-/// 插件这边在切到 WowType 时叫它，同一个 fcitx5 进程里最多一小时叫一次。
-void WowtypeEngine::maybeCheckUpdate() {
-#ifdef WOWTYPE_CONFIG_TOOL
-    if (std::getenv("WOWTYPE_NO_UPDATE_CHECK")) {
+/// 插件这边在切到 ArchType 时叫它，同一个 fcitx5 进程里最多一小时叫一次。
+void ArchtypeEngine::maybeCheckUpdate() {
+#ifdef ARCHTYPE_CONFIG_TOOL
+    if (std::getenv("ARCHTYPE_NO_UPDATE_CHECK")) {
         return;
     }
     const auto nowTime = std::chrono::steady_clock::now();
@@ -1919,13 +1929,13 @@ void WowtypeEngine::maybeCheckUpdate() {
     }
     updateCheckedAt_ = nowTime;
     std::error_code ec;
-    if (std::filesystem::exists(WOWTYPE_CONFIG_TOOL, ec)) {
-        fcitx::startProcess({WOWTYPE_CONFIG_TOOL, "--startup"});
+    if (std::filesystem::exists(ARCHTYPE_CONFIG_TOOL, ec)) {
+        fcitx::startProcess({ARCHTYPE_CONFIG_TOOL, "--startup"});
     }
 #endif
 }
 
-void WowtypeEngine::deactivate(const fcitx::InputMethodEntry &entry,
+void ArchtypeEngine::deactivate(const fcitx::InputMethodEntry &entry,
                                fcitx::InputContextEvent &event) {
     // 打到一半切换输入法（比如按 Shift 切英文）：已选的词 + 原始字母原样上屏，
     // 不要把用户打的东西吞掉。失去焦点时放弃（reset）：这时再上屏，Qt 会送进新拿到焦点的控件，
@@ -1934,7 +1944,7 @@ void WowtypeEngine::deactivate(const fcitx::InputMethodEntry &entry,
         ic && event.type() == fcitx::EventType::InputContextSwitchInputMethod) {
         auto *state = ic->propertyFor(&factory_);
         // 互译时拼音先进原文，攒着的原文再原样上屏（会话做）
-        finishCommit(ic, state, wowtype_session_reset(state->session_, 1));
+        finishCommit(ic, state, archtype_session_reset(state->session_, 1));
     }
     if (voiceActive() && voiceIc_.get() == event.inputContext()) {
         cancelVoice();
@@ -1944,7 +1954,7 @@ void WowtypeEngine::deactivate(const fcitx::InputMethodEntry &entry,
     flushStats();
 }
 
-void WowtypeEngine::reset(const fcitx::InputMethodEntry & /*entry*/,
+void ArchtypeEngine::reset(const fcitx::InputMethodEntry & /*entry*/,
                           fcitx::InputContextEvent &event) {
     auto *ic = event.inputContext();
     if (!ic) {
@@ -1960,27 +1970,27 @@ void WowtypeEngine::reset(const fcitx::InputMethodEntry & /*entry*/,
     ic->updateUserInterface(fcitx::UserInterfaceComponent::InputPanel);
 }
 
-const char *WowtypeEngine::modeTitle() const {
+const char *ArchtypeEngine::modeTitle() const {
     return translateMode_ ? "互译" : asciiMode_ ? "英文" : "中文";
 }
 
-const char *WowtypeEngine::modeLabel() const {
+const char *ArchtypeEngine::modeLabel() const {
     return translateMode_ ? "译" : asciiMode_ ? "英" : "中";
 }
 
-std::string WowtypeEngine::subMode(const fcitx::InputMethodEntry & /*entry*/,
+std::string ArchtypeEngine::subMode(const fcitx::InputMethodEntry & /*entry*/,
                                    fcitx::InputContext & /*ic*/) {
     return modeTitle();
 }
 
-std::string WowtypeEngine::subModeLabelImpl(const fcitx::InputMethodEntry & /*entry*/,
+std::string ArchtypeEngine::subModeLabelImpl(const fcitx::InputMethodEntry & /*entry*/,
                                             fcitx::InputContext & /*ic*/) {
-    // 中文也要给：给空的话切回中文时提示框、托盘写的是输入法的名字「WowType」，和「英」「译」对不上
+    // 中文也要给：给空的话切回中文时提示框、托盘写的是输入法的名字「ArchType」，和「英」「译」对不上
     return modeLabel();
 }
 
 /// 按下 Shift 记下来，松开时中间没按别的键（也没按太久）就切中英文。
-bool WowtypeEngine::handleShiftKey(fcitx::InputContext *ic, WowtypeState *state,
+bool ArchtypeEngine::handleShiftKey(fcitx::InputContext *ic, ArchtypeState *state,
                                    fcitx::KeyEvent &event) {
     coreReady();
     syncSession(state);
@@ -1988,13 +1998,13 @@ bool WowtypeEngine::handleShiftKey(fcitx::InputContext *ic, WowtypeState *state,
     const fcitx::Key key = event.key();
     const auto sym = key.sym();
     const bool isShift = sym == FcitxKey_Shift_L || sym == FcitxKey_Shift_R;
-    WowtypeKey raw{};
+    ArchtypeKey raw{};
     raw.size = sizeof(raw);
     raw.keysym = static_cast<uint32_t>(sym);
     raw.modifiers = static_cast<uint32_t>(key.states());
     raw.release = event.isRelease() ? 1 : 0;
     // 别的键只报给会话（按住 Shift 时按了它，这一下就不算单按），不让会话处理
-    raw.action = isShift ? WOWTYPE_KEY_ACTION_NONE : WOWTYPE_KEY_ACTION_OBSERVE;
+    raw.action = isShift ? ARCHTYPE_KEY_ACTION_NONE : ARCHTYPE_KEY_ACTION_OBSERVE;
     // 松开时按键码认：xkb 选项（比如 grp:shifts_toggle）或 fcitx5 按输入法布局重新翻译时，
     // 松开那一下 Shift 可能翻成别的符号（ISO_Next_Group 等）
     raw.code = static_cast<uint32_t>(event.origKey().code());
@@ -2002,7 +2012,7 @@ bool WowtypeEngine::handleShiftKey(fcitx::InputContext *ic, WowtypeState *state,
     raw.repeat = event.rawKey().states().test(fcitx::KeyState::Repeat) ? 1 : 0;
     raw.time_ms = static_cast<uint64_t>(fcitx::now(CLOCK_MONOTONIC) / 1000);
     const bool wasExpanded = state->expanded_;
-    const WowtypeFrame *frame = wowtype_session_key(state->session_, &raw);
+    const ArchtypeFrame *frame = archtype_session_key(state->session_, &raw);
     if (!frame || !frame->mode_changed) {
         if (isShift) {
             // Shift 只走这一条路（再交给会话一次会把按下的时刻、键码冲掉）。展开面板里按下 Shift：
@@ -2020,15 +2030,15 @@ bool WowtypeEngine::handleShiftKey(fcitx::InputContext *ic, WowtypeState *state,
     return true;
 }
 
-void WowtypeEngine::followSessionMode(fcitx::InputContext *ic, WowtypeState *state,
-                                      const WowtypeFrame *frame) {
+void ArchtypeEngine::followSessionMode(fcitx::InputContext *ic, ArchtypeState *state,
+                                      const ArchtypeFrame *frame) {
     // 打到一半切英文：已选的词 + 打的字母原样上屏；离开「译」：原文原样上屏、拼音留着（会话已经放进 frame）
     const int mode = frame->mode;
     const bool committed = frame->commit != nullptr;
     if (committed) {
         finishCommit(ic, state, frame);
     }
-    switchMode(ic, state, mode == WOWTYPE_MODE_ENGLISH, mode == WOWTYPE_MODE_TRANSLATE, true);
+    switchMode(ic, state, mode == ARCHTYPE_MODE_ENGLISH, mode == ARCHTYPE_MODE_TRANSLATE, true);
     if (committed || state->composing()) {
         // 换好模式再画：离开「译」以后留着的拼音照普通的编辑区画，不再画成互译的原文框；
         // 带进「译」的拼音画成原文框
@@ -2036,41 +2046,41 @@ void WowtypeEngine::followSessionMode(fcitx::InputContext *ic, WowtypeState *sta
     }
 }
 
-void WowtypeEngine::applyInitialMode(fcitx::InputContext *ic, WowtypeState *state) {
-    if (initialMode_ == WowtypeInitialMode::Last) {
+void ArchtypeEngine::applyInitialMode(fcitx::InputContext *ic, ArchtypeState *state) {
+    if (initialMode_ == ArchtypeInitialMode::Last) {
         return;
     }
     // 切不回中文时不进英文
-    const bool english = initialMode_ == WowtypeInitialMode::English && canToggleMode();
+    const bool english = initialMode_ == ArchtypeInitialMode::English && canToggleMode();
     if (english == asciiMode_ && !translateMode_) {
         return;
     }
     switchMode(ic, state, english, false, false);
 }
 
-void WowtypeEngine::syncMode(fcitx::InputContext *ic, WowtypeState *state) {
+void ArchtypeEngine::syncMode(fcitx::InputContext *ic, ArchtypeState *state) {
     // 中 / 英 / 译是全局的（在一个应用里切了，别的应用里也是）；会话每个输入框一份，按键前对齐
-    const int want = translateMode_ ? WOWTYPE_MODE_TRANSLATE
-                     : asciiMode_   ? WOWTYPE_MODE_ENGLISH
-                                    : WOWTYPE_MODE_CHINESE;
-    if (wowtype_session_mode(state->session_) == want) {
+    const int want = translateMode_ ? ARCHTYPE_MODE_TRANSLATE
+                     : asciiMode_   ? ARCHTYPE_MODE_ENGLISH
+                                    : ARCHTYPE_MODE_CHINESE;
+    if (archtype_session_mode(state->session_) == want) {
         return;
     }
     auto set = [&](int mode) {
-        const WowtypeFrame *frame = wowtype_session_set_mode(state->session_, mode);
+        const ArchtypeFrame *frame = archtype_session_set_mode(state->session_, mode);
         if (frame && frame->commit && ic) {
             finishCommit(ic, state, frame);
             updateInputPanel(ic, state);
         }
     };
-    if (want == WOWTYPE_MODE_TRANSLATE) {
+    if (want == ARCHTYPE_MODE_TRANSLATE) {
         // 别的输入框里进的「译」：会话先到进「译」前的模式，在这里按互译键也回得去
         set(translateFrom_);
     }
     set(want);
 }
 
-void WowtypeEngine::switchMode(fcitx::InputContext *ic, WowtypeState *state, bool ascii,
+void ArchtypeEngine::switchMode(fcitx::InputContext *ic, ArchtypeState *state, bool ascii,
                                bool translate, bool notify) {
     // 离开「译」时攒着的原文原样上屏：会话做（下面 syncMode 切会话的模式时放进 frame）
     if (ascii && !asciiMode_ && ic && state && state->composing()) {
@@ -2079,23 +2089,23 @@ void WowtypeEngine::switchMode(fcitx::InputContext *ic, WowtypeState *state, boo
         updateInputPanel(ic, state);
     }
     if (translate && !translateMode_) {
-        translateFrom_ = asciiMode_ ? WOWTYPE_MODE_ENGLISH : WOWTYPE_MODE_CHINESE;
+        translateFrom_ = asciiMode_ ? ARCHTYPE_MODE_ENGLISH : ARCHTYPE_MODE_CHINESE;
     }
     asciiMode_ = ascii;
     translateMode_ = translate;
     if (state) {
         syncMode(ic, state);
     }
-    WLOG_I() << "WowType: 切到" << modeTitle();
+    WLOG_I() << "ArchType: 切到" << modeTitle();
     if (!ic) {
         return;
     }
     if (notify) {
-#ifdef WOWTYPE_HAVE_CUSTOM_IM_INFO
+#ifdef ARCHTYPE_HAVE_CUSTOM_IM_INFO
         std::string label = modeLabel();
         if (translateMode_ && translator_) {
             label += " ";
-            label += wowtype_translate_tag(translator_, "");
+            label += archtype_translate_tag(translator_, "");
         }
         instance_->showCustomInputMethodInformation(ic, label);
 #else
@@ -2105,7 +2115,7 @@ void WowtypeEngine::switchMode(fcitx::InputContext *ic, WowtypeState *state, boo
     ic->updateUserInterface(fcitx::UserInterfaceComponent::StatusArea);
 }
 
-bool WowtypeEngine::handleVoiceKey(fcitx::InputContext *ic, WowtypeState *state,
+bool ArchtypeEngine::handleVoiceKey(fcitx::InputContext *ic, ArchtypeState *state,
                                    fcitx::KeyEvent &event) {
     const fcitx::Key key = event.key();
     if (isVoiceKey(key)) {
@@ -2116,7 +2126,7 @@ bool WowtypeEngine::handleVoiceKey(fcitx::InputContext *ic, WowtypeState *state,
             voiceKeyDown_ = false;
             event.filterAndAccept();
             if (voiceActive()) {
-                wowtype_voice_key_up(voice_);
+                archtype_voice_key_up(voice_);
                 pollVoice();
             }
             return true;
@@ -2137,7 +2147,7 @@ bool WowtypeEngine::handleVoiceKey(fcitx::InputContext *ic, WowtypeState *state,
             voiceShowing_ = true;
             voiceErrorUntil_ = 0;
         }
-        wowtype_voice_key_down(voice_);
+        archtype_voice_key_down(voice_);
         pollVoice();
         if (!voiceTimer_) {
             voiceTimer_ = instance_->eventLoop().addTimeEvent(
@@ -2173,7 +2183,7 @@ bool WowtypeEngine::handleVoiceKey(fcitx::InputContext *ic, WowtypeState *state,
     return false;
 }
 
-bool WowtypeEngine::pollVoice() {
+bool ArchtypeEngine::pollVoice() {
     if (!voice_ || !voiceShowing_) {
         return false;
     }
@@ -2184,11 +2194,11 @@ bool WowtypeEngine::pollVoice() {
         return false;
     }
     checkOverlayAck(ic);
-    const int phase = wowtype_voice_poll(voice_);
-    const std::string text = wowtype_voice_text(voice_);
+    const int phase = archtype_voice_poll(voice_);
+    const std::string text = archtype_voice_text(voice_);
     switch (phase) {
-    case WOWTYPE_VOICE_LISTENING: {
-        const int level = wowtype_voice_level(voice_);
+    case ARCHTYPE_VOICE_LISTENING: {
+        const int level = archtype_voice_level(voice_);
         if (voiceOverlay()) {
             // 浮条由 GNOME 扩展画，这里只留编辑区里识别到一半的字
             showVoice(ic, {}, text);
@@ -2203,7 +2213,7 @@ bool WowtypeEngine::pollVoice() {
         showVoice(ic, "🎙 " + voiceWave(voiceLevels_) + " ", text);
         return true;
     }
-    case WOWTYPE_VOICE_RECOGNIZING: {
+    case ARCHTYPE_VOICE_RECOGNIZING: {
         if (voiceOverlay()) {
             showVoice(ic, {}, text);
             sendVoiceOverlay(ic, kOverlayRecognizing, "识别中…", 0);
@@ -2213,19 +2223,19 @@ bool WowtypeEngine::pollVoice() {
         showVoice(ic, std::string("🎙 ") + kDots[(voiceFrame_++ / 3) % 5] + " ", text);
         return true;
     }
-    case WOWTYPE_VOICE_RESULT: {
+    case ARCHTYPE_VOICE_RESULT: {
         clearVoice(true);
         // 和工具栏、表情面板上屏的一样交给会话：补空格、记上文，互译时进原文
         auto *state = ic->propertyFor(&factory_);
         coreReady();
         syncSession(state);
         finishCommit(ic, state,
-                     wowtype_session_commit_text(state->session_, text.c_str(),
+                     archtype_session_commit_text(state->session_, text.c_str(),
                                                  prevChar(ic).value_or(0)));
         // 上屏以后再复制，复制不成也不影响上屏；密码框里说的话不进剪贴板
         if (voiceCopy_ && !ic->capabilityFlags().testAny(fcitx::CapabilityFlag::PasswordOrSensitive) &&
-            !wowtype::copyToClipboard(text)) {
-            WLOG_I() << "WowType: 没能复制到剪贴板（要装 wl-clipboard，X11 下装 xclip 或 xsel）";
+            !archtype::copyToClipboard(text)) {
+            WLOG_I() << "ArchType: 没能复制到剪贴板（要装 wl-clipboard，X11 下装 xclip 或 xsel）";
         }
         if (translating(ic)) {
             // 互译模式：说的话进了原文
@@ -2233,8 +2243,8 @@ bool WowtypeEngine::pollVoice() {
         }
         return false;
     }
-    case WOWTYPE_VOICE_ERROR:
-        WLOG_I() << "WowType: 语音 " << text;
+    case ARCHTYPE_VOICE_ERROR:
+        WLOG_I() << "ArchType: 语音 " << text;
         voiceErrorText_ = text;
         if (voiceOverlay()) {
             showVoice(ic, {}, {});
@@ -2244,7 +2254,7 @@ bool WowtypeEngine::pollVoice() {
         }
         // 没下载模型的提示要去设置里操作，多留一会儿让人看清
         voiceErrorUntil_ = fcitx::now(CLOCK_MONOTONIC) +
-                           (wowtype_voice_model_state(voice_) == WOWTYPE_VOICE_MODEL_MISSING
+                           (archtype_voice_model_state(voice_) == ARCHTYPE_VOICE_MODEL_MISSING
                                 ? kVoiceHintUsec
                                 : kVoiceErrorUsec);
         return true;
@@ -2261,14 +2271,14 @@ bool WowtypeEngine::pollVoice() {
     }
 }
 
-void WowtypeEngine::showVoice(fcitx::InputContext *ic, const std::string &status,
+void ArchtypeEngine::showVoice(fcitx::InputContext *ic, const std::string &status,
                               const std::string &partial) {
     auto &panel = ic->inputPanel();
     panel.reset();
     if (translating(ic)) {
         // 互译模式：说的话接在原文框里攒着的原文后面，输入框里留着译文
         auto *state = ic->propertyFor(&factory_);
-        const WowtypeFrame *frame = wowtype_session_frame(state->session_);
+        const ArchtypeFrame *frame = archtype_session_frame(state->session_);
         const std::string source = frame && frame->translating ? frame->translate_source : "";
         const std::string translated = frame && frame->translating ? frame->translate_text : "";
         fcitx::Text box;
@@ -2295,7 +2305,7 @@ void WowtypeEngine::showVoice(fcitx::InputContext *ic, const std::string &status
     ic->updateUserInterface(fcitx::UserInterfaceComponent::InputPanel);
 }
 
-void WowtypeEngine::clearVoice(bool done) {
+void ArchtypeEngine::clearVoice(bool done) {
     if (voiceShowing_ && voiceOverlay()) {
         sendVoiceOverlay(voiceIc_.get(), done ? kOverlayDone : kOverlayHide,
                          done ? "识别完成" : "", 0);
@@ -2314,9 +2324,9 @@ void WowtypeEngine::clearVoice(bool done) {
     voiceIc_.unwatch();
 }
 
-void WowtypeEngine::cancelVoice() {
+void ArchtypeEngine::cancelVoice() {
     if (voice_) {
-        wowtype_voice_cancel(voice_);
+        archtype_voice_cancel(voice_);
     }
     clearVoice();
 }
@@ -2327,17 +2337,17 @@ void WowtypeEngine::cancelVoice() {
 // 照微信输入法的样子：打的字（选好的词、标点、语音识别结果）攒成原文，显示在候选框里
 // （当原文框用），不交给应用；原文停下来 0.5 秒（句末标点立刻）就发请求，译文边出边写在
 // 应用的输入框里（编辑区，带下划线）。回车 / 空格上屏译文，Shift+回车上屏原文，Esc 清空。
-// 这些都在会话里（wowtype_session_tick 等），外壳只画、排定时器（会话的 wake_after_ms）。
+// 这些都在会话里（archtype_session_tick 等），外壳只画、排定时器（会话的 wake_after_ms）。
 
-bool WowtypeEngine::translateAvailable() const {
-    return translateEnabled_ && translator_ && wowtype_translate_ready(translator_) == 1;
+bool ArchtypeEngine::translateAvailable() const {
+    return translateEnabled_ && translator_ && archtype_translate_ready(translator_) == 1;
 }
 
-bool WowtypeEngine::translating(fcitx::InputContext *ic) const {
+bool ArchtypeEngine::translating(fcitx::InputContext *ic) const {
     return translateMode_ && translator_ && translatable(ic);
 }
 
-bool WowtypeEngine::translatable(fcitx::InputContext *ic) {
+bool ArchtypeEngine::translatable(fcitx::InputContext *ic) {
     // 密码框之类：照常打中文，不往外发
     if (!ic) {
         return false;
@@ -2347,23 +2357,23 @@ bool WowtypeEngine::translatable(fcitx::InputContext *ic) {
            !flags.test(fcitx::CapabilityFlag::Sensitive);
 }
 
-std::string WowtypeEngine::translateKeyFile() const {
-    if (const char *env = std::getenv("WOWTYPE_TRANSLATE_KEY_FILE"); env && *env) {
+std::string ArchtypeEngine::translateKeyFile() const {
+    if (const char *env = std::getenv("ARCHTYPE_TRANSLATE_KEY_FILE"); env && *env) {
         return env;
     }
     const std::string dir = userConfigDir();
     return dir.empty() ? std::string() : dir + "/translate.key";
 }
 
-void WowtypeEngine::clearTranslation(WowtypeState *state) {
+void ArchtypeEngine::clearTranslation(ArchtypeState *state) {
     // 丢掉攒着的原文、取消这个输入框的请求（会话做）
-    wowtype_session_translate_clear(state->session_);
+    archtype_session_translate_clear(state->session_);
     if (translateIc_.get() && translateIc_.get()->propertyFor(&factory_) == state) {
         translateDrawn_.clear();
     }
 }
 
-void WowtypeEngine::recordStats(const std::string &text, const WowtypeFrame *frame) {
+void ArchtypeEngine::recordStats(const std::string &text, const ArchtypeFrame *frame) {
     if (!stats_ || text.empty()) {
         return;
     }
@@ -2373,32 +2383,32 @@ void WowtypeEngine::recordStats(const std::string &text, const WowtypeFrame *fra
     if (src == "translate") {
         candidate = 0; // 互译上屏的不是候选
     }
-    wowtype_stats_commit(stats_, text.c_str(), src.c_str(),
+    archtype_stats_commit(stats_, text.c_str(), src.c_str(),
                          scheme.empty() ? nullptr : scheme.c_str(),
                          static_cast<int>(candidate), statsNowMs());
 }
 
-void WowtypeEngine::recordKey(fcitx::InputContext *ic, const fcitx::Key &key, bool down) {
+void ArchtypeEngine::recordKey(fcitx::InputContext *ic, const fcitx::Key &key, bool down) {
     if (!stats_ || !ic) {
         return;
     }
     if (ic->capabilityFlags().test(fcitx::CapabilityFlag::PasswordOrSensitive)) {
         return;
     }
-    wowtype_stats_key(stats_, 0, static_cast<unsigned>(key.code()), down ? 1 : 0, statsNowMs());
+    archtype_stats_key(stats_, 0, static_cast<unsigned>(key.code()), down ? 1 : 0, statsNowMs());
 }
 
-void WowtypeEngine::flushStats() {
+void ArchtypeEngine::flushStats() {
     if (!stats_) {
         return;
     }
-    if (wowtype_stats_flush(stats_, statsNowMs()) != 0) {
-        WLOG_W() << "WowType: 打字统计写入失败："
-                 << (wowtype_last_error() ? wowtype_last_error() : "unknown");
+    if (archtype_stats_flush(stats_, statsNowMs()) != 0) {
+        WLOG_W() << "ArchType: 打字统计写入失败："
+                 << (archtype_last_error() ? archtype_last_error() : "unknown");
     }
 }
 
-std::string WowtypeEngine::typingSource() const {
+std::string ArchtypeEngine::typingSource() const {
     if (translateMode_) {
         return "translate";
     }
@@ -2408,7 +2418,7 @@ std::string WowtypeEngine::typingSource() const {
     return shuangpin_ ? "shuangpin" : "quanpin";
 }
 
-std::string WowtypeEngine::typingScheme() const {
+std::string ArchtypeEngine::typingScheme() const {
     std::string id = shuangpinScheme_;
     for (char &ch : id) {
         if (ch >= 'A' && ch <= 'Z') {
@@ -2418,11 +2428,11 @@ std::string WowtypeEngine::typingScheme() const {
     return id;
 }
 
-uint64_t WowtypeEngine::nowMs() {
+uint64_t ArchtypeEngine::nowMs() {
     return static_cast<uint64_t>(fcitx::now(CLOCK_MONOTONIC) / 1000);
 }
 
-void WowtypeEngine::scheduleTick(fcitx::InputContext *ic, uint32_t ms) {
+void ArchtypeEngine::scheduleTick(fcitx::InputContext *ic, uint32_t ms) {
     if (!ic) {
         return;
     }
@@ -2447,14 +2457,14 @@ void WowtypeEngine::scheduleTick(fcitx::InputContext *ic, uint32_t ms) {
     }
 }
 
-uint32_t WowtypeEngine::tickTranslate() {
+uint32_t ArchtypeEngine::tickTranslate() {
     auto *ic = translateIc_.get();
     if (!ic) {
         return 0;
     }
     auto *state = ic->propertyFor(&factory_);
     syncSession(state);
-    const WowtypeFrame *frame = wowtype_session_tick(state->session_, nowMs());
+    const ArchtypeFrame *frame = archtype_session_tick(state->session_, nowMs());
     if (!frame) {
         return 0;
     }
@@ -2475,7 +2485,7 @@ uint32_t WowtypeEngine::tickTranslate() {
     return frame->wake_after_ms;
 }
 
-std::string WowtypeEngine::translateSignature(const WowtypeFrame *frame) const {
+std::string ArchtypeEngine::translateSignature(const ArchtypeFrame *frame) const {
     if (!frame || !frame->translating) {
         return {};
     }
@@ -2484,9 +2494,9 @@ std::string WowtypeEngine::translateSignature(const WowtypeFrame *frame) const {
            std::to_string(frame->translate_done);
 }
 
-void WowtypeEngine::fillTranslateView(fcitx::InputContext *ic, WowtypeState *state,
+void ArchtypeEngine::fillTranslateView(fcitx::InputContext *ic, ArchtypeState *state,
                                       fcitx::InputPanel &panel) {
-    const WowtypeFrame *frame = wowtype_session_frame(state->session_);
+    const ArchtypeFrame *frame = archtype_session_frame(state->session_);
     if (!frame || !frame->translating) {
         return;
     }
@@ -2524,19 +2534,19 @@ void WowtypeEngine::fillTranslateView(fcitx::InputContext *ic, WowtypeState *sta
     panel.setAuxDown(fcitx::Text(status));
 }
 
-class WowtypeFactory final : public fcitx::AddonFactory {
+class ArchtypeFactory final : public fcitx::AddonFactory {
 public:
     fcitx::AddonInstance *create(fcitx::AddonManager *manager) override {
         if (!manager) {
             return nullptr;
         }
-        return new WowtypeEngine(manager->instance());
+        return new ArchtypeEngine(manager->instance());
     }
 };
 
 // _V2 是 fcitx5 5.1.8 起才有的；Ubuntu 24.04 自带 5.1.7，只能用旧宏
 #ifdef FCITX_ADDON_FACTORY_V2
-FCITX_ADDON_FACTORY_V2(wowtype, WowtypeFactory)
+FCITX_ADDON_FACTORY_V2(archtype, ArchtypeFactory)
 #else
-FCITX_ADDON_FACTORY(WowtypeFactory)
+FCITX_ADDON_FACTORY(ArchtypeFactory)
 #endif

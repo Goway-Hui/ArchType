@@ -4,9 +4,9 @@
 
 use std::sync::Arc;
 
-use wowtype_core::convert::Converter;
-use wowtype_core::lm::BigramLm;
-use wowtype_core::{Engine, Lexicon, MemoryLexicon};
+use archtype_core::convert::Converter;
+use archtype_core::lm::BigramLm;
+use archtype_core::{Engine, Lexicon, MemoryLexicon};
 
 fn engine(lexicon_tsv: &str) -> Engine {
     let lexicon: Arc<dyn Lexicon> = Arc::new(MemoryLexicon::from_tsv_str(lexicon_tsv).unwrap());

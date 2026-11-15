@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
-"""把微信输入法自带的字级神经语言模型（nlrgpt2_nnlm.bin）放到 WowType 找得到的地方。
+"""把微信输入法自带的字级神经语言模型（nlrgpt2_nnlm.bin）放到 ArchType 找得到的地方。
 
-模型是腾讯的，WowType 不分发它。你本机有微信输入法的安装包或程序时，可以用这个脚本取出来：
+模型是腾讯的，ArchType 不分发它。你本机有微信输入法的安装包或程序时，可以用这个脚本取出来：
 
     python3 tools/install_wetype_nnlm.py WeType-3.0.0.zip
     python3 tools/install_wetype_nnlm.py /Applications/WeType.app
     python3 tools/install_wetype_nnlm.py path/to/nlrgpt2_nnlm.bin
 
-默认放到 ~/.local/share/wowtype/wetype/nlrgpt2_nnlm.bin（--dest 可改），会核对 MD5，
+默认放到 ~/.local/share/archtype/wetype/nlrgpt2_nnlm.bin（--dest 可改），会核对 MD5，
 对不上就不装（别的版本的文件格式可能不同）。装完重启 fcitx5 生效。
 """
 
@@ -18,13 +18,13 @@ import sys
 import zipfile
 
 NAME = "nlrgpt2_nnlm.bin"
-# 微信输入法 3.0.0（macOS）里的版本，WowType 按它写的读取代码
+# 微信输入法 3.0.0（macOS）里的版本，ArchType 按它写的读取代码
 KNOWN_MD5 = {"edca685aba600497de298dd68a5d5e4d"}
 
 
 def default_dest():
     base = os.environ.get("XDG_DATA_HOME") or os.path.expanduser("~/.local/share")
-    return os.path.join(base, "wowtype", "wetype", NAME)
+    return os.path.join(base, "archtype", "wetype", NAME)
 
 
 def read_model(src):

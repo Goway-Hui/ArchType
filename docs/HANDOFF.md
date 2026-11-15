@@ -21,7 +21,7 @@ cargo test --workspace     # 142 项，应当全绿
 git clone --depth 1 https://github.com/iDvel/rime-ice /tmp/rime-ice
 python3 tools/rime2tsv.py /tmp/rime-ice/rime_ice.dict.yaml > /tmp/lexicon.tsv
 # 试打
-cargo run --release -p wowtype-core --bin wowtype-demo -- --lexicon /tmp/lexicon.tsv nihao
+cargo run --release -p archtype-core --bin archtype-demo -- --lexicon /tmp/lexicon.tsv nihao
 ```
 
 `nihao` 出「你好」就说明引擎链路正常。装插件见 `docs/INSTALL.md`。
@@ -46,8 +46,8 @@ scripts/addon-test.sh /tmp/lexicon.tsv  # 单独跑按键测试（私有 fcitx5 
 `voice-daemon/src/linux.rs` 是 `cfg(target_os = "linux")`，我这边（macOS）根本不编译它。
 
 ```bash
-cargo build -p wowtype-voiced        # 先看能不能编过
-./target/debug/wowtype-voiced --asr-cmd 'echo test'   # 再试运行
+cargo build -p archtype-voiced        # 先看能不能编过
+./target/debug/archtype-voiced --asr-cmd 'echo test'   # 再试运行
 ```
 
 上屏默认走剪贴板（`ydotool type` 发不出汉字），需要 `xclip`+`xdotool`（X11）或 `wl-clipboard`（Wayland）。
@@ -55,11 +55,11 @@ cargo build -p wowtype-voiced        # 先看能不能编过
 ### 3. 排序手感
 
 我只验证了「频率忠实度」和「候选召回」，**没验证人到底想选哪个词**。
-真实手感要在你打字几百个字之后才知道。攒一批用例后用 `wowtype-eval` 量化：
+真实手感要在你打字几百个字之后才知道。攒一批用例后用 `archtype-eval` 量化：
 
 ```bash
 # cases.tsv: 输入<TAB>你实际想要的词
-cargo run --release -p wowtype-core --bin wowtype-eval -- --lexicon /tmp/lexicon.tsv --eval cases.tsv
+cargo run --release -p archtype-core --bin archtype-eval -- --lexicon /tmp/lexicon.tsv --eval cases.tsv
 ```
 
 ## 我踩过的坑（按踩到的顺序）
@@ -86,7 +86,7 @@ cargo run --release -p wowtype-core --bin wowtype-eval -- --lexicon /tmp/lexicon
 | `core/src/rank.rs` | 23 维特征与线性重排（可训练） |
 | `core/src/lib.rs` | `Engine`：输入→候选、上下文、用户词、自动学习 |
 | `core/src/ffi.rs` | C ABI（插件只用这一层） |
-| `fcitx5-addon/src/wowtype_engine.cpp` | fcitx5 集成：按键、候选、提交 |
+| `fcitx5-addon/src/archtype_engine.cpp` | fcitx5 集成：按键、候选、提交 |
 | `voice/src/asr.rs` | 外部识别器调用（`{wav}` 占位符） |
 | `voice/src/sink.rs` | 上屏后端（剪贴板/wtype/ydotool） |
 
@@ -97,7 +97,7 @@ cargo run --release -p wowtype-core --bin wowtype-eval -- --lexicon /tmp/lexicon
 | 词库 | rime-ice | `tools/rime2tsv.py` 会顺着 `import_tables` 合并 |
 | 简繁表 | OpenCC（仓库自带生成物） | `tools/opencc2tsv.py` 可重新生成 |
 | 语言模型 | 无 | 自建 `tools/make_bigram.py` 效果为负，别默认开 |
-| 用户词库 | 运行时产生 | `~/.local/share/wowtype/user.tsv` |
+| 用户词库 | 运行时产生 | `~/.local/share/archtype/user.tsv` |
 | 词库快照 | 自动生成 | `lexicon.tsv.wcache`，删了会重建 |
 
 ## 继续开发的优先级

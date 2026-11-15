@@ -8,7 +8,7 @@
 ```
         ┌── fcitx5 addon（输入法激活时）──┐
 热键 ───┤                                 ├──> 语音会话
-        └── wowtype-voiced（常驻守护）────┘        │
+        └── archtype-voiced（常驻守护）────┘        │
                                                     ├─ cpal 采集：设备支持就直接要 16k 单声道
                                                     ├─ 否则降混 + 低通滤波 + 重采样到 16k
                                                     ├─ 20ms 分帧 + 能量 VAD（100ms 起始确认、480ms 挂起）
@@ -44,7 +44,7 @@ Linux 没有统一的全局热键 API，按优先级：
 |---|---|---|
 | 输入法激活中 | fcitx5 拦截 | 最干净，不需要任何权限，且能直接 commit |
 | X11 全局 | `XGrabKey` | 抢占用单键，事件被独占，正是需要的行为 |
-| Wayland 全局 | `keyd` / `kanata` | 把组合键映射为调用 `wowtype-voice toggle` |
+| Wayland 全局 | `keyd` / `kanata` | 把组合键映射为调用 `archtype-voice toggle` |
 | Wayland 兜底 | evdev `EVIOCGRAB` | 需要 `input` 组权限，会独占设备 |
 
 Wayland 下"抢一个键"本质上不被允许（安全模型），所以要么借外部按键重映射工具，
@@ -56,15 +56,15 @@ Wayland 下"抢一个键"本质上不被允许（安全模型），所以要么�
 
 `voice/src/wtlocal/` 直接加载微信输入法的离线模型包并自己推理，**不需要官方程序**，
 全平台可用（无系统依赖）。模型约 100MB，从腾讯 CDN 下载并校验大小和 MD5，**由用户在设置里明确下载**
-（`WowType 设置 → 语音 → 下载`，或 `wowtype-config --install-voice-model`），输入法插件自己从不下载。
-下载、校验、解包在 `settings/wowtype-config`（Python 标准库 `zipfile`，不用系统 `unzip`）；地址、大小、MD5 和
+（`ArchType 设置 → 语音 → 下载`，或 `archtype-config --install-voice-model`），输入法插件自己从不下载。
+下载、校验、解包在 `settings/archtype-config`（Python 标准库 `zipfile`，不用系统 `unzip`）；地址、大小、MD5 和
 `voice/src/wtlocal/pack.rs` 一致，`voice` 里有个测试核对这三个值。
 
 开发工具仍然可以自己下载（是命令行上明确要的）：
 
 ```bash
-wowtype-voiced --asr wtlocal          # 没有模型时会下载
-wowtype-asr --download 音频.wav        # 或直接转写一个 WAV（16kHz 单声道）
+archtype-voiced --asr wtlocal          # 没有模型时会下载
+archtype-asr --download 音频.wav        # 或直接转写一个 WAV（16kHz 单声道）
 ```
 
 实测（macOS TTS 合成语音，5 句全部正确）：
@@ -90,25 +90,25 @@ wowtype-asr --download 音频.wav        # 或直接转写一个 WAV（16kHz 单
 
 ## 4. 与 fcitx5 的集成（已落地）
 
-插件在 WowType 是当前输入法时接住语音热键（默认右 Alt）。热键和开关在设置界面的「语音」页改，
-存在 `~/.config/fcitx5/conf/wowtype.conf` 的 `VoiceKey`、`Voice`；调试时 `WOWTYPE_VOICE_KEY` 优先，`none` 关掉。
+插件在 ArchType 是当前输入法时接住语音热键（默认右 Alt）。热键和开关在设置界面的「语音」页改，
+存在 `~/.config/fcitx5/conf/archtype.conf` 的 `VoiceKey`、`Voice`；调试时 `ARCHTYPE_VOICE_KEY` 优先，`none` 关掉。
 Wayland 下这是唯一不需要额外权限的做法：键本来就送到输入法。
 
 | 层 | 文件 | 做什么 |
 |---|---|---|
-| C 接口 | `core/src/voice_ffi.rs`、`core/include/wowtype_core.h` | `wowtype_voice_new/key_down/key_up/poll/text/cancel`；都不阻塞 |
+| C 接口 | `core/src/voice_ffi.rs`、`core/include/archtype_core.h` | `archtype_voice_new/key_down/key_up/poll/text/cancel`；都不阻塞 |
 | 工作线程 | 同上 | 每次说话一个线程：cpal 开默认输入设备 → 分帧 + VAD → 喂 wtlocal 出中间结果 → 结束时整段定稿 |
-| 模型线程 | 同上 | 第一次按热键时把模型读进内存，只做一次；还没读完时音频先攒着。不下载：模型不在磁盘上时不开麦克风，`poll` 返回出错，文字是「没有语音模型，请在「WowType 设置 → 语音」里下载」，`model_state` 返回 `MODEL_MISSING` |
-| 插件 | `fcitx5-addon/src/wowtype_engine.cpp` | 热键按下/松开都吃掉（免得应用把单按 Alt 当成打开菜单）；50ms 定时轮询；编辑区显示中间结果，前面是麦克风图标和跟着音量动的波形（不写说明文字，免得和识别出的字混在一起）；结果用 `commitString` 上屏 |
+| 模型线程 | 同上 | 第一次按热键时把模型读进内存，只做一次；还没读完时音频先攒着。不下载：模型不在磁盘上时不开麦克风，`poll` 返回出错，文字是「没有语音模型，请在「ArchType 设置 → 语音」里下载」，`model_state` 返回 `MODEL_MISSING` |
+| 插件 | `fcitx5-addon/src/archtype_engine.cpp` | 热键按下/松开都吃掉（免得应用把单按 Alt 当成打开菜单）；50ms 定时轮询；编辑区显示中间结果，前面是麦克风图标和跟着音量动的波形（不写说明文字，免得和识别出的字混在一起）；结果用 `commitString` 上屏 |
 
 ### 语音浮条（GNOME）
 
-fcitx5 的候选框只能显示文字，画不出宣传片里那条带动画的语音条，所以在 GNOME 上由 WowType 的 GNOME 扩展
-（`themes/gnome-shell/wowtype-theme@gloridust.github.io/voice.js`，和蓝色主题是同一个扩展）来画：
+fcitx5 的候选框只能显示文字，画不出宣传片里那条带动画的语音条，所以在 GNOME 上由 ArchType 的 GNOME 扩展
+（`themes/gnome-shell/archtype-theme@goway-hui.github.io/voice.js`，和蓝色主题是同一个扩展）来画：
 
-- 扩展启用后在会话总线上注册 `io.github.gloridust.WowType.VoiceOverlay`；插件用自己的一条会话总线连接盯着这个名字
+- 扩展启用后在会话总线上注册 `io.github.gowayhui.ArchType.VoiceOverlay`；插件用自己的一条会话总线连接盯着这个名字
   （`fcitx::dbus::ServiceWatcher`），名字在就不往候选框写 🎙 和波形，改为每次轮询（50ms）给它发一个信号：
-  `/io/github/gloridust/WowType`，接口 `io.github.gloridust.WowType.Voice1`，
+  `/io/github/gowayhui/ArchType`，接口 `io.github.gowayhui.ArchType.Voice1`，
   `State(u 状态, s 文字, i 音量 0–100, i x, i y, i w, i h, b 相对窗口, d 缩放)`。
   状态：0 收起、1 正在听、2 识别中、3 识别完成、4 出错；x/y/w/h 是光标矩形，和 kimpanel 的
   `SetSpotRect` / `SetRelativeSpotRectV2` 同一个意思，扩展换算到屏幕坐标的方法也照抄 Input Method Panel。
@@ -116,13 +116,13 @@ fcitx5 的候选框只能显示文字，画不出宣传片里那条带动画的�
   （高度 = 真实音量 × 一道从左往右走的起伏，照宣传片的公式）；弹出时上浮 + 从 0.94 放大，收起时 0.25 秒淡出下沉。
   浮条左边对着开始说话时的光标，字多了光标往右走才跟着挪。
 - 光标：按下语音键后 0.2 秒内，光标右边长出 5 根蓝色竖条（中间最高，两边 0.8、0.55）跟着音量跳，松开 0.2 秒收回。
-  光标本身是应用画的，WowType 改不了，所以这 5 根竖条是画在窗口上面的。
+  光标本身是应用画的，ArchType 改不了，所以这 5 根竖条是画在窗口上面的。
 - 编辑区里识别到一半的字仍由应用画（下划线），宣传片里「旧字上飘、新字落下」的改字动画做不到。
-- 扩展没在跑（其他桌面、关了蓝色主题、没重新登录）或 `WOWTYPE_VOICE_OVERLAY=0`：回到候选框里的文字提示。
+- 扩展没在跑（其他桌面、关了蓝色主题、没重新登录）或 `ARCHTYPE_VOICE_OVERLAY=0`：回到候选框里的文字提示。
 - 插件 1.5 秒没发信号（fcitx5 退出了），扩展自己收起浮条。
 
-调试：`WOWTYPE_HARNESS_DBUS=$DBUS_SESSION_BUS_ADDRESS` 让 `scripts/addon-test.sh` 里的插件连上会话总线，
-在 `dbus-run-session` 里起一个占住 `io.github.gloridust.WowType.VoiceOverlay` 的小程序就能收到这些信号。
+调试：`ARCHTYPE_HARNESS_DBUS=$DBUS_SESSION_BUS_ADDRESS` 让 `scripts/addon-test.sh` 里的插件连上会话总线，
+在 `dbus-run-session` 里起一个占住 `io.github.gowayhui.ArchType.VoiceOverlay` 的小程序就能收到这些信号。
 
 规则：
 
@@ -133,20 +133,20 @@ fcitx5 的候选框只能显示文字，画不出宣传片里那条带动画的�
 - 说话时按 `Esc` 丢掉；按别的键也丢掉，那个键照常处理；切走输入框（失去焦点、切输入法）丢掉；
 - 结果只往开始说话的那个输入框上屏。
 
-核心可以 `--no-default-features` 编译掉语音（不依赖 ALSA），这时 `wowtype_voice_new` 返回 NULL，
-插件用 `-DWOWTYPE_VOICE=OFF` 配置即可。
+核心可以 `--no-default-features` 编译掉语音（不依赖 ALSA），这时 `archtype_voice_new` 返回 NULL，
+插件用 `-DARCHTYPE_VOICE=OFF` 配置即可。
 
-测试：`WOWTYPE_VOICE_WAV=x.wav WOWTYPE_VOICE_EXPECT=期望的字 scripts/addon-test.sh ...` 用 WAV 代替麦克风，
+测试：`ARCHTYPE_VOICE_WAV=x.wav ARCHTYPE_VOICE_EXPECT=期望的字 scripts/addon-test.sh ...` 用 WAV 代替麦克风，
 在私有 fcitx5 实例里走一遍「按住右 Alt → 松开 → 上屏」。不给 WAV 时模型目录是一个空的临时目录，
 跑「没有模型时按右 Alt 只提示、不下载」。设置界面这边的下载、续传、校验、解包、取消、删除在
-`wowtype-config --self-test` 里（本机起一个假的下载服务，不联网）。
+`archtype-config --self-test` 里（本机起一个假的下载服务，不联网）。
 
 ## 5. 下一步
 
 1. `cpal` 采集 + 设备选择（Ubuntu 上需要 `libasound2-dev`）
 2. sherpa-onnx 绑定与模型下载脚本
 3. fcitx5 addon 里的语音状态机接线
-4. X11 全局热键守护进程（`wowtype-voiced`）
+4. X11 全局热键守护进程（`archtype-voiced`）
 5. Wayland 下用 keyd 配置做热键的文档
 
 ## 6. 采集与识别（已落地）
@@ -156,7 +156,7 @@ fcitx5 的候选框只能显示文字，画不出宣传片里那条带动画的�
 `voice/src/capture.rs`（feature `capture`，cpal）：
 
 ```rust
-use wowtype_voice::capture;
+use archtype_voice::capture;
 let cap = capture::start(None, move |pcm: Vec<i16>| { /* 16kHz 单声道 */ })?;
 ```
 
@@ -173,9 +173,9 @@ let cap = capture::start(None, move |pcm: Vec<i16>| { /* 16kHz 单声道 */ })?;
 
 ```bash
 # whisper.cpp
-wowtype-voiced --asr-cmd 'whisper-cli -m ggml-large-v3-turbo.bin -l zh -nt -f'
+archtype-voiced --asr-cmd 'whisper-cli -m ggml-large-v3-turbo.bin -l zh -nt -f'
 # sherpa-onnx
-wowtype-voiced --asr-cmd 'sherpa-onnx-offline --tokens=tokens.txt --paraformer=model.onnx'
+archtype-voiced --asr-cmd 'sherpa-onnx-offline --tokens=tokens.txt --paraformer=model.onnx'
 ```
 
 命令末尾会自动追加 WAV 路径；输出会过滤 `[BLANK_AUDIO]`、`(音乐)`、`<|nospeech|>` 这类标记。
@@ -196,15 +196,15 @@ wowtype-voiced --asr-cmd 'sherpa-onnx-offline --tokens=tokens.txt --paraformer=m
 | ydotool | `ydotool type` | ❌ | **打不出汉字** |
 
 `ydotool type` 是通过键码模拟按键的，没有对应 keysym 的字符（也就是汉字）发不出去。
-所以默认没有用 ydotool；要强制指定用 `WOWTYPE_SINK=wtype|ydotool|clipboard|wl|x11`。
+所以默认没有用 ydotool；要强制指定用 `ARCHTYPE_SINK=wtype|ydotool|clipboard|wl|x11`。
 
 识别命令里的 `{wav}` 占位符：
 
 ```bash
 # 追加路径（默认）
-wowtype-voiced --asr-cmd 'whisper-cli -m /path/ggml.bin -l zh -nt -f'
+archtype-voiced --asr-cmd 'whisper-cli -m /path/ggml.bin -l zh -nt -f'
 # 需要 --wav= 形式时用占位符
-wowtype-voiced --asr-cmd 'sherpa-onnx-offline --tokens=tokens.txt --paraformer=model.onnx --wav={wav}'
+archtype-voiced --asr-cmd 'sherpa-onnx-offline --tokens=tokens.txt --paraformer=model.onnx --wav={wav}'
 ```
 
 命令行按 shell 规则切分（支持引号），所以模型路径里有空格也没问题；

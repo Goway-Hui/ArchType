@@ -3,21 +3,21 @@
 这些是**互操作 / 研究用的开发者工具**：读取**用户自己机器上已安装的**微信输入法（WeType，macOS 版），
 打印文件的结构（大小、魔数、超参数、张量形状、记录条数），帮助判断哪些格式值得研究。
 
-**WowType 不带、不打包、不下载微信输入法的任何数据。** 词库、码表、模型权重、分词器都是腾讯的资产，
-WowType 的发行包和任何构建脚本都不会包含或获取它们。WowType 的五笔码表来自公开的 rime-wubi
+**ArchType 不带、不打包、不下载微信输入法的任何数据。** 词库、码表、模型权重、分词器都是腾讯的资产，
+ArchType 的发行包和任何构建脚本都不会包含或获取它们。ArchType 的五笔码表来自公开的 rime-wubi
 （LGPL-3.0，见 `scripts/make-wubi.sh`），拼音词库来自雾凇拼音，都与这里无关。
 
 ## 边界（硬规则）
 
 - 只读本机安装目录（默认 `/Library/Input Methods/WeType.app`），**不联网**，不上传
-- 默认只打印结构；唯一会写文件的是 `dump_xllm.py --tokens <路径>`，而且**拒绝写进 WowType 仓库目录**
+- 默认只打印结构；唯一会写文件的是 `dump_xllm.py --tokens <路径>`，而且**拒绝写进 ArchType 仓库目录**
 - 从微信输入法提取的任何东西（词典、码表、模型权重、分词器词表）**不得提交、打包，也不得由任何构建脚本下载**；
   `.gitignore` 已排除常见的输出名（`wetype-dump/`、`*_vocab.tsv`、`*.tokens.tsv`、`imeData.bundle/`、
   `swbd*.bin`、`decgnr.bin`、`mpd_e2e.bin`、`nlrgpt2_nnlm.bin`、`*.xnet`）。导出请放在仓库外，比如 `~/wetype-dump/`
 - PR、文档里只贴结构信息（大小、形状、条数），不贴词条、token 或数值
 
 唯一的例外是已有的 `tools/install_wetype_nnlm.py`：它也只是把**用户本机**的 `nlrgpt2_nnlm.bin`
-拷到用户数据目录，WowType 运行时有就用、没有就不用，同样不分发。
+拷到用户数据目录，ArchType 运行时有就用、没有就不用，同样不分发。
 
 ## 工具
 
@@ -67,7 +67,7 @@ swbd98.bin：38,624 条；swbdnc.bin：37,766 条
 
 由 `LoudsTrieHashMapReader<SVDeserializer, …>` 读取：LOUDS trie + 哈希表 + 值区。文件末尾 33 字节是单独结构
 （构造时用 `size - 0x21` 切出正文）；前 256KB 左右是 ASCII 码区；值区记录形如 `50 01 <字数 u8> <UTF-16LE>`。
-码 ↔ 词的对应没有解，也**不打算继续解**：五笔码表是公开标准，WowType 直接用 rime-wubi。
+码 ↔ 词的对应没有解，也**不打算继续解**：五笔码表是公开标准，ArchType 直接用 rime-wubi。
 
 ### VAD（`Resources/vad/`）
 
@@ -84,7 +84,7 @@ swbd98.bin：38,624 条；swbdnc.bin：37,766 条
 推断的（没有直接看到）：输入方案是一个单选；四个 JSON 键按名字对应上面四个设置项；
 `WubiScheme` 对应 86 / 98 / 新世纪，因为词典目录里有 `swbd86/98/nc.bin`，98、新世纪的文字没找到；
 本机值是不是出厂默认也无法确认。
-这些规则用于 WowType 五笔模式的设计，见 `docs/plans/wubi-design.md`（随 #193 合入）。
+这些规则用于 ArchType 五笔模式的设计，见 `docs/plans/wubi-design.md`（随 #193 合入）。
 
 ## 贡献注意
 

@@ -1,25 +1,25 @@
 #!/usr/bin/env bash
-# WowType 一键安装：Ubuntu / Debian、Fedora（x86_64、arm64），Arch Linux、deepin（x86_64）。
+# ArchType 一键安装：Ubuntu / Debian、Fedora（x86_64、arm64），Arch Linux、deepin（x86_64）。
 #
-#   curl -fsSL https://raw.githubusercontent.com/Goway-Hui/WowType/main/install.sh | bash
+#   curl -fsSL https://raw.githubusercontent.com/Goway-Hui/ArchType/main/install.sh | bash
 #
 # 做这几件事：
 #   1. 从 GitHub Release 下载和你系统对应的最新安装包（词库已经在包里），按 SHA256SUMS 校验
 #   2. 用 apt-get / pacman / dnf 安装（含 fcitx5、GTK 4 / libadwaita）
 #   3. 输入法框架不是 fcitx5 时，用 im-config 切到 fcitx5（之后要注销重新登录一次）
-#   4. 把 WowType 加进 fcitx5 的输入法列表（fcitx5 正在运行时会先重启它一次）
+#   4. 把 ArchType 加进 fcitx5 的输入法列表（fcitx5 正在运行时会先重启它一次）
 #
 # 再跑一遍就是升级到最新版。发行版和源码安装说明见 docs/INSTALL.md。
 #
 # 环境变量：
-#   WOWTYPE_VERSION=v0.3.8   装指定版本（默认最新）
-#   WOWTYPE_REPO=owner/repo  指定发布仓库（默认 Goway-Hui/WowType）
-#   WOWTYPE_NO_IM_CONFIG=1   不改输入法框架
-#   WOWTYPE_NO_RESTART=1     不重启 fcitx5（之后自己重启或注销再登录，再到设置里添加 WowType）
-#   WOWTYPE_YES=1            不问，直接按默认做
+#   ARCHTYPE_VERSION=v0.3.8   装指定版本（默认最新）
+#   ARCHTYPE_REPO=owner/repo  指定发布仓库（默认 Goway-Hui/ArchType）
+#   ARCHTYPE_NO_IM_CONFIG=1   不改输入法框架
+#   ARCHTYPE_NO_RESTART=1     不重启 fcitx5（之后自己重启或注销再登录，再到设置里添加 ArchType）
+#   ARCHTYPE_YES=1            不问，直接按默认做
 set -euo pipefail
 
-REPO=${WOWTYPE_REPO:-Goway-Hui/WowType}
+REPO=${ARCHTYPE_REPO:-Goway-Hui/ArchType}
 
 say() { printf '\033[1;32m==>\033[0m %s\n' "$*"; }
 warn() { printf '\033[1;33m注意：\033[0m%s\n' "$*" >&2; }
@@ -27,7 +27,7 @@ die() { printf '\033[1;31m出错：\033[0m%s\n' "$*" >&2; exit 1; }
 
 # 问一句，默认「是」；curl | bash 时从终端读
 confirm() {
-  [[ -n "${WOWTYPE_YES:-}" ]] && return 0
+  [[ -n "${ARCHTYPE_YES:-}" ]] && return 0
   local answer=""
   if [[ -r /dev/tty ]] && { true </dev/tty; } 2>/dev/null; then
     read -r -p "$1 [Y/n] " answer </dev/tty || answer=""
@@ -62,7 +62,7 @@ usage() {
   cat <<'EOF'
 用法：bash install.sh [--print-plan | --help]
 
-默认下载、校验并安装匹配当前发行版的 WowType 包。
+默认下载、校验并安装匹配当前发行版的 ArchType 包。
 --print-plan  只显示发行版、包管理器和包名，不联网、不安装、不更改配置。
 
 支持 Ubuntu 22.04 / 24.04 / 26.04、Debian 13 及有明确兼容基线的衍生版，deepin 23 / 25，
@@ -71,19 +71,19 @@ Ubuntu、Debian 的 deb 和 rpm 另有 arm64（aarch64）。
 Manjaro 请在本机用 scripts/package-arch.sh 构建；NixOS 使用 flake。
 Fedora Atomic 桌面使用 rpm-ostree。其他发行版见 docs/INSTALL.md 的源码构建。
 
-环境变量：WOWTYPE_VERSION、WOWTYPE_REPO、WOWTYPE_YES、WOWTYPE_NO_IM_CONFIG、
-          WOWTYPE_NO_RESTART。
-测试夹具：WOWTYPE_SYSTEM 代替 uname -s（固定 Linux），
-          WOWTYPE_OS_RELEASE 指定 os-release 文件，WOWTYPE_ARCH 指定机器架构，
-          WOWTYPE_BASE_URL 指定资产目录（可用 file:///...）。
+环境变量：ARCHTYPE_VERSION、ARCHTYPE_REPO、ARCHTYPE_YES、ARCHTYPE_NO_IM_CONFIG、
+          ARCHTYPE_NO_RESTART。
+测试夹具：ARCHTYPE_SYSTEM 代替 uname -s（固定 Linux），
+          ARCHTYPE_OS_RELEASE 指定 os-release 文件，ARCHTYPE_ARCH 指定机器架构，
+          ARCHTYPE_BASE_URL 指定资产目录（可用 file:///...）。
 EOF
 }
 
 # os-release 的已知字段仅作数据读取，不执行文件里的 shell 代码。
 read_os_release() {
-  local release=${WOWTYPE_OS_RELEASE:-/etc/os-release} key value
+  local release=${ARCHTYPE_OS_RELEASE:-/etc/os-release} key value
   [[ -r "$release" ]] || {
-    [[ -z "${WOWTYPE_OS_RELEASE:-}" ]] && release=/usr/lib/os-release
+    [[ -z "${ARCHTYPE_OS_RELEASE:-}" ]] && release=/usr/lib/os-release
     [[ -r "$release" ]] || die "找不到 os-release，无法选择安装包"
   }
   ID= ID_LIKE= VERSION_ID= VERSION_CODENAME= UBUNTU_CODENAME= DEBIAN_CODENAME= VARIANT_ID=
@@ -107,9 +107,9 @@ source_install() {
 }
 
 select_platform() {
-  [[ "${WOWTYPE_SYSTEM:-$(uname -s)}" == Linux ]] || source_install "WowType 的 fcitx5 插件需要 Linux"
+  [[ "${ARCHTYPE_SYSTEM:-$(uname -s)}" == Linux ]] || source_install "ArchType 的 fcitx5 插件需要 Linux"
   read_os_release
-  machine=${WOWTYPE_ARCH:-$(uname -m)}
+  machine=${ARCHTYPE_ARCH:-$(uname -m)}
   # deb 和 rpm 对同一种架构叫法不同：amd64 / x86_64、arm64 / aarch64
   case "$machine" in
     x86_64|amd64) deb_arch=amd64; rpm_arch=x86_64 ;;
@@ -182,9 +182,9 @@ select_platform() {
 
 package_filename() {
   case "$manager" in
-    apt-get) printf 'wowtype_%s_%s_%s.deb\n' "$1" "$distro" "$deb_arch" ;;
-    pacman) printf 'wowtype-%s-1-x86_64.pkg.tar.zst\n' "$1" ;;
-    dnf) printf 'wowtype-%s-1.fc%s.%s.rpm\n' "$1" "$VERSION_ID" "$rpm_arch" ;;
+    apt-get) printf 'archtype_%s_%s_%s.deb\n' "$1" "$distro" "$deb_arch" ;;
+    pacman) printf 'archtype-%s-1-x86_64.pkg.tar.zst\n' "$1" ;;
+    dnf) printf 'archtype-%s-1.fc%s.%s.rpm\n' "$1" "$VERSION_ID" "$rpm_arch" ;;
   esac
 }
 
@@ -204,7 +204,7 @@ manifest_hash() {
 
 # 要用户确认的命令从终端读输入（curl | bash 时标准输入是脚本本身）；没有终端就照常
 from_tty() {
-  if [[ -z "${WOWTYPE_YES:-}" ]] && { : < /dev/tty; } 2>/dev/null; then
+  if [[ -z "${ARCHTYPE_YES:-}" ]] && { : < /dev/tty; } 2>/dev/null; then
     "$@" < /dev/tty
   else
     "$@"
@@ -213,7 +213,7 @@ from_tty() {
 
 install_packages() {
   local -a paths=("${files[@]/#/$tmp/}") yes=()
-  [[ -n "${WOWTYPE_YES:-}" ]] && yes=(--noconfirm)
+  [[ -n "${ARCHTYPE_YES:-}" ]] && yes=(--noconfirm)
   case "$manager" in
     apt-get)
       local -a extra
@@ -254,10 +254,10 @@ main() {
     *) die "未知参数：$1（用 --help 查看用法）" ;;
   esac
   [[ $# -le 1 ]] || die "参数过多（用 --help 查看用法）"
-  [[ "$REPO" =~ ^[a-zA-Z0-9_.-]+/[a-zA-Z0-9_.-]+$ ]] || die "WOWTYPE_REPO 必须是 owner/repo"
+  [[ "$REPO" =~ ^[a-zA-Z0-9_.-]+/[a-zA-Z0-9_.-]+$ ]] || die "ARCHTYPE_REPO 必须是 owner/repo"
   select_platform
   if ((plan)); then
-    local requested=${WOWTYPE_VERSION:-<版本>}
+    local requested=${ARCHTYPE_VERSION:-<版本>}
     printf '系统：%s %s\n包基线：%s\n包管理器：%s\n仓库：%s\n包文件：%s\n' \
       "$ID" "$VERSION_ID" "$distro" "$manager" "$REPO" \
       "$(package_filename "${requested#v}")"
@@ -275,29 +275,29 @@ main() {
   command -v sha256sum >/dev/null || die "需要 sha256sum（coreutils）校验安装包"
 
   local tag version package base
-  tag=${WOWTYPE_VERSION:-$(latest_tag)}
+  tag=${ARCHTYPE_VERSION:-$(latest_tag)}
   [[ "$tag" == v* ]] || tag="v$tag"
   version=${tag#v}
   [[ "$version" =~ ^[a-zA-Z0-9][a-zA-Z0-9._+~^-]*$ ]] || die "无效的版本号：$version"
-  base=${WOWTYPE_BASE_URL:-"https://github.com/$REPO/releases/download/$tag"}
+  base=${ARCHTYPE_BASE_URL:-"https://github.com/$REPO/releases/download/$tag"}
   package=$(package_filename "$version")
 
   tmp=$(mktemp -d)   # 退出时的 trap 还要用它
   trap 'rm -rf "${tmp:-}"' EXIT
   chmod 755 "$tmp"   # apt 用 _apt 用户读本地包
 
-  say "WowType ${version}（$ID → ${distro}）"
+  say "ArchType ${version}（$ID → ${distro}）"
   fetch "$base/SHA256SUMS" "$tmp/SHA256SUMS" 2>/dev/null ||
     die "下载 $base/SHA256SUMS 失败，请检查版本和网络；发布页：https://github.com/$REPO/releases"
   manifest_hash "$package" "$tmp/SHA256SUMS" >/dev/null ||
-    source_install "WowType $version 没有 $distro 的有效安装包（${package}）"
+    source_install "ArchType $version 没有 $distro 的有效安装包（${package}）"
   files=("$package")
   # 0.3.3 及以前的 deb 词库是单独的包；其他格式不安装 deb 数据包。
   local hash filename data=
   if [[ "$manager" == apt-get ]]; then
     while read -r hash filename || [[ -n "$hash" ]]; do
       filename=${filename#\*}
-      if [[ "$filename" =~ ^wowtype-data-rime-ice_[a-zA-Z0-9._+~^-]+_all\.deb$ ]]; then
+      if [[ "$filename" =~ ^archtype-data-rime-ice_[a-zA-Z0-9._+~^-]+_all\.deb$ ]]; then
         [[ -z "$data" ]] || die "SHA256SUMS 包含多个词库包"
         data=$filename
       fi
@@ -317,12 +317,17 @@ main() {
   say "安装（需要时会要求输入密码）"
   install_packages
 
+  # 旧品牌 WowType 的包如果还装着，输入法列表里会多一个用不了的 WowType；只提示，不替用户卸
+  if [[ -e /usr/share/fcitx5/addon/wowtype.conf || -e /usr/lib/fcitx5/libwowtype.so ]]; then
+    warn "检测到旧品牌 WowType 的安装文件。建议卸载旧包（pacman -R wowtype / apt remove wowtype / dnf remove wowtype），用户词库和设置会自动迁移到 ArchType"
+  fi
+
   # 输入法框架。deepin 默认就是 fcitx5（经 deepin-im），不去动它
   local relogin=""
   local -a mode=()
   if [[ "$distro" == deepin* ]]; then
     :
-  elif [[ -z "${WOWTYPE_NO_IM_CONFIG:-}" ]] && command -v im-config >/dev/null &&
+  elif [[ -z "${ARCHTYPE_NO_IM_CONFIG:-}" ]] && command -v im-config >/dev/null &&
      mapfile -t mode < <(im-config -m 2>/dev/null) && [[ ${#mode[@]} -gt 0 ]]; then
     # im-config -m：第 1 行系统设置，第 2 行当前用户的设置（没设过是 missing）
     local active=${mode[1]:-}
@@ -336,10 +341,10 @@ main() {
           warn "im-config 切换失败，请手动运行：im-config -n fcitx5，然后注销重新登录"
         fi
       else
-        warn "没切换输入法框架，WowType 要在 fcitx5 下才能用"
+        warn "没切换输入法框架，ArchType 要在 fcitx5 下才能用"
       fi
     fi
-  elif [[ -z "${WOWTYPE_NO_IM_CONFIG:-}" ]]; then
+  elif [[ -z "${ARCHTYPE_NO_IM_CONFIG:-}" ]]; then
     if [[ "$manager" == apt-get ]]; then
       warn "没法自动确认输入法框架。请安装 im-config，运行 im-config -n fcitx5 后注销重新登录"
     else
@@ -349,18 +354,18 @@ main() {
 
   # 加进输入法列表
   local restarted=""
-  if ! command -v wowtype-config >/dev/null || ! wowtype-config --self-test >/dev/null 2>&1; then
-    warn "设置界面用不了（缺 PyGObject / GTK 4 / libadwaita？），请在「Fcitx 5 配置」里手动添加 WowType"
+  if ! command -v archtype-config >/dev/null || ! archtype-config --self-test >/dev/null 2>&1; then
+    warn "设置界面用不了（缺 PyGObject / GTK 4 / libadwaita？），请在「Fcitx 5 配置」里手动添加 ArchType"
   elif command -v pgrep >/dev/null && pgrep -x fcitx5 >/dev/null; then
-    if [[ -n "${WOWTYPE_NO_RESTART:-}" ]] || ! confirm "fcitx5 正在运行，重启它并把 WowType 加进输入法列表吗？"; then
-      warn "没重启 fcitx5。之后重启它（wowtype-config --restart-fcitx）或注销再登录，再在「WowType 设置」第一页点「添加」"
-    elif wowtype-config --add-to-group --restart; then
+    if [[ -n "${ARCHTYPE_NO_RESTART:-}" ]] || ! confirm "fcitx5 正在运行，重启它并把 ArchType 加进输入法列表吗？"; then
+      warn "没重启 fcitx5。之后重启它（archtype-config --restart-fcitx）或注销再登录，再在「ArchType 设置」第一页点「添加」"
+    elif archtype-config --add-to-group --restart; then
       restarted=1
     else
-      warn "没加上，请在「WowType 设置」第一页点「添加」"
+      warn "没加上，请在「ArchType 设置」第一页点「添加」"
     fi
   else
-    wowtype-config --add-to-group || warn "没加上，请在「WowType 设置」第一页点「添加」"
+    archtype-config --add-to-group || warn "没加上，请在「ArchType 设置」第一页点「添加」"
   fi
 
   if [[ "${XDG_CURRENT_DESKTOP:-}" == *GNOME* ]] && command -v gnome-extensions >/dev/null &&
@@ -369,15 +374,15 @@ main() {
   fi
 
   echo
-  say "WowType $version 装好了"
+  say "ArchType $version 装好了"
   if [[ -n "$relogin" ]]; then
-    echo "    注销并重新登录，然后按 Ctrl+空格 切换到 WowType，打 nihao 试试。"
+    echo "    注销并重新登录，然后按 Ctrl+空格 切换到 ArchType，打 nihao 试试。"
   else
-    echo "    按 Ctrl+空格 切换到 WowType，打 nihao 试试。"
+    echo "    按 Ctrl+空格 切换到 ArchType，打 nihao 试试。"
   fi
   [[ -n "$restarted" ]] &&
     echo "    刚重启了 fcitx5：Chrome、VS Code、微信等 Chromium/Electron 程序要彻底退出再打开才能打中文。"
-  echo "    设置在应用菜单「WowType 设置」里；以后有新版本会自动提醒。"
+  echo "    设置在应用菜单「ArchType 设置」里；以后有新版本会自动提醒。"
 }
 
 main "$@"

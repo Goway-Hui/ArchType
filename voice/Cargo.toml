@@ -1,5 +1,5 @@
 [package]
-name = "wowtype-voice"
+name = "archtype-voice"
 version = "0.4.0"
 edition = "2021"
 description = "语音输入：热键状态机、音频帧、VAD、ASR 抽象、上屏"
@@ -10,11 +10,11 @@ anyhow = "1"
 cpal = { version = "0.15", optional = true }
 
 [[bin]]
-name = "wowtype-asr"
+name = "archtype-asr"
 path = "src/bin/asr.rs"
 
 [[bin]]
-name = "wowtype-asr-eval"
+name = "archtype-asr-eval"
 path = "src/bin/asr_eval.rs"
 
 [features]

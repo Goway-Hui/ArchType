@@ -45,7 +45,7 @@ cargo clippy --all-targets
 ## 4. 数据自检
 
 ```
-wowtype-check --lexicon /tmp/rime/lexicon.tsv --s2t core/data/s2t.tsv
+archtype-check --lexicon /tmp/rime/lexicon.tsv --s2t core/data/s2t.tsv
 ```
 
 ```

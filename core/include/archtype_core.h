@@ -1,333 +1,333 @@
 /*
- * WowType Rust 核心的 C ABI。
+ * ArchType Rust 核心的 C ABI。
  *
  * 生命周期：
- * - wowtype_engine_new 成功返回句柄，必须用 wowtype_engine_free 释放；
- * - wowtype_engine_input 返回的候选句柄必须用 wowtype_candidates_free 释放；
+ * - archtype_engine_new 成功返回句柄，必须用 archtype_engine_free 释放；
+ * - archtype_engine_input 返回的候选句柄必须用 archtype_candidates_free 释放；
  * - 返回的字符串指针在对应句柄释放前有效（错误串在下一次 API 调用前有效）。
  */
-#ifndef WOWTYPE_CORE_H
-#define WOWTYPE_CORE_H
+#ifndef ARCHTYPE_CORE_H
+#define ARCHTYPE_CORE_H
 
 #include <stddef.h>
 #include <stdint.h>
 
-/* 接口版本（不是 WowType 的版本）。同一个主版本里只加函数、只在结构体末尾加字段；
- * 删函数或改参数含义时升主版本。外壳启动时用 wowtype_abi_version() 比对主版本。
+/* 接口版本（不是 ArchType 的版本）。同一个主版本里只加函数、只在结构体末尾加字段；
+ * 删函数或改参数含义时升主版本。外壳启动时用 archtype_abi_version() 比对主版本。
  * 规则见 docs/ABI.md。 */
-#define WOWTYPE_ABI_VERSION_MAJOR 1
-#define WOWTYPE_ABI_VERSION_MINOR 11
+#define ARCHTYPE_ABI_VERSION_MAJOR 1
+#define ARCHTYPE_ABI_VERSION_MINOR 11
 
 #ifdef __cplusplus
 extern "C" {
 #endif
 
 /* 编进库里的接口版本：主版本 * 1000 + 次版本。 */
-int wowtype_abi_version(void);
+int archtype_abi_version(void);
 
-typedef struct WowtypeEngineHandle WowtypeEngineHandle;
-typedef struct WowtypeCandidates WowtypeCandidates;
+typedef struct ArchtypeEngineHandle ArchtypeEngineHandle;
+typedef struct ArchtypeCandidates ArchtypeCandidates;
 
 /* 创建引擎；bigram_tsv_path 可为 NULL 或空串。失败返回 NULL。 */
-WowtypeEngineHandle *wowtype_engine_new(const char *lexicon_tsv_path,
+ArchtypeEngineHandle *archtype_engine_new(const char *lexicon_tsv_path,
                                         const char *bigram_tsv_path);
 
 /* 释放引擎。 */
-void wowtype_engine_free(WowtypeEngineHandle *engine);
+void archtype_engine_free(ArchtypeEngineHandle *engine);
 
 /* 设置 beam size；成功返回 0，失败返回 -1。 */
-int wowtype_engine_set_beam_size(WowtypeEngineHandle *engine, unsigned int beam_size);
+int archtype_engine_set_beam_size(ArchtypeEngineHandle *engine, unsigned int beam_size);
 
 /* 每次输入最多返回多少个整句候选（句首词候选另算）。返回 0 成功。 */
-int wowtype_engine_set_max_candidates(WowtypeEngineHandle *engine, unsigned int max_candidates);
+int archtype_engine_set_max_candidates(ArchtypeEngineHandle *engine, unsigned int max_candidates);
 
 /* 开关按错键纠错（相邻键、两键按反、多按/漏按），默认开。返回 0 成功。 */
-int wowtype_engine_set_typo_correction(WowtypeEngineHandle *engine, int on);
+int archtype_engine_set_typo_correction(ArchtypeEngineHandle *engine, int on);
 
 /* 是否也出 CJK 扩展 B 区及以后的单字（ABI 1.9 起），默认不出：常见中文字体都没有这些字，
  * 列出来是方块。通用规范汉字表里的扩展区字和含这些字的词不受影响。返回 0 成功。 */
-int wowtype_engine_set_rare_ext_chars(WowtypeEngineHandle *engine, int on);
+int archtype_engine_set_rare_ext_chars(ArchtypeEngineHandle *engine, int on);
 
 /* 载入英文词表（每行一个词，或 rime 的 en.dict.yaml）。
  * 载入后输入已知英文词（hello、github）时英文排在前面。返回累计词条数，失败返回 -1。 */
-int wowtype_engine_load_english(WowtypeEngineHandle *engine, const char *path);
+int archtype_engine_load_english(ArchtypeEngineHandle *engine, const char *path);
 
-/* 载入微信输入法的字级神经语言模型（nlrgpt2_nnlm.bin，不随 WowType 分发），
+/* 载入微信输入法的字级神经语言模型（nlrgpt2_nnlm.bin，不随 ArchType 分发），
  * 用来给整句候选重排。返回字表大小，失败返回 -1。 */
-int wowtype_engine_load_nnlm(WowtypeEngineHandle *engine, const char *path);
+int archtype_engine_load_nnlm(ArchtypeEngineHandle *engine, const char *path);
 
-/* 混上用户自己训的领域词级模型（wowtype-lmbuild 生成，和 words.lm 同格式），path 为 NULL/空串时去掉；
+/* 混上用户自己训的领域词级模型（archtype-lmbuild 生成，和 words.lm 同格式），path 为 NULL/空串时去掉；
  * 再调一次是换掉上一个，不会叠着混。返回 0 成功，-1 失败（原来的不动）。（1.10） */
-int wowtype_engine_set_domain_lm(WowtypeEngineHandle *engine, const char *path);
+int archtype_engine_set_domain_lm(ArchtypeEngineHandle *engine, const char *path);
 
 /* 开关模糊音（z/zh、c/ch、s/sh、an/ang、en/eng、in/ing）。返回 0 成功。 */
-int wowtype_engine_set_fuzzy(WowtypeEngineHandle *engine, int on);
+int archtype_engine_set_fuzzy(ArchtypeEngineHandle *engine, int on);
 /* 打开的模糊音分组（位掩码）：1 z/zh，2 c/ch，4 s/sh，8 n/l，16 f/h，32 r/l，
  * 64 an/ang，128 en/eng，256 in/ing，512 ian/iang，1024 uan/uang，2048 un/ong。
  * 默认 1|2|4|64|128|256|512|1024。 */
-int wowtype_engine_set_fuzzy_groups(WowtypeEngineHandle *engine, unsigned int groups);
+int archtype_engine_set_fuzzy_groups(ArchtypeEngineHandle *engine, unsigned int groups);
 
 /* 开关双拼。返回 0 成功。 */
-int wowtype_engine_set_shuangpin(WowtypeEngineHandle *engine, int on);
+int archtype_engine_set_shuangpin(ArchtypeEngineHandle *engine, int on);
 
 /* 选双拼方案：ziranma xiaohe microsoft sogou abc ziguang pinyinjiajia（也认中文名）。
  * 返回 0 成功，-1 不认识。 */
-int wowtype_engine_set_shuangpin_scheme(WowtypeEngineHandle *engine, const char *name);
+int archtype_engine_set_shuangpin_scheme(ArchtypeEngineHandle *engine, const char *name);
 
 /* 这个双拼方案有没有用分号键（微软、搜狗、紫光的 ing）。 */
-int wowtype_shuangpin_uses_semicolon(const char *name);
+int archtype_shuangpin_uses_semicolon(const char *name);
 
 /* 双拼时编辑区显示的全拼：vsgo -> zhong'guo；没开双拼返回 NULL。
- * 返回的串在同一线程下一次调用本函数或 wowtype_segment_input 前有效。 */
-const char *wowtype_engine_shuangpin_display(const WowtypeEngineHandle *engine, const char *input);
+ * 返回的串在同一线程下一次调用本函数或 archtype_segment_input 前有效。 */
+const char *archtype_engine_shuangpin_display(const ArchtypeEngineHandle *engine, const char *input);
 
 /* 开关繁体输出。返回 0 成功。 */
-int wowtype_engine_set_traditional(WowtypeEngineHandle *engine, int on);
+int archtype_engine_set_traditional(ArchtypeEngineHandle *engine, int on);
 
 /* 载入简繁映射表（简体<TAB>繁体）。返回条目数，失败返回 -1。 */
-int wowtype_engine_load_conversion(WowtypeEngineHandle *engine, const char *path);
+int archtype_engine_load_conversion(ArchtypeEngineHandle *engine, const char *path);
 
 /* 载入五笔码表（ABI 1.10 起；数据目录里的 wubi86.tsv，码<TAB>词<TAB>频次），替换上一次载入的。
- * 返回条数，失败返回 -1（原来载入的不动）。选了五笔（WowtypeSessionConfig.wubi）才要载入；
+ * 返回条数，失败返回 -1（原来载入的不动）。选了五笔（ArchtypeSessionConfig.wubi）才要载入；
  * 没载入时五笔会话照全拼打，候选框上方提示没有码表。 */
-int wowtype_engine_load_wubi(WowtypeEngineHandle *engine, const char *path);
+int archtype_engine_load_wubi(ArchtypeEngineHandle *engine, const char *path);
 
 /* ASCII 标点转中文标点；未收录返回 NULL。指针在下一次调用前有效。 */
-const char *wowtype_fullwidth_punct(int ascii_codepoint);
+const char *archtype_fullwidth_punct(int ascii_codepoint);
 
 /* 按标点样式转换：style 0 全角、1 半角；prev 是光标前一个字符（不知道传 0）。
  * 返回 NULL 表示原样上屏这个 ASCII 字符（半角样式、数字后面的符号）。 */
-const char *wowtype_punct(int ascii_codepoint, int style, int prev_codepoint);
+const char *archtype_punct(int ascii_codepoint, int style, int prev_codepoint);
 
 /* 中英文之间自动补空格（ABI 1.2 起）：prev 是光标前一个字，next 是要上屏的第一个字；
  * flags 1 = 汉字和字母之间、2 = 汉字和数字之间。要在两者之间补一个空格返回 1，否则 0。
  * 只看这一处边界，词里原有的字母（T恤、卡拉OK）不拆。 */
-int wowtype_autospace(int prev_codepoint, int next_codepoint, int flags);
+int archtype_autospace(int prev_codepoint, int next_codepoint, int flags);
 
-/* 全部内置符号（ABI 1.2 起），结果用 wowtype_candidates_* 读取并释放。 */
-WowtypeCandidates *wowtype_symbol_list(void);
+/* 全部内置符号（ABI 1.2 起），结果用 archtype_candidates_* 读取并释放。 */
+ArchtypeCandidates *archtype_symbol_list(void);
 
 /* 剪贴板历史（ABI 1.2 起）：只在内存里，最多 20 条，最新的在前，重复的挪到最前。
- * remember 记下一条（空白、超过 16 KB 的不记），记下返回 1；history 用 wowtype_candidates_*
+ * remember 记下一条（空白、超过 16 KB 的不记），记下返回 1；history 用 archtype_candidates_*
  * 读取并释放。输入法自己拿不到系统剪贴板，由外壳把看到的文字交进来。 */
-int wowtype_clipboard_remember(const char *text);
-WowtypeCandidates *wowtype_clipboard_history(void);
-void wowtype_clipboard_clear(void);
+int archtype_clipboard_remember(const char *text);
+ArchtypeCandidates *archtype_clipboard_history(void);
+void archtype_clipboard_clear(void);
 
 /* 自定义词（常用语）按 custom.tsv 的顺序（ABI 1.2 起）：text 是词（转义原样显示），
- * pinyin 是编码，wowtype_candidates_commit 是上屏的文字（\n 换成了换行）。 */
-WowtypeCandidates *wowtype_engine_custom_phrases(const WowtypeEngineHandle *engine);
+ * pinyin 是编码，archtype_candidates_commit 是上屏的文字（\n 换成了换行）。 */
+ArchtypeCandidates *archtype_engine_custom_phrases(const ArchtypeEngineHandle *engine);
 
-/* 符号检索（拼音/中文名前缀），结果用 wowtype_candidates_* 读取并释放。 */
-WowtypeCandidates *wowtype_symbol_search(const char *query, size_t limit);
+/* 符号检索（拼音/中文名前缀），结果用 archtype_candidates_* 读取并释放。 */
+ArchtypeCandidates *archtype_symbol_search(const char *query, size_t limit);
 
 /* 打字时的 emoji 推荐。text 是首选候选的文字；结果的 text 是显示文字，
- * 上屏用 wowtype_candidates_commit（整个词对上时只有 emoji，句尾对上时是整句 + emoji）。 */
-WowtypeCandidates *wowtype_emoji_recommend(const char *text, size_t limit);
+ * 上屏用 archtype_candidates_commit（整个词对上时只有 emoji，句尾对上时是整句 + emoji）。 */
+ArchtypeCandidates *archtype_emoji_recommend(const char *text, size_t limit);
 
 /* 候选正好是数字字（零到十）时对应的按键 emoji（「八」-> 8️⃣），别的返回 NULL。
  * 返回静态字符串，不用释放。 */
-const char *wowtype_emoji_keycap(const char *text);
+const char *archtype_emoji_keycap(const char *text);
 
 /* 日期、时间候选：key 是 riqi / shijian / xingqi / date / time（可带隔音符）；时间按本地时区，
  * weekday 0 = 星期日。不是触发词时返回空列表。 */
-WowtypeCandidates *wowtype_datetime_candidates(const char *key, int year, int month, int day,
+ArchtypeCandidates *archtype_datetime_candidates(const char *key, int year, int month, int day,
                                                int hour, int minute, int second, int weekday);
 
 /* V 模式计算器：expr 是 v 后面的算式（1+2*3）。算得出来时给「结果」「算式=结果」，
  * 没写完时只给算式本身。 */
-WowtypeCandidates *wowtype_calc_candidates(const char *expr);
+ArchtypeCandidates *archtype_calc_candidates(const char *expr);
 
 /* 表情面板搜索。query 为空给全部 emoji；否则按拼音（经引擎转成中文词）、英文、
  * 符号名一起找。engine 可为 NULL。 */
-WowtypeCandidates *wowtype_engine_emoji_search(const WowtypeEngineHandle *engine,
+ArchtypeCandidates *archtype_engine_emoji_search(const ArchtypeEngineHandle *engine,
                                                const char *query, size_t limit);
 
 /* 记录一次选词，参与历史排序特征。返回 0 成功，-1 失败。 */
-int wowtype_engine_record_selection(WowtypeEngineHandle *engine, const char *word);
+int archtype_engine_record_selection(ArchtypeEngineHandle *engine, const char *word);
 
 /* 记录选词并带上拼音：选够次数后自动加入用户词库。pinyin 可为 NULL。 */
-int wowtype_engine_record_selection_ex(WowtypeEngineHandle *engine,
+int archtype_engine_record_selection_ex(ArchtypeEngineHandle *engine,
                                        const char *word, const char *pinyin);
 
 /* 设置光标前文本，参与上下文 bigram 特征。返回 0 成功，-1 失败。 */
-int wowtype_engine_set_context(WowtypeEngineHandle *engine, const char *text);
+int archtype_engine_set_context(ArchtypeEngineHandle *engine, const char *text);
 
 /* 用户词库 */
-int wowtype_engine_add_user_word(WowtypeEngineHandle *engine, const char *pinyin,
+int archtype_engine_add_user_word(ArchtypeEngineHandle *engine, const char *pinyin,
                                  const char *word);
-int wowtype_engine_remove_user_word(WowtypeEngineHandle *engine, const char *word);
+int archtype_engine_remove_user_word(ArchtypeEngineHandle *engine, const char *word);
 /* 存用户词库，返回 0 成功，-1 失败。1.7 起空的也写（只有注释行），以前空的时候返回 -1。 */
-int wowtype_engine_save_user_dict(WowtypeEngineHandle *engine, const char *path);
-int wowtype_engine_load_user_dict(WowtypeEngineHandle *engine, const char *path);
+int archtype_engine_save_user_dict(ArchtypeEngineHandle *engine, const char *path);
+int archtype_engine_load_user_dict(ArchtypeEngineHandle *engine, const char *path);
 /* 自定义词（设置里添加的，custom.tsv：拼音<TAB>词[<TAB>频次]）：整体替换上一次读到的，
  * 文件不存在就清空；不写回用户词库。返回收下的条数，-1 表示出错。 */
-int wowtype_engine_load_custom_words(WowtypeEngineHandle *engine, const char *path);
+int archtype_engine_load_custom_words(ArchtypeEngineHandle *engine, const char *path);
 
 /* 用户输入习惯：选过的词的热度（30 天半衰期）和词搭配（上一个词 -> 这个词），
  * 参与排序，存成 TSV。save 返回 0 成功；load 返回条数，-1 表示出错。 */
-int wowtype_engine_save_history(WowtypeEngineHandle *engine, const char *path);
-int wowtype_engine_load_history(WowtypeEngineHandle *engine, const char *path);
+int archtype_engine_save_history(ArchtypeEngineHandle *engine, const char *path);
+int archtype_engine_load_history(ArchtypeEngineHandle *engine, const char *path);
 
 /* 输入拼音串；失败返回 NULL。 */
-WowtypeCandidates *wowtype_engine_input(WowtypeEngineHandle *engine, const char *input);
+ArchtypeCandidates *archtype_engine_input(ArchtypeEngineHandle *engine, const char *input);
 
 /**
  * 基于上一词的预测（预测词库）。
- * 成功返回候选集合（text 为预测词，score 为对数概率），必须 wowtype_candidates_free；
- * 失败返回 NULL，用 wowtype_last_error 取原因。
+ * 成功返回候选集合（text 为预测词，score 为对数概率），必须 archtype_candidates_free；
+ * 失败返回 NULL，用 archtype_last_error 取原因。
  */
-WowtypeCandidates *wowtype_engine_predict_next(const WowtypeEngineHandle *engine,
+ArchtypeCandidates *archtype_engine_predict_next(const ArchtypeEngineHandle *engine,
                                                const char *prev_word,
                                                size_t limit);
 
 /* 候选数量。 */
-size_t wowtype_candidates_len(const WowtypeCandidates *candidates);
+size_t archtype_candidates_len(const ArchtypeCandidates *candidates);
 
 /* 候选文本（UTF-8，NUL 结尾）；索引越界返回 NULL。 */
-const char *wowtype_candidates_text(const WowtypeCandidates *candidates, size_t index);
+const char *archtype_candidates_text(const ArchtypeCandidates *candidates, size_t index);
 
 /* 候选分数；索引越界返回 0。 */
-double wowtype_candidates_score(const WowtypeCandidates *candidates, size_t index);
+double archtype_candidates_score(const ArchtypeCandidates *candidates, size_t index);
 
 /* 候选拼音（空格分隔音节，纠错后的写法），可传给 record_selection_ex；
  * 预测/符号结果为空串，越界返回 NULL。 */
-const char *wowtype_candidates_pinyin(const WowtypeCandidates *candidates, size_t index);
+const char *archtype_candidates_pinyin(const ArchtypeCandidates *candidates, size_t index);
 
 /* 候选用掉了输入的多少字节。等于输入长度是整句候选；小于时是句首词候选，
  * 上屏后应把 input + consumed 之后的部分留在编辑区继续输入。越界返回 0。 */
-size_t wowtype_candidates_consumed(const WowtypeCandidates *candidates, size_t index);
+size_t archtype_candidates_consumed(const ArchtypeCandidates *candidates, size_t index);
 
 /* 选中后上屏的文字（emoji 推荐可能和显示的不同），其他候选等于 text。越界返回 NULL。 */
-const char *wowtype_candidates_commit(const WowtypeCandidates *candidates, size_t index);
+const char *archtype_candidates_commit(const ArchtypeCandidates *candidates, size_t index);
 
 /* 释放候选集合。 */
-void wowtype_candidates_free(WowtypeCandidates *candidates);
+void archtype_candidates_free(ArchtypeCandidates *candidates);
 
-/* 编辑区显示用：按候选拼音（空格分隔，wowtype_candidates_pinyin）给输入分词，
+/* 编辑区显示用：按候选拼音（空格分隔，archtype_candidates_pinyin）给输入分词，
  * hengxiang + "heng xiang" -> heng'xiang。保留用户打的字母（大小写、按错的键）。
  * 切不了（英文、双拼、差得太多）返回 NULL；返回的串在同一线程下一次调用前有效。 */
-const char *wowtype_segment_input(const char *input, const char *pinyin);
+const char *archtype_segment_input(const char *input, const char *pinyin);
 
 /* 自定义词的编码整理（设置界面加词、导入用，规则在核心里一份）：pinyin_only 非 0 时只认拼音，
  * Ni Hǎo、nihao、ni'hao、ni3hao3 -> "ni hao"，ü、u:、u 加分音符写成 v，单独的 r 是儿化；
  * 否则不是拼音但全是字母的（mail）也行，去掉隔音符、小写。不合法返回 NULL；
- * 返回的串在同一线程下一次调用本函数或 wowtype_guess_pinyin 前有效。（1.10） */
-const char *wowtype_custom_code(const char *text, int pinyin_only);
+ * 返回的串在同一线程下一次调用本函数或 archtype_guess_pinyin 前有效。（1.10） */
+const char *archtype_custom_code(const char *text, int pinyin_only);
 
 /* 在词库原文（lexicon 起 len 个字节，拼音<TAB>词<TAB>频次，一行一条）里猜 word 的拼音，
  * 设置界面加词时自动填编码：整个词有就取频次最高的那条，没有就一个字一个字找，结果整理成
  * 空格分开的音节。猜不出（有词库里没有的字、英文）返回 NULL；返回的串在同一线程下一次调用
- * 本函数或 wowtype_custom_code 前有效。（1.10） */
-const char *wowtype_guess_pinyin(const char *lexicon, size_t len, const char *word);
+ * 本函数或 archtype_custom_code 前有效。（1.10） */
+const char *archtype_guess_pinyin(const char *lexicon, size_t len, const char *word);
 
 /* 最近一次错误信息，可能为空串。 */
-const char *wowtype_last_error(void);
+const char *archtype_last_error(void);
 
 /* 版本号，例如 0.1.0。 */
-const char *wowtype_version(void);
+const char *archtype_version(void);
 
 /*
  * 语音输入（核心带 voice 特性编译时才有，默认带）。
  *
- * 识别用微信输入法的离线模型：不随软件分发，由用户在设置界面（wowtype-config）里下载到
+ * 识别用微信输入法的离线模型：不随软件分发，由用户在设置界面（archtype-config）里下载到
  * model_dir；这里只读不下载，第一次按热键时读进内存，之后常驻。没有模型时按热键，
- * poll 返回 WOWTYPE_VOICE_ERROR（文本是去设置里下载的提示），model_state 返回
- * WOWTYPE_VOICE_MODEL_MISSING。所有函数都不阻塞：开麦克风、读模型、解码都在后台线程。
+ * poll 返回 ARCHTYPE_VOICE_ERROR（文本是去设置里下载的提示），model_state 返回
+ * ARCHTYPE_VOICE_MODEL_MISSING。所有函数都不阻塞：开麦克风、读模型、解码都在后台线程。
  *
  * 用法：热键按下/松开调 key_down/key_up；录音期间每几十毫秒调一次 poll，
- * 按返回的状态显示提示或上屏 wowtype_voice_text。
+ * 按返回的状态显示提示或上屏 archtype_voice_text。
  * 按住超过 300ms 松开即结束；更短算点按，继续听到静音 1.5 秒或再按一次热键。
- * 设了环境变量 WOWTYPE_VOICE_WAV 时不开麦克风，改读这个 WAV 文件（测试用）。
+ * 设了环境变量 ARCHTYPE_VOICE_WAV 时不开麦克风，改读这个 WAV 文件（测试用）。
  */
-typedef struct WowtypeVoice WowtypeVoice;
+typedef struct ArchtypeVoice ArchtypeVoice;
 
 enum {
-    WOWTYPE_VOICE_IDLE = 0,
-    WOWTYPE_VOICE_LISTENING = 1,   /* 正在听；文本是中间结果（可能为空） */
-    WOWTYPE_VOICE_RECOGNIZING = 2, /* 录完了，正在出最终结果 */
-    WOWTYPE_VOICE_RESULT = 3,      /* 最终结果，文本即要上屏的字；只返回一次 */
-    WOWTYPE_VOICE_ERROR = 4,       /* 出错或没听清，文本是原因；只返回一次 */
+    ARCHTYPE_VOICE_IDLE = 0,
+    ARCHTYPE_VOICE_LISTENING = 1,   /* 正在听；文本是中间结果（可能为空） */
+    ARCHTYPE_VOICE_RECOGNIZING = 2, /* 录完了，正在出最终结果 */
+    ARCHTYPE_VOICE_RESULT = 3,      /* 最终结果，文本即要上屏的字；只返回一次 */
+    ARCHTYPE_VOICE_ERROR = 4,       /* 出错或没听清，文本是原因；只返回一次 */
 };
 
 enum {
-    WOWTYPE_VOICE_MODEL_NONE = 0,
-    WOWTYPE_VOICE_MODEL_DOWNLOADING = 1, /* 不再返回：模型改在设置界面里下载 */
-    WOWTYPE_VOICE_MODEL_LOADING = 2,
-    WOWTYPE_VOICE_MODEL_READY = 3,
-    WOWTYPE_VOICE_MODEL_FAILED = 4,
-    WOWTYPE_VOICE_MODEL_MISSING = 5, /* 按了热键，但模型还没下载 */
+    ARCHTYPE_VOICE_MODEL_NONE = 0,
+    ARCHTYPE_VOICE_MODEL_DOWNLOADING = 1, /* 不再返回：模型改在设置界面里下载 */
+    ARCHTYPE_VOICE_MODEL_LOADING = 2,
+    ARCHTYPE_VOICE_MODEL_READY = 3,
+    ARCHTYPE_VOICE_MODEL_FAILED = 4,
+    ARCHTYPE_VOICE_MODEL_MISSING = 5, /* 按了热键，但模型还没下载 */
 };
 
-/* model_dir 为 NULL/空串时用 ~/.local/share/wowtype/wtlocal。
+/* model_dir 为 NULL/空串时用 ~/.local/share/archtype/wtlocal。
  * 核心不带 voice 特性编译时返回 NULL（其余函数接受 NULL，什么也不做）。 */
-WowtypeVoice *wowtype_voice_new(const char *model_dir);
-void wowtype_voice_free(WowtypeVoice *voice);
-void wowtype_voice_key_down(WowtypeVoice *voice);
-void wowtype_voice_key_up(WowtypeVoice *voice);
+ArchtypeVoice *archtype_voice_new(const char *model_dir);
+void archtype_voice_free(ArchtypeVoice *voice);
+void archtype_voice_key_down(ArchtypeVoice *voice);
+void archtype_voice_key_up(ArchtypeVoice *voice);
 /* 丢掉这次说的话（Esc、切走输入框）。 */
-void wowtype_voice_cancel(WowtypeVoice *voice);
-/* 返回 WOWTYPE_VOICE_*。 */
-int wowtype_voice_poll(WowtypeVoice *voice);
+void archtype_voice_cancel(ArchtypeVoice *voice);
+/* 返回 ARCHTYPE_VOICE_*。 */
+int archtype_voice_poll(ArchtypeVoice *voice);
 /* 上一次 poll 对应的文本；下一次 poll 或释放前有效。 */
-const char *wowtype_voice_text(const WowtypeVoice *voice);
+const char *archtype_voice_text(const ArchtypeVoice *voice);
 /* 正在听时最近的音量，0–100（画波形用）。 */
-int wowtype_voice_level(const WowtypeVoice *voice);
-/* 返回 WOWTYPE_VOICE_MODEL_*。 */
-int wowtype_voice_model_state(const WowtypeVoice *voice);
+int archtype_voice_level(const ArchtypeVoice *voice);
+/* 返回 ARCHTYPE_VOICE_MODEL_*。 */
+int archtype_voice_model_state(const ArchtypeVoice *voice);
 /* 松开热键后还在听（点按模式）时返回 1。 */
-int wowtype_voice_is_tap(const WowtypeVoice *voice);
+int archtype_voice_is_tap(const ArchtypeVoice *voice);
 
 /*
  * 互译：调用户配置的大模型（OpenAI 格式 chat/completions，流式）把原文译成外文，
  * 原文不是中文时译成简体中文。网络请求交给系统的 curl，在后台线程里跑；
  * 下面的函数都不阻塞。用法：原文变了调 start，之后每几十毫秒 poll 一次，
- * 显示 wowtype_translate_text（流式输出时边写边变）。
+ * 显示 archtype_translate_text（流式输出时边写边变）。
  */
-typedef struct WowtypeTranslator WowtypeTranslator;
+typedef struct ArchtypeTranslator ArchtypeTranslator;
 
 enum {
-    WOWTYPE_TRANSLATE_IDLE = 0,
-    WOWTYPE_TRANSLATE_RUNNING = 1, /* 请求中；可能已有一部分译文 */
-    WOWTYPE_TRANSLATE_DONE = 2,
-    WOWTYPE_TRANSLATE_ERROR = 3,   /* wowtype_translate_error 是给用户看的原因 */
+    ARCHTYPE_TRANSLATE_IDLE = 0,
+    ARCHTYPE_TRANSLATE_RUNNING = 1, /* 请求中；可能已有一部分译文 */
+    ARCHTYPE_TRANSLATE_DONE = 2,
+    ARCHTYPE_TRANSLATE_ERROR = 3,   /* archtype_translate_error 是给用户看的原因 */
 };
 
-WowtypeTranslator *wowtype_translate_new(void);
-void wowtype_translate_free(WowtypeTranslator *translator);
+ArchtypeTranslator *archtype_translate_new(void);
+void archtype_translate_free(ArchtypeTranslator *translator);
 /* base_url 如 https://api.openai.com/v1；target 是语言代码（en、ja……）；
  * key_file 是放 API Key 的文件（一行），NULL/空串表示不带 Key。字符串都可为 NULL。 */
-void wowtype_translate_configure(WowtypeTranslator *translator, const char *base_url,
+void archtype_translate_configure(ArchtypeTranslator *translator, const char *base_url,
                                  const char *model, const char *target, int formal,
                                  const char *key_file);
 /* 用本地模型（ABI 1.1 起）：model 是 GGUF 文件；server 是 llama-server 的路径或名字（NULL/空串
  * 表示在 PATH 里找）；闲置 idle_secs 秒后停掉（0 表示不停）。model 为 NULL/空串时改回用上面配的
  * 接口，并马上停掉本地服务。llama-server 第一次翻译时才启动，只监听 127.0.0.1。 */
-void wowtype_translate_configure_local(WowtypeTranslator *translator, const char *model,
+void archtype_translate_configure_local(ArchtypeTranslator *translator, const char *model,
                                        const char *server, unsigned int idle_secs);
 /* 本地模型的 llama-server 正在跑时返回 1（ABI 1.1 起）。 */
-int wowtype_translate_local_running(const WowtypeTranslator *translator);
+int archtype_translate_local_running(const ArchtypeTranslator *translator);
 /* 能翻译时返回 1：填了地址和模型，或者用本地模型且模型文件在。 */
-int wowtype_translate_ready(const WowtypeTranslator *translator);
+int archtype_translate_ready(const ArchtypeTranslator *translator);
 /* 开始翻译 text，取消别的请求；正在译或已经译好同一句话时什么也不做。 */
-void wowtype_translate_start(WowtypeTranslator *translator, const char *text);
-void wowtype_translate_cancel(WowtypeTranslator *translator);
-/* 拍一份当前结果的快照，返回 WOWTYPE_TRANSLATE_*。下面取文字的函数读的都是这份快照，
+void archtype_translate_start(ArchtypeTranslator *translator, const char *text);
+void archtype_translate_cancel(ArchtypeTranslator *translator);
+/* 拍一份当前结果的快照，返回 ARCHTYPE_TRANSLATE_*。下面取文字的函数读的都是这份快照，
  * 指针在下一次 poll 前有效。 */
-int wowtype_translate_poll(WowtypeTranslator *translator);
+int archtype_translate_poll(ArchtypeTranslator *translator);
 /* 到目前的译文；状态是 RUNNING 时可能还没写完，没有就是空串。 */
-const char *wowtype_translate_text(const WowtypeTranslator *translator);
+const char *archtype_translate_text(const ArchtypeTranslator *translator);
 /* 快照对应的原文。 */
-const char *wowtype_translate_source(const WowtypeTranslator *translator);
-const char *wowtype_translate_error(const WowtypeTranslator *translator);
+const char *archtype_translate_source(const ArchtypeTranslator *translator);
+const char *archtype_translate_error(const ArchtypeTranslator *translator);
 /* 面板上的方向标签（「中→英」「英→中」），按 text 判断；下一次调用前有效。 */
-const char *wowtype_translate_tag(WowtypeTranslator *translator, const char *text);
+const char *archtype_translate_tag(ArchtypeTranslator *translator, const char *text);
 
 /* ---- 输入会话（ABI 1.3 起，1.4 加候选和分音节，1.5 加选词和学习，1.6 加选词键、翻页和展开面板，
  * 1.7 加 Ctrl+Delete 忘掉学错的词；
  * 见 docs/PORTING.md、docs/ABI.md）----
  *
- * 一个输入框一个会话：外壳把平台按键翻成 WowtypeKey 交给会话，按返回的 WowtypeFrame
+ * 一个输入框一个会话：外壳把平台按键翻成 ArchtypeKey 交给会话，按返回的 ArchtypeFrame
  * 画编辑区、上屏。会话只能在一个线程里用。
  *
  * 暂定：输入行为还在一块一块从 fcitx5 外壳挪进来（docs/PORTING.md 第 2 步），挪完之前
@@ -342,123 +342,123 @@ const char *wowtype_translate_tag(WowtypeTranslator *translator, const char *tex
  * 带 Ctrl 的这几个键也要交给会话。
  * 还在外壳里的：打字途中的标点（先上屏再出标点）、工具栏、表情面板、互译。 */
 
-typedef struct WowtypeSession WowtypeSession;
+typedef struct ArchtypeSession ArchtypeSession;
 
 /* 修饰键位掩码（和 X11 / fcitx5 的 KeyState 取值一样）。 */
-#define WOWTYPE_MOD_SHIFT (1u << 0)
-#define WOWTYPE_MOD_CAPS (1u << 1)
-#define WOWTYPE_MOD_CTRL (1u << 2)
-#define WOWTYPE_MOD_ALT (1u << 3)
-#define WOWTYPE_MOD_NUMLOCK (1u << 4) /* 1.6 起：和 CapsLock 一样不影响数字选词 */
-#define WOWTYPE_MOD_SUPER (1u << 6)
+#define ARCHTYPE_MOD_SHIFT (1u << 0)
+#define ARCHTYPE_MOD_CAPS (1u << 1)
+#define ARCHTYPE_MOD_CTRL (1u << 2)
+#define ARCHTYPE_MOD_ALT (1u << 3)
+#define ARCHTYPE_MOD_NUMLOCK (1u << 4) /* 1.6 起：和 CapsLock 一样不影响数字选词 */
+#define ARCHTYPE_MOD_SUPER (1u << 6)
 
 /* 平台自己的翻页、移动候选热键（fcitx5 全局设置里的 [Hotkey/PrevPage] 等）或候选框上的
- * 翻页按钮：外壳翻成动作放进 WowtypeKey.action（1.6 起）。方向键带了动作也照横排竖排的规则走。
+ * 翻页按钮：外壳翻成动作放进 ArchtypeKey.action（1.6 起）。方向键带了动作也照横排竖排的规则走。
  * keysym 可以是 0（只有动作）。没在打字时动作交给应用。 */
-#define WOWTYPE_KEY_ACTION_NONE 0
-#define WOWTYPE_KEY_ACTION_PREV_PAGE 1
-#define WOWTYPE_KEY_ACTION_NEXT_PAGE 2
-#define WOWTYPE_KEY_ACTION_PREV_CANDIDATE 3
-#define WOWTYPE_KEY_ACTION_NEXT_CANDIDATE 4
+#define ARCHTYPE_KEY_ACTION_NONE 0
+#define ARCHTYPE_KEY_ACTION_PREV_PAGE 1
+#define ARCHTYPE_KEY_ACTION_NEXT_PAGE 2
+#define ARCHTYPE_KEY_ACTION_PREV_CANDIDATE 3
+#define ARCHTYPE_KEY_ACTION_NEXT_CANDIDATE 4
 /* 1.10 起：外壳只是告诉会话有这个键（松开的、外壳自己处理掉的），会话不处理它，只用来判断
  * 单按 Shift（按住 Shift 时按了别的键就不算）。外壳每个非 Shift 的键都先这样报一下。 */
-#define WOWTYPE_KEY_ACTION_OBSERVE 5
+#define ARCHTYPE_KEY_ACTION_OBSERVE 5
 /* 1.10 起：设置里另设的切换键（ToggleKey），外壳认出来后带上这个动作交给会话：中 ↔ 英，
  * 在「译」里回中文；frame->mode_changed 为 1。开着工具栏、表情面板时别带（按键归面板）。 */
-#define WOWTYPE_KEY_ACTION_TOGGLE_MODE 6
+#define ARCHTYPE_KEY_ACTION_TOGGLE_MODE 6
 /* 1.10 起：进出「译」的快捷键（TranslateModeKey）：不在「译」里进「译」（打到一半的拼音带进去），
  * 在「译」里回到进来之前的模式。没有「译」（translate_mode 为 0）或者输入框带
- * WOWTYPE_KEY_HINT_NO_TRANSLATE 时 frame->handled 为 0，键交给应用。 */
-#define WOWTYPE_KEY_ACTION_TOGGLE_TRANSLATE 7
+ * ARCHTYPE_KEY_HINT_NO_TRANSLATE 时 frame->handled 为 0，键交给应用。 */
+#define ARCHTYPE_KEY_ACTION_TOGGLE_TRANSLATE 7
 
 /* 一次按键。keysym 是 XKB keysym 的子集（字母、数字、标点、方向、功能键）。
- * size 填 sizeof(WowtypeKey)：以后在末尾加字段，旧外壳没填的字段当 0。 */
+ * size 填 sizeof(ArchtypeKey)：以后在末尾加字段，旧外壳没填的字段当 0。 */
 typedef struct {
     uint32_t size;
     uint32_t keysym;
-    uint32_t modifiers; /* WOWTYPE_MOD_* */
+    uint32_t modifiers; /* ARCHTYPE_MOD_* */
     uint32_t release;   /* 0 按下，1 松开 */
     uint32_t prev_char; /* 应用里光标前一个字符（Unicode 码位），读不到给 0。1.10 起会话按它决定
                          * 数字后面的标点保持英文（读不到时看会话自己记的上一个字）、要不要自动补空格
-                         * （读不到就不补），带 WOWTYPE_KEY_HINT_SURROUNDING 时还拿它核对会话记的上文 */
-    uint32_t action;    /* WOWTYPE_KEY_ACTION_*（1.6 起） */
-    uint32_t hints;     /* 1.10 起：WOWTYPE_KEY_HINT_*，输入框的情况 */
+                         * （读不到就不补），带 ARCHTYPE_KEY_HINT_SURROUNDING 时还拿它核对会话记的上文 */
+    uint32_t action;    /* ARCHTYPE_KEY_ACTION_*（1.6 起） */
+    uint32_t hints;     /* 1.10 起：ARCHTYPE_KEY_HINT_*，输入框的情况 */
     uint32_t code;      /* 1.10 起：按键码（硬件键码），不知道给 0。单按 Shift 时按下、松开按它对上 */
     uint32_t repeat;    /* 1.10 起：按住不放的自动重复 */
     uint64_t time_ms;   /* 1.10 起：按键时刻（毫秒，单调递增的任意起点），不知道给 0 */
-} WowtypeKey;
+} ArchtypeKey;
 
-/* WowtypeKey.hints（1.10 起）。 */
-#define WOWTYPE_KEY_HINT_NO_AUTO_SPACE (1u << 0) /* 密码框、网址框、邮箱框：不自动补空格 */
-#define WOWTYPE_KEY_HINT_PANEL_OPEN (1u << 1)    /* 外壳开着自己的面板（表情面板、工具栏）：按 Shift 不切中英文 */
-#define WOWTYPE_KEY_HINT_NO_TRANSLATE (1u << 2)  /* 不能翻译的输入框（密码框）：「译」里也照常上屏 */
-#define WOWTYPE_KEY_HINT_SURROUNDING (1u << 3)   /* 应用告诉了光标周围的文字：prev_char 为 0 是光标前确实没有字 */
+/* ArchtypeKey.hints（1.10 起）。 */
+#define ARCHTYPE_KEY_HINT_NO_AUTO_SPACE (1u << 0) /* 密码框、网址框、邮箱框：不自动补空格 */
+#define ARCHTYPE_KEY_HINT_PANEL_OPEN (1u << 1)    /* 外壳开着自己的面板（表情面板、工具栏）：按 Shift 不切中英文 */
+#define ARCHTYPE_KEY_HINT_NO_TRANSLATE (1u << 2)  /* 不能翻译的输入框（密码框）：「译」里也照常上屏 */
+#define ARCHTYPE_KEY_HINT_SURROUNDING (1u << 3)   /* 应用告诉了光标周围的文字：prev_char 为 0 是光标前确实没有字 */
 
 /* 输入模式（1.10 起）。单按 Shift（Shift_L 0xffe1 / Shift_R 0xffe2 的按下、松开都交给会话）
- * 在中 → 英 →（WowtypeSessionConfig.translate_mode 时）译 → 中 之间切换，frame->mode_changed 为 1；
- * 设了 translate_key 时只在中 ↔ 英之间切（在「译」里回中文），「译」用 WOWTYPE_KEY_ACTION_TOGGLE_TRANSLATE 进出。
+ * 在中 → 英 →（ArchtypeSessionConfig.translate_mode 时）译 → 中 之间切换，frame->mode_changed 为 1；
+ * 设了 translate_key 时只在中 ↔ 英之间切（在「译」里回中文），「译」用 ARCHTYPE_KEY_ACTION_TOGGLE_TRANSLATE 进出。
  * 英文模式下会话只管字母、数字前的自动空格，别的键都交给应用。互译时的上屏还在外壳。 */
-#define WOWTYPE_MODE_CHINESE 0
-#define WOWTYPE_MODE_ENGLISH 1
-#define WOWTYPE_MODE_TRANSLATE 2
+#define ARCHTYPE_MODE_CHINESE 0
+#define ARCHTYPE_MODE_ENGLISH 1
+#define ARCHTYPE_MODE_TRANSLATE 2
 
-/* 用哪边的 Shift 单按切换（WowtypeSessionConfig.shift_toggle，1.10 起）。 */
-#define WOWTYPE_SHIFT_TOGGLE_BOTH 0
-#define WOWTYPE_SHIFT_TOGGLE_LEFT 1
-#define WOWTYPE_SHIFT_TOGGLE_RIGHT 2
-#define WOWTYPE_SHIFT_TOGGLE_OFF 3
+/* 用哪边的 Shift 单按切换（ArchtypeSessionConfig.shift_toggle，1.10 起）。 */
+#define ARCHTYPE_SHIFT_TOGGLE_BOTH 0
+#define ARCHTYPE_SHIFT_TOGGLE_LEFT 1
+#define ARCHTYPE_SHIFT_TOGGLE_RIGHT 2
+#define ARCHTYPE_SHIFT_TOGGLE_OFF 3
 
-/* 设置里能选的翻页键（WowtypeSessionConfig.page_keys 的位掩码）。PgUp PgDn 一直能用；
- * 方向键挑候选（WOWTYPE_ARROW_KEYS_CANDIDATES）时，横排上下键、竖排左右键也翻页。 */
-#define WOWTYPE_PAGE_KEYS_MINUS (1u << 0)   /* - = */
-#define WOWTYPE_PAGE_KEYS_BRACKET (1u << 1) /* [ ] */
-#define WOWTYPE_PAGE_KEYS_COMMA (1u << 2)   /* , . */
-#define WOWTYPE_PAGE_KEYS_TAB (1u << 3)     /* Shift+Tab Tab */
+/* 设置里能选的翻页键（ArchtypeSessionConfig.page_keys 的位掩码）。PgUp PgDn 一直能用；
+ * 方向键挑候选（ARCHTYPE_ARROW_KEYS_CANDIDATES）时，横排上下键、竖排左右键也翻页。 */
+#define ARCHTYPE_PAGE_KEYS_MINUS (1u << 0)   /* - = */
+#define ARCHTYPE_PAGE_KEYS_BRACKET (1u << 1) /* [ ] */
+#define ARCHTYPE_PAGE_KEYS_COMMA (1u << 2)   /* , . */
+#define ARCHTYPE_PAGE_KEYS_TAB (1u << 3)     /* Shift+Tab Tab */
 
-/* 分号、引号选词（WowtypeSessionConfig.select_keys）。 */
-#define WOWTYPE_SELECT_KEYS_OFF 0
-#define WOWTYPE_SELECT_KEYS_SEMICOLON 1       /* 分号选第 2 个 */
-#define WOWTYPE_SELECT_KEYS_SEMICOLON_QUOTE 2 /* 再加引号选第 3 个 */
+/* 分号、引号选词（ArchtypeSessionConfig.select_keys）。 */
+#define ARCHTYPE_SELECT_KEYS_OFF 0
+#define ARCHTYPE_SELECT_KEYS_SEMICOLON 1       /* 分号选第 2 个 */
+#define ARCHTYPE_SELECT_KEYS_SEMICOLON_QUOTE 2 /* 再加引号选第 3 个 */
 
-/* 打字途中方向键做什么（WowtypeSessionConfig.arrow_keys，1.10 起，#129）。 */
-#define WOWTYPE_ARROW_KEYS_CANDIDATES 0 /* 挑候选，跟着 horizontal：横排左右选词、上翻页、下展开面板；
+/* 打字途中方向键做什么（ArchtypeSessionConfig.arrow_keys，1.10 起，#129）。 */
+#define ARCHTYPE_ARROW_KEYS_CANDIDATES 0 /* 挑候选，跟着 horizontal：横排左右选词、上翻页、下展开面板；
                                          * 竖排上下选词、左右翻页 */
-#define WOWTYPE_ARROW_KEYS_CARET 1      /* 上下键选词；左右键在拼音里移动光标（字母插在光标处、退格删
+#define ARCHTYPE_ARROW_KEYS_CARET 1      /* 上下键选词；左右键在拼音里移动光标（字母插在光标处、退格删
                                          * 光标前一个，Home、End、Delete 也管光标），方向键不翻页 */
 
-/* 会话的设置。size 填 sizeof(WowtypeSessionConfig)；外壳没填的字段（size 短）用默认值。
- * 传 NULL 全用默认。双拼开不开看引擎（wowtype_engine_set_shuangpin）。 */
+/* 会话的设置。size 填 sizeof(ArchtypeSessionConfig)；外壳没填的字段（size 短）用默认值。
+ * 传 NULL 全用默认。双拼开不开看引擎（archtype_engine_set_shuangpin）。 */
 typedef struct {
     uint32_t size;
     uint32_t page_size; /* 一页几个候选，0 用默认（9）；数字按键 emoji 只在第一页里找 */
     int calculator;     /* V 模式计算器，默认 1（双拼、五笔时是大写 V） */
     int date_time;      /* 日期时间候选，默认 1 */
     int emoji_suggest;  /* 打字推荐 emoji，默认 1 */
-    int horizontal;     /* 1.6 起：候选横排，默认 1；0 竖排。方向键怎么用见 WOWTYPE_ARROW_KEYS_* */
-    uint32_t page_keys; /* 1.6 起：WOWTYPE_PAGE_KEYS_*，默认 WOWTYPE_PAGE_KEYS_MINUS */
-    int select_keys;    /* 1.6 起：WOWTYPE_SELECT_KEYS_*，默认 OFF */
+    int horizontal;     /* 1.6 起：候选横排，默认 1；0 竖排。方向键怎么用见 ARCHTYPE_ARROW_KEYS_* */
+    uint32_t page_keys; /* 1.6 起：ARCHTYPE_PAGE_KEYS_*，默认 ARCHTYPE_PAGE_KEYS_MINUS */
+    int select_keys;    /* 1.6 起：ARCHTYPE_SELECT_KEYS_*，默认 OFF */
     int pick_char;      /* 1.8 起：以词定字，打拼音途中 [ 上屏光标处候选的第一个字、] 最后一个字，
                          * 默认 1；page_keys 带 [ ] 时让给翻页 */
     int punct_style;    /* 1.10 起：0 全角（中文标点，默认）、1 半角（标点原样交给应用） */
     uint32_t auto_space; /* 1.10 起：中英文之间自动补空格，1 汉字和字母之间、2 汉字和数字之间，
                           * 可以相加；0 关（默认） */
-    int shift_toggle;    /* 1.10 起：WOWTYPE_SHIFT_TOGGLE_*，默认两边都行 */
+    int shift_toggle;    /* 1.10 起：ARCHTYPE_SHIFT_TOGGLE_*，默认两边都行 */
     uint32_t shift_tap_ms; /* 1.10 起：按住 Shift 多久以内松开算单按（毫秒），0 用默认 500 */
     int translate_mode;  /* 1.10 起：有「译」（配好了翻译服务）：单按 Shift 的循环里有它，
-                          * WOWTYPE_KEY_ACTION_TOGGLE_TRANSLATE 进得去，默认 0 */
+                          * ARCHTYPE_KEY_ACTION_TOGGLE_TRANSLATE 进得去，默认 0 */
     int toolbar;         /* 1.10 起：只打一个 v 再按空格打开工具栏（双拼、五笔、互译时不开），默认 1 */
     int clipboard_history; /* 1.10 起：记剪贴板历史（工具栏「剪贴板」页的提示看它），默认 0 */
     int shuangpin_keys;  /* 1.10 起：双拼时编辑区显示打的键（uivs），不翻成全拼（shi'zhong），默认 0 */
-    int arrow_keys;      /* 1.10 起：WOWTYPE_ARROW_KEYS_*，默认 CANDIDATES */
+    int arrow_keys;      /* 1.10 起：ARCHTYPE_ARROW_KEYS_*，默认 CANDIDATES */
     int wubi;            /* 1.10 起：五笔 86，默认 0。字母是五笔码（最多四码，第五码顶字，空码丢掉），
                           * z 开头临时打全拼（候选带五笔码，不学习），计算器用大写 V，v + 空格不开工具栏，
-                          * 五笔选的词不学习。引擎要先 wowtype_engine_load_wubi，没载入时照全拼打，
+                          * 五笔选的词不学习。引擎要先 archtype_engine_load_wubi，没载入时照全拼打，
                           * frame->aux 提示没有码表。引擎的双拼开关要关着 */
     int wubi_auto_commit; /* 1.10 起：五笔打满四码、只有一个候选时直接上屏，默认 1 */
-    int wubi_hint;       /* 1.10 起：五笔逐码提示的候选后面显示还要打的码（WowtypeCandidateInfo.comment），默认 1 */
-    int translate_key;   /* 1.10 起：另设了进出「译」的快捷键（WOWTYPE_KEY_ACTION_TOGGLE_TRANSLATE），
+    int wubi_hint;       /* 1.10 起：五笔逐码提示的候选后面显示还要打的码（ArchtypeCandidateInfo.comment），默认 1 */
+    int translate_key;   /* 1.10 起：另设了进出「译」的快捷键（ARCHTYPE_KEY_ACTION_TOGGLE_TRANSLATE），
                           * 单按 Shift 只在中 ↔ 英之间切，默认 0 */
-} WowtypeSessionConfig;
+} ArchtypeSessionConfig;
 
 /* 一次调用之后外壳要做的事。归会话所有，和里面的字符串一起在同一个会话的下一次调用前有效。
  * 读 size 之外的字段前先看 size（旧核心给的结构体短）。 */
@@ -471,10 +471,10 @@ typedef struct {
     int preedit_cursor;    /* 编辑区光标，UTF-8 字节偏移 */
     const char *aux;       /* 候选框上方的提示（1.10 起：工具栏、表情面板；打字时五笔的「空码」、
                             * 选了五笔却没有码表），没有为 NULL。可以没有候选只有提示 */
-    int panel;             /* WOWTYPE_PANEL_*：0 普通一页、1 展开面板（横排按下键，6 列，一屏 6 行）、
+    int panel;             /* ARCHTYPE_PANEL_*：0 普通一页、1 展开面板（横排按下键，6 列，一屏 6 行）、
                             * 2 表情面板（1.10 起，同样的网格，preedit 是搜索词）、
                             * 3 工具栏（1.10 起，竖排一列，一页 9 个）；面板的提示在 aux */
-    size_t cand_count;     /* 候选框里显示几个（一页，或展开面板的一屏）；用 wowtype_session_candidate 取 */
+    size_t cand_count;     /* 候选框里显示几个（一页，或展开面板的一屏）；用 archtype_session_candidate 取 */
     int cand_cursor;       /* 光标在显示的这些里的位置；-1 不在这一页上（翻页按钮翻走以后） */
     int has_prev, has_next; /* 前面 / 后面还有一页（展开面板是一屏） */
     uint32_t wake_after_ms; /* >0：这么久后再调会话（还没用，恒为 0） */
@@ -482,8 +482,8 @@ typedef struct {
                              * 外壳该马上存用户词库和输入习惯（和上屏后存的一样） */
     int learned;            /* 1.10 起：这次上屏里有引擎学到的选词（选了引擎的候选、原样上屏输入），
                              * 外壳攒够次数存一次用户词库；只上屏了标点、emoji、计算结果、日期时间是 0 */
-    int mode;               /* 1.10 起：这次调用以后的输入模式，WOWTYPE_MODE_* */
-    int mode_changed;       /* 1.10 起：这次调用切换了输入模式（单按 Shift、wowtype_session_set_mode） */
+    int mode;               /* 1.10 起：这次调用以后的输入模式，ARCHTYPE_MODE_* */
+    int mode_changed;       /* 1.10 起：这次调用切换了输入模式（单按 Shift、archtype_session_set_mode） */
     int translating;        /* 1.10 起：互译中（「译」、有翻译器、输入框能翻译）。上屏的字攒成原文，
                              * 不进 commit；下面四段字只在互译时有内容，否则是空串（不为 NULL） */
     const char *translate_source; /* 攒着的原文（编辑区里画在拼音前面） */
@@ -492,179 +492,179 @@ typedef struct {
     const char *translate_status; /* 候选框下方的一行：出错原因、「翻译中…」、怎么上屏，没有是空串 */
     int translate_done;     /* translate_text 是译完的最终结果 */
     size_t choice_index;    /* 1.11 起：这次上屏的候选在列表里的位置（1 起）；不是选候选为 0 */
-} WowtypeFrame;
+} ArchtypeFrame;
 
 /* 建会话。engine 可以传 NULL（词库没载入好时也能打字，载入好了用 set_engine 补上）；
  * 传了的话要比会话活得久。config 可以传 NULL。 */
-WowtypeSession *wowtype_session_new(WowtypeEngineHandle *engine, const WowtypeSessionConfig *config);
-void wowtype_session_free(WowtypeSession *session);
+ArchtypeSession *archtype_session_new(ArchtypeEngineHandle *engine, const ArchtypeSessionConfig *config);
+void archtype_session_free(ArchtypeSession *session);
 /* 换引擎，可以传 NULL。 */
-void wowtype_session_set_engine(WowtypeSession *session, WowtypeEngineHandle *engine);
+void archtype_session_set_engine(ArchtypeSession *session, ArchtypeEngineHandle *engine);
 /* 改设置；config 为 NULL 全用默认。 */
-void wowtype_session_configure(WowtypeSession *session, const WowtypeSessionConfig *config);
+void archtype_session_configure(ArchtypeSession *session, const ArchtypeSessionConfig *config);
 /* 现在的编辑区（不处理按键，handled 为 0）。session 为 NULL 时返回 NULL。 */
-const WowtypeFrame *wowtype_session_frame(WowtypeSession *session);
+const ArchtypeFrame *archtype_session_frame(ArchtypeSession *session);
 /* 处理一次按键（按下和松开都给）。session 或 key 为 NULL 时返回 NULL。 */
-const WowtypeFrame *wowtype_session_key(WowtypeSession *session, const WowtypeKey *key);
+const ArchtypeFrame *archtype_session_key(ArchtypeSession *session, const ArchtypeKey *key);
 /* 清空编辑区；commit_pending 非 0 时，已选的词 + 原始输入放进 frame->commit（切换输入法、
  * 打字途中切英文时，和回车一样），原始输入也记一次选词。commit_pending 为 0 是放弃（失去焦点、
  * 应用重置了输入框）：打到一半的丢掉，会话记的上文也作废（1.10 起）。 */
-const WowtypeFrame *wowtype_session_reset(WowtypeSession *session, int commit_pending);
-/* 切换输入模式（1.10 起，WOWTYPE_MODE_*）：外部命令、设置里的默认模式、外壳全局的模式用。
+const ArchtypeFrame *archtype_session_reset(ArchtypeSession *session, int commit_pending);
+/* 切换输入模式（1.10 起，ARCHTYPE_MODE_*）：外部命令、设置里的默认模式、外壳全局的模式用。
  * 切到英文时打到一半的（已选的词 + 原始输入）放进 frame->commit。 */
-const WowtypeFrame *wowtype_session_set_mode(WowtypeSession *session, int mode);
-/* 现在的输入模式（1.10 起），WOWTYPE_MODE_*；session 为 NULL 时是中文。 */
-int wowtype_session_mode(const WowtypeSession *session);
+const ArchtypeFrame *archtype_session_set_mode(ArchtypeSession *session, int mode);
+/* 现在的输入模式（1.10 起），ARCHTYPE_MODE_*；session 为 NULL 时是中文。 */
+int archtype_session_mode(const ArchtypeSession *session);
 
 /* 互译（1.10 起）。会话攒原文、0.5 秒没再打字（句末标点立刻）发请求、回车上屏译文（没译完先记下，
- * 译好了在 wowtype_session_tick 的 frame->commit 里）、Shift+回车上屏原文、Esc 清空、退格删原文；
- * 离开「译」时原文原样上屏。frame->wake_after_ms > 0 时外壳过这么久调一次 wowtype_session_tick。
+ * 译好了在 archtype_session_tick 的 frame->commit 里）、Shift+回车上屏原文、Esc 清空、退格删原文；
+ * 离开「译」时原文原样上屏。frame->wake_after_ms > 0 时外壳过这么久调一次 archtype_session_tick。
  * 翻译器二选一：核心的（Linux）或外壳自己的函数表（macOS）。都要比会话活得久，释放前先设成 NULL。 */
-void wowtype_session_set_translator(WowtypeSession *session, WowtypeTranslator *translator);
+void archtype_session_set_translator(ArchtypeSession *session, ArchtypeTranslator *translator);
 typedef struct {
-    uint32_t size; /* sizeof(WowtypeTranslateBackend) */
+    uint32_t size; /* sizeof(ArchtypeTranslateBackend) */
     void *user;
     void (*start)(void *user, const char *text); /* 开始翻译 text，取消别的；同一句正在译或已译好时不动 */
     void (*cancel)(void *user);
-    /* 写出原文、译文、出错原因（下一次 poll 前有效），返回 WOWTYPE_TRANSLATE_* */
+    /* 写出原文、译文、出错原因（下一次 poll 前有效），返回 ARCHTYPE_TRANSLATE_* */
     int (*poll)(void *user, const char **source, const char **text, const char **error);
     const char *(*tag)(void *user, const char *text); /* 方向标签（「中→英」），下一次 tag 前有效 */
-} WowtypeTranslateBackend;
-void wowtype_session_set_translate_backend(WowtypeSession *session,
-                                           const WowtypeTranslateBackend *backend);
-/* now_ms：单调时钟的毫秒数（和 WowtypeKey.time_ms 同一个时钟）。 */
-const WowtypeFrame *wowtype_session_tick(WowtypeSession *session, uint64_t now_ms);
+} ArchtypeTranslateBackend;
+void archtype_session_set_translate_backend(ArchtypeSession *session,
+                                           const ArchtypeTranslateBackend *backend);
+/* now_ms：单调时钟的毫秒数（和 ArchtypeKey.time_ms 同一个时钟）。 */
+const ArchtypeFrame *archtype_session_tick(ArchtypeSession *session, uint64_t now_ms);
 /* 外壳要上屏一段与拼音无关的字（工具栏、表情面板、语音识别结果）：互译时进原文，否则补好空格放进
  * frame->commit。prev_char 是应用里光标前的字，读不到给 0。 */
-const WowtypeFrame *wowtype_session_commit_text(WowtypeSession *session, const char *text,
+const ArchtypeFrame *archtype_session_commit_text(ArchtypeSession *session, const char *text,
                                                 uint32_t prev_char);
 /* 工具栏和表情面板（1.10 起）。只打一个 v 再按空格会话自己打开工具栏；表情面板快捷键由外壳按设置认出来，
  * 调 toggle。开着时按键都归面板（带 Ctrl / Alt / Super 的组合键收起面板、交给应用），条目用候选的
- * 读法（wowtype_session_candidate、_candidate_info），选了的放进 frame->commit（互译时进原文）。
- * 剪贴板历史由外壳读系统剪贴板交给 wowtype_clipboard_remember（打开工具栏之前读一次）。 */
-#define WOWTYPE_PANEL_NORMAL 0
-#define WOWTYPE_PANEL_EXPANDED 1
-#define WOWTYPE_PANEL_EMOJI 2
-#define WOWTYPE_PANEL_TOOL 3
-#define WOWTYPE_TOOL_NONE 0
-#define WOWTYPE_TOOL_MENU 1
-#define WOWTYPE_TOOL_CLIPBOARD 2
-#define WOWTYPE_TOOL_PHRASES 3
-#define WOWTYPE_TOOL_SYMBOLS 4
-#define WOWTYPE_TOOL_EMOJI 5
-const WowtypeFrame *wowtype_session_toggle_emoji_panel(WowtypeSession *session);
-/* 打开工具栏的一页或表情面板（WOWTYPE_TOOL_*）；WOWTYPE_TOOL_NONE 关上。 */
-const WowtypeFrame *wowtype_session_open_tool(WowtypeSession *session, int tool);
-/* 开着的面板，WOWTYPE_TOOL_*。 */
-int wowtype_session_open_panel(const WowtypeSession *session);
+ * 读法（archtype_session_candidate、_candidate_info），选了的放进 frame->commit（互译时进原文）。
+ * 剪贴板历史由外壳读系统剪贴板交给 archtype_clipboard_remember（打开工具栏之前读一次）。 */
+#define ARCHTYPE_PANEL_NORMAL 0
+#define ARCHTYPE_PANEL_EXPANDED 1
+#define ARCHTYPE_PANEL_EMOJI 2
+#define ARCHTYPE_PANEL_TOOL 3
+#define ARCHTYPE_TOOL_NONE 0
+#define ARCHTYPE_TOOL_MENU 1
+#define ARCHTYPE_TOOL_CLIPBOARD 2
+#define ARCHTYPE_TOOL_PHRASES 3
+#define ARCHTYPE_TOOL_SYMBOLS 4
+#define ARCHTYPE_TOOL_EMOJI 5
+const ArchtypeFrame *archtype_session_toggle_emoji_panel(ArchtypeSession *session);
+/* 打开工具栏的一页或表情面板（ARCHTYPE_TOOL_*）；ARCHTYPE_TOOL_NONE 关上。 */
+const ArchtypeFrame *archtype_session_open_tool(ArchtypeSession *session, int tool);
+/* 开着的面板，ARCHTYPE_TOOL_*。 */
+int archtype_session_open_panel(const ArchtypeSession *session);
 /* 最近用过的 emoji 存在这个文件（一行一个，进程内所有会话共用，最多 18 个）；NULL 或空串只记在内存里并清空。 */
-void wowtype_recent_emoji_path(const char *path);
-/* 最近用过的 emoji，最近的在前；用 wowtype_candidates_* 读取并释放。 */
-WowtypeCandidates *wowtype_recent_emoji_list(void);
+void archtype_recent_emoji_path(const char *path);
+/* 最近用过的 emoji，最近的在前；用 archtype_candidates_* 读取并释放。 */
+ArchtypeCandidates *archtype_recent_emoji_list(void);
 /* 攒着的原文，没有是空串；在同一个会话下一次调用前有效。 */
-const char *wowtype_session_translate_source(WowtypeSession *session);
+const char *archtype_session_translate_source(ArchtypeSession *session);
 /* 丢掉攒着的原文、取消这个会话的翻译请求（输入框失去焦点）。 */
-const WowtypeFrame *wowtype_session_translate_clear(WowtypeSession *session);
+const ArchtypeFrame *archtype_session_translate_clear(ArchtypeSession *session);
 /* 点候选（1.6 起）：index 是显示的这些（frame 的 cand_count 个）里的序号。和按数字键一样：
  * 句首词进已选栈，用完输入就上屏并记选词。序号不对时 handled 为 0。 */
-const WowtypeFrame *wowtype_session_select(WowtypeSession *session, size_t index);
+const ArchtypeFrame *archtype_session_select(ArchtypeSession *session, size_t index);
 /* 显示的第 index 个候选的字（1.6 起），index < cand_count，不然返回 NULL。
  * 在同一会话下一次调用前有效。 */
-const char *wowtype_session_candidate(WowtypeSession *session, size_t index);
+const char *archtype_session_candidate(ArchtypeSession *session, size_t index);
 /* 显示的第 index 个候选后面的小字（1.10 起：五笔还要打的码、z 临时拼音反查的五笔码），没有为空串；
- * 越界返回 NULL。和 WowtypeCandidateInfo.comment 一样，画在字后面、不上屏。 */
-const char *wowtype_session_candidate_comment(WowtypeSession *session, size_t index);
+ * 越界返回 NULL。和 ArchtypeCandidateInfo.comment 一样，画在字后面、不上屏。 */
+const char *archtype_session_candidate_comment(ArchtypeSession *session, size_t index);
 
 /* 读会话的状态（外壳判断在不在打字、拼编辑区用）。返回的字符串在同一会话下一次调用前有效。 */
-const char *wowtype_session_input(WowtypeSession *session);         /* 全部原始输入 */
-const char *wowtype_session_remaining(WowtypeSession *session);     /* 还没选词的部分 */
-const char *wowtype_session_selected_text(WowtypeSession *session); /* 已选的词连起来 */
+const char *archtype_session_input(ArchtypeSession *session);         /* 全部原始输入 */
+const char *archtype_session_remaining(ArchtypeSession *session);     /* 还没选词的部分 */
+const char *archtype_session_selected_text(ArchtypeSession *session); /* 已选的词连起来 */
 /* 选第 index 个候选（全部候选里的序号，不分页）：emoji、计算结果、日期时间原样上屏不学习；
  * 句首词进已选栈、记一次选词；其余已选的词 + 它上屏，记选词（分几次选出来的整句也记一次）。
  * 序号不对时 handled 为 0。fcitx5 的候选框点了整个列表里的第几个时用；工具栏、表情面板开着时选面板的。
- * （1.10 删掉了 wowtype_session_append、_set_context：上文由会话自己记，面板的搜索词也在会话里。） */
-const WowtypeFrame *wowtype_session_choose(WowtypeSession *session, size_t index);
+ * （1.10 删掉了 archtype_session_append、_set_context：上文由会话自己记，面板的搜索词也在会话里。） */
+const ArchtypeFrame *archtype_session_choose(ArchtypeSession *session, size_t index);
 
 /* 整个候选列表（不分页）：fcitx5 的候选框（CommonCandidateList）要整个列表，外壳抄过去画。
  * 工具栏、表情面板开着时是面板的条目。 */
-#define WOWTYPE_CAND_WORD 0  /* 引擎的候选：选中要学习 */
-#define WOWTYPE_CAND_PLAIN 1 /* 计算结果、日期时间、带换行的自定义词：原样上屏，不学习 */
-#define WOWTYPE_CAND_EMOJI 2 /* emoji：上屏 commit，不学习 */
+#define ARCHTYPE_CAND_WORD 0  /* 引擎的候选：选中要学习 */
+#define ARCHTYPE_CAND_PLAIN 1 /* 计算结果、日期时间、带换行的自定义词：原样上屏，不学习 */
+#define ARCHTYPE_CAND_EMOJI 2 /* emoji：上屏 commit，不学习 */
 typedef struct {
-    uint32_t size;      /* 填 sizeof(WowtypeCandidateInfo) */
+    uint32_t size;      /* 填 sizeof(ArchtypeCandidateInfo) */
     const char *text;   /* 候选框里显示的字 */
     const char *pinyin; /* 空格分音节；计算结果、emoji 这类为空串 */
     size_t consumed;    /* 用掉了还没选词那部分输入的多少字节；比它短是句首词 */
-    int kind;           /* WOWTYPE_CAND_* */
+    int kind;           /* ARCHTYPE_CAND_* */
     const char *commit; /* 选中时上屏的字（emoji 推荐在句尾对上时是「整句 + emoji」） */
     const char *emoji;  /* emoji 本身；不是 emoji 为空串 */
     const char *comment; /* 1.10 起：画在候选后面的小字，不上屏（五笔还要打的码、z 临时拼音反查的五笔码），
                           * 没有为空串 */
     size_t index;       /* 1.11 起：这个候选在列表里的位置（1 起）；0 表示不知道 */
-} WowtypeCandidateInfo;
+} ArchtypeCandidateInfo;
 /* 候选个数。没有引擎、没在打字时为 0。 */
-size_t wowtype_session_candidate_total(WowtypeSession *session);
+size_t archtype_session_candidate_total(ArchtypeSession *session);
 /* 第 index 个候选写进 out（按 out->size 写）。返回 0 成功，-1 越界或参数为 NULL。
  * 字符串在同一会话下一次改了编辑区、上文、引擎或设置的调用前有效。 */
-int wowtype_session_candidate_info(WowtypeSession *session, size_t index, WowtypeCandidateInfo *out);
-/* （1.10 删掉了 wowtype_session_last_choice：学没学到词看 frame->learned，选了 emoji 由会话记进最近用过。） */
+int archtype_session_candidate_info(ArchtypeSession *session, size_t index, ArchtypeCandidateInfo *out);
+/* （1.10 删掉了 archtype_session_last_choice：学没学到词看 frame->learned，选了 emoji 由会话记进最近用过。） */
 
 /* 候选框的页码、光标（1.6 起）：fcitx5 外壳的候选框（CommonCandidateList）要整个列表和页码、光标，
  * 用它和 candidate_info 抄。 */
 typedef struct {
-    uint32_t size;        /* 填 sizeof(WowtypeSessionView) */
+    uint32_t size;        /* 填 sizeof(ArchtypeSessionView) */
     size_t page;          /* 普通候选框在第几页 */
     size_t cursor;        /* 普通候选框的光标（全部候选里的序号，可以不在这一页上） */
     int expanded;         /* 展开面板开着 */
     size_t grid_cursor;   /* 展开面板的光标（全部候选里的序号） */
     uint64_t generation;  /* 候选重算过几次：变了就重新抄候选 */
-} WowtypeSessionView;
+} ArchtypeSessionView;
 /* 返回 0 成功，-1 参数为 NULL。 */
-int wowtype_session_view(WowtypeSession *session, WowtypeSessionView *out);
+int archtype_session_view(ArchtypeSession *session, ArchtypeSessionView *out);
 
 /* ---------------- 打字统计（1.11 起） ----------------
  *
  * 只记本机的聚合计数：每天各类字符数、活跃毫秒、每个键按下的次数、候选位置。
- * 不保存输入内容、按键顺序或上下文。输入法用 wowtype_stats_* 记录，设置界面读同一个 JSON 文件。
+ * 不保存输入内容、按键顺序或上下文。输入法用 archtype_stats_* 记录，设置界面读同一个 JSON 文件。
  *
  * 口径：两次上屏间隔超过 10 秒算休息，不计入活跃时长；速度只算汉字与字母；
  * 长按只算一次；密码框里的按键和上屏不计。统计默认打开，设置界面可以关闭或清空。
  */
-typedef struct WowtypeStats WowtypeStats;
+typedef struct ArchtypeStats ArchtypeStats;
 
-/* 创建记录器。path 是统计文件的绝对路径；失败返回 NULL，原因用 wowtype_last_error 取。 */
-WowtypeStats *wowtype_stats_new(const char *path);
-void wowtype_stats_free(WowtypeStats *stats);
+/* 创建记录器。path 是统计文件的绝对路径；失败返回 NULL，原因用 archtype_last_error 取。 */
+ArchtypeStats *archtype_stats_new(const char *path);
+void archtype_stats_free(ArchtypeStats *stats);
 
 /* 一次物理按键。platform：0 = X11/fcitx5（code 是 XKB 键码），1 = macOS（NSEvent.keyCode）。
  * down 非 0 表示按下，0 表示松开。返回 0 成功。 */
-int wowtype_stats_key(WowtypeStats *stats, int platform, unsigned int code, int down,
+int archtype_stats_key(ArchtypeStats *stats, int platform, unsigned int code, int down,
                       int64_t now_ms);
 
 /* 一次上屏。text 只用来分类（汉字/字母/数字/标点/表情），不落盘。
  * source：quanpin / shuangpin / english / translate；scheme 是双拼方案 id，没有传 NULL/空串。
  * cand_index：候选在列表里的位置（1 起），不是选候选上屏时传 0。返回 0 成功。 */
-int wowtype_stats_commit(WowtypeStats *stats, const char *text, const char *source,
+int archtype_stats_commit(ArchtypeStats *stats, const char *text, const char *source,
                          const char *scheme, int cand_index, int64_t now_ms);
 
 /* 把攒着的计数写进文件（失焦、退出时调用）。返回 0 成功，-1 失败。 */
-int wowtype_stats_flush(WowtypeStats *stats, int64_t now_ms);
+int archtype_stats_flush(ArchtypeStats *stats, int64_t now_ms);
 
 /* 缓存的开关：1 开，0 关。最多 30 秒重读一次文件。 */
-int wowtype_stats_enabled(WowtypeStats *stats);
+int archtype_stats_enabled(ArchtypeStats *stats);
 
 /* 设置界面用：清空统计（保留开关，换一个随机代数）。返回 0 成功。 */
-int wowtype_stats_clear_file(const char *path, uint64_t generation);
+int archtype_stats_clear_file(const char *path, uint64_t generation);
 
 /* 设置界面用：打开或关闭统计。返回 0 成功。 */
-int wowtype_stats_set_enabled(const char *path, int enabled);
+int archtype_stats_set_enabled(const char *path, int enabled);
 
 /* 当前 Unix 毫秒。 */
-int64_t wowtype_stats_now_ms(void);
+int64_t archtype_stats_now_ms(void);
 
 
 #ifdef __cplusplus
 }
 #endif
 
-#endif /* WOWTYPE_CORE_H */
+#endif /* ARCHTYPE_CORE_H */

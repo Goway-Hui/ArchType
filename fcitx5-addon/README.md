@@ -1,8 +1,8 @@
-# WowType fcitx5 插件
+# ArchType fcitx5 插件
 
 这是把 WeType（微信输入法）拼音排序思路移植到 Linux 的外壳层：
 
-    fcitx5  ->  libwowtype.so (C++ addon，静态链接 Rust 核心 libwowtype_core.a，经 C ABI 调用)
+    fcitx5  ->  libarchtype.so (C++ addon，静态链接 Rust 核心 libarchtype_core.a，经 C ABI 调用)
 
 Rust 核心负责音节图、束搜索、词典/LM 打分和排序；C++ 只负责 fcitx5 的
 输入上下文、预编辑、候选面板和按键处理。
@@ -11,13 +11,13 @@ Rust 核心负责音节图、束搜索、词典/LM 打分和排序；C++ 只负�
 
     fcitx5-addon/
       CMakeLists.txt
-      conf/wowtype.conf.in          # 输入法注册（fcitx5 里显示的名字）
-      conf/wowtype-addon.conf.in    # addon 动态库注册
-      src/wowtype_engine.h
-      src/wowtype_engine.cpp        # InputMethodEngineV2 实现 + AddonFactory
+      conf/archtype.conf.in          # 输入法注册（fcitx5 里显示的名字）
+      conf/archtype-addon.conf.in    # addon 动态库注册
+      src/archtype_engine.h
+      src/archtype_engine.cpp        # InputMethodEngineV2 实现 + AddonFactory
       test/key_harness.cpp          # 按键行为测试（私有 fcitx5 实例）
     core/
-      include/wowtype_core.h        # C ABI
+      include/archtype_core.h        # C ABI
       src/ffi.rs                    # C ABI 的 Rust 实现
       data/demo_lexicon.tsv         # 演示词典
 
@@ -26,13 +26,13 @@ Rust 核心负责音节图、束搜索、词典/LM 打分和排序；C++ 只负�
 需要 **Fcitx5 5.0 或更新、C++20 和 Rust**。各发行版的软件包名称、词库准备、安装和桌面启用步骤统一见
 [安装说明](../docs/INSTALL.md)。
 
-5.1 以后才有的接口按版本判断：5.1.11 起才有自定义的中 / 英提示气泡（`WOWTYPE_HAVE_CUSTOM_IM_INFO`），
-更早的显示 Fcitx 5 默认的输入法提示。插件清单（`wowtype-addon.conf`）里要求的 fcitx5 版本是编译时版本的「主.次.0」（5.1.x 上编的写 5.1.0）。
+5.1 以后才有的接口按版本判断：5.1.11 起才有自定义的中 / 英提示气泡（`ARCHTYPE_HAVE_CUSTOM_IM_INFO`），
+更早的显示 Fcitx 5 默认的输入法提示。插件清单（`archtype-addon.conf`）里要求的 fcitx5 版本是编译时版本的「主.次.0」（5.1.x 上编的写 5.1.0）。
 
 在仓库根目录构建并安装：
 
 ```bash
-cargo build --release --locked -p wowtype-core
+cargo build --release --locked -p archtype-core
 cmake -S fcitx5-addon -B build -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/usr
 cmake --build build --parallel "$(nproc)"
 sudo cmake --install build
@@ -40,16 +40,16 @@ sudo cmake --install build
 
 插件使用 Fcitx5 自己导出的安装目录：Arch 通常为 `/usr/lib/fcitx5`，Fedora/openSUSE
 为 `/usr/lib64/fcitx5`，Debian/Ubuntu 为 `/usr/lib/<multiarch>/fcitx5`。
-输入法注册文件和系统词库安装到 `<前缀>/share/fcitx5` 和 `<前缀>/share/wowtype`；
+输入法注册文件和系统词库安装到 `<前缀>/share/fcitx5` 和 `<前缀>/share/archtype`；
 自定义前缀（包括 Nix store）使用该前缀自己的目录，不会写入另一个 Fcitx5 包的目录。
 
 仓库只带演示词典；日常使用还需要按安装说明准备完整词库。`scripts/build-linux.sh --addon`
 也可构建并测试工作区；缺完整数据时会明确跳过真实数据测试，测试失败会返回非零退出码。
 
-Rust 核心默认**静态链接**进 libwowtype.so，不需要再装 libwowtype_core.so，
+Rust 核心默认**静态链接**进 libarchtype.so，不需要再装 libarchtype_core.so，
 Rust 的符号也不导出（`--exclude-libs,ALL`），不会和别的插件冲突。
-要动态链接用 `-DWOWTYPE_CORE_STATIC=OFF`（此时会一起装 libwowtype_core.so，RPATH 为 `$ORIGIN/..`）。
-文字输入专用构建须同时使用 Cargo 的 `--no-default-features` 和 CMake 的 `-DWOWTYPE_VOICE=OFF`，
+要动态链接用 `-DARCHTYPE_CORE_STATIC=OFF`（此时会一起装 libarchtype_core.so，RPATH 为 `$ORIGIN/..`）。
+文字输入专用构建须同时使用 Cargo 的 `--no-default-features` 和 CMake 的 `-DARCHTYPE_VOICE=OFF`，
 才能去掉默认语音功能的 ALSA 依赖。
 
 ## 启用
@@ -58,31 +58,31 @@ Rust 的符号也不导出（`--exclude-libs,ALL`），不会和别的插件冲�
 
     fcitx5 -r
 
-然后打开配置工具，添加 WowType：
+然后打开配置工具，添加 ArchType：
 
     fcitx5-configtool
 
-或者在“输入法”页把 WowType 加到当前分组。切换过去后输入 xian，应能看到
+或者在“输入法”页把 ArchType 加到当前分组。切换过去后输入 xian，应能看到
 “先 / 西安”等候选；输入 zg 会走简拼并给出“中国”。
 
 ## 数据
 
-每个文件按这个顺序找，用第一个存在的：环境变量 > `~/.local/share/wowtype/`（`$XDG_DATA_HOME`）> `/usr/share/wowtype/`。
+每个文件按这个顺序找，用第一个存在的：环境变量 > `~/.local/share/archtype/`（`$XDG_DATA_HOME`）> `/usr/share/archtype/`。
 
 | 文件 | 环境变量 | 说明 |
 |---|---|---|
-| `lexicon.tsv` | `WOWTYPE_LEXICON` | 词库；都没有时退回 `demo_lexicon.tsv`（只有几十个词） |
-| `bigram.tsv` | `WOWTYPE_LM` | bigram（可选） |
-| `english.txt` | `WOWTYPE_ENGLISH` | 英文词表（可选）；有了它 hello/github 会排第一 |
-| `s2t.tsv` | `WOWTYPE_S2T` | 简繁表，开了繁体输出时用 |
-| `custom.tsv` | `WOWTYPE_CUSTOM` | 自定义词（`编码<TAB>词[<TAB>频次]`，编码是拼音或字母，词里 `\n` 换行），设置界面维护；只在用户目录找 |
+| `lexicon.tsv` | `ARCHTYPE_LEXICON` | 词库；都没有时退回 `demo_lexicon.tsv`（只有几十个词） |
+| `bigram.tsv` | `ARCHTYPE_LM` | bigram（可选） |
+| `english.txt` | `ARCHTYPE_ENGLISH` | 英文词表（可选）；有了它 hello/github 会排第一 |
+| `s2t.tsv` | `ARCHTYPE_S2T` | 简繁表，开了繁体输出时用 |
+| `custom.tsv` | `ARCHTYPE_CUSTOM` | 自定义词（`编码<TAB>词[<TAB>频次]`，编码是拼音或字母，词里 `\n` 换行），设置界面维护；只在用户目录找 |
 
 不用 root 也能装真实词库和英文词表：
 
-    mkdir -p ~/.local/share/wowtype
-    python3 tools/rime2tsv.py rime_ice.dict.yaml > ~/.local/share/wowtype/lexicon.tsv
+    mkdir -p ~/.local/share/archtype
+    python3 tools/rime2tsv.py rime_ice.dict.yaml > ~/.local/share/archtype/lexicon.tsv
     cat rime-ice/en_dicts/en.dict.yaml rime-ice/en_dicts/en_ext.dict.yaml \
-        > ~/.local/share/wowtype/english.txt
+        > ~/.local/share/archtype/english.txt
     fcitx5 -r
 
 英文词表直接接受 rime 的 `en.dict.yaml`（「上屏<TAB>编码」），也可以每行一个词。
@@ -105,7 +105,7 @@ bigram 格式（可选）：
     prev<TAB>cur<TAB>count
     你	好	12345
 
-不传 WOWTYPE_LM 时使用空的 LM，不会影响候选生成。
+不传 ARCHTYPE_LM 时使用空的 LM，不会影响候选生成。
 
 ## 当前边界
 
@@ -120,12 +120,12 @@ bigram 格式（可选）：
 
 ## 配置
 
-插件读 `~/.config/fcitx5/conf/wowtype.conf`（`CandidateLayout`、`PageSize`、`Fuzzy`、`TypoCorrection`、
+插件读 `~/.config/fcitx5/conf/archtype.conf`（`CandidateLayout`、`PageSize`、`Fuzzy`、`TypoCorrection`、
 `FuzzyZh` 等 16 组模糊音、`InputScheme`（拼音、双拼、五笔）、`ShuangpinScheme`、`WubiAutoCommit`、`WubiHint`、`ShiftToggle`、`Traditional`、`SelectKeys`、`DateTime`、`Calculator`、
 `ToggleKey`、`TranslateModeKey`、`Voice`、`VoiceKey`、`Translate` 等互译选项、`CheckUpdate`），`getConfig()` 暴露给 fcitx5 配置工具（`Configurable=True`），
-里面的「自定义词和更多设置」是 `ExternalOption`，打开 `wowtype-config`。
-设置界面改完调 D-Bus `org.fcitx.Fcitx.Controller1.ReloadAddonConfig("wowtype")`，插件 `reloadConfig()`
-重读配置文件和 `custom.tsv`（`wowtype_engine_load_custom_words`），不用重启 fcitx5。
+里面的「自定义词和更多设置」是 `ExternalOption`，打开 `archtype-config`。
+设置界面改完调 D-Bus `org.fcitx.Fcitx.Controller1.ReloadAddonConfig("archtype")`，插件 `reloadConfig()`
+重读配置文件和 `custom.tsv`（`archtype_engine_load_custom_words`），不用重启 fcitx5。
 
 ## 环境变量
 
@@ -133,26 +133,26 @@ bigram 格式（可选）：
 
 | 变量 | 作用 |
 |---|---|
-| `WOWTYPE_LEXICON` | 词库 TSV 路径（查找顺序见上） |
-| `WOWTYPE_LM` | bigram TSV 路径（可选） |
-| `WOWTYPE_ENGLISH` | 英文词表路径（可选） |
-| `WOWTYPE_USER_DICT` | 用户词库路径，默认 `$XDG_DATA_HOME/wowtype/user.tsv` |
-| `WOWTYPE_TYPO` | `0` 关闭按错键纠错（默认开；双拼下不生效） |
-| `WOWTYPE_FUZZY` | `1` 开启模糊音 |
-| `WOWTYPE_FUZZY_GROUPS` | 模糊音分组位掩码（见 `wowtype_engine_set_fuzzy_groups`） |
-| `WOWTYPE_SELECT_KEYS` | 分号引号选词：`off`、`semicolon`、`quote` |
-| `WOWTYPE_DATETIME` / `WOWTYPE_CALC` | `0` 关掉日期时间候选 / V 模式计算器 |
-| `WOWTYPE_SHUANGPIN` | `1` 使用双拼 |
-| `WOWTYPE_SHUANGPIN_SCHEME` | 双拼方案：`ziranma`、`xiaohe`、`microsoft`、`sogou`、`abc`、`ziguang`、`pinyinjiajia`；设了就打开双拼 |
-| `WOWTYPE_WUBI` | 五笔码表 `wubi86.tsv` 的路径（选了五笔时才载入），默认在用户数据目录、`/usr/share/wowtype` 里找 |
-| `WOWTYPE_SHIFT_TOGGLE` | 单按哪个 Shift 切英文：`both`（默认）、`left`、`right`、`off` |
-| `WOWTYPE_TRADITIONAL` / `WOWTYPE_S2T` | 繁体输出 / 简繁表路径 |
-| `WOWTYPE_VERTICAL` | `1` 候选竖排 |
-| `WOWTYPE_VOICE_KEY` | 语音键（fcitx5 键名），`none` 关掉语音 |
-| `WOWTYPE_CUSTOM` | 自定义词文件路径 |
-| `WOWTYPE_NO_UPDATE_CHECK` | 设了就不在后台检查更新 |
-| `WOWTYPE_TRANSLATE` / `WOWTYPE_TRANSLATE_URL` / `WOWTYPE_TRANSLATE_MODEL` / `WOWTYPE_TRANSLATE_TARGET` | 互译开关、服务地址、模型、语言 |
-| `WOWTYPE_TRANSLATE_KEY_FILE` | 互译 Key 文件，默认 `$XDG_CONFIG_HOME/wowtype/translate.key` |
+| `ARCHTYPE_LEXICON` | 词库 TSV 路径（查找顺序见上） |
+| `ARCHTYPE_LM` | bigram TSV 路径（可选） |
+| `ARCHTYPE_ENGLISH` | 英文词表路径（可选） |
+| `ARCHTYPE_USER_DICT` | 用户词库路径，默认 `$XDG_DATA_HOME/archtype/user.tsv` |
+| `ARCHTYPE_TYPO` | `0` 关闭按错键纠错（默认开；双拼下不生效） |
+| `ARCHTYPE_FUZZY` | `1` 开启模糊音 |
+| `ARCHTYPE_FUZZY_GROUPS` | 模糊音分组位掩码（见 `archtype_engine_set_fuzzy_groups`） |
+| `ARCHTYPE_SELECT_KEYS` | 分号引号选词：`off`、`semicolon`、`quote` |
+| `ARCHTYPE_DATETIME` / `ARCHTYPE_CALC` | `0` 关掉日期时间候选 / V 模式计算器 |
+| `ARCHTYPE_SHUANGPIN` | `1` 使用双拼 |
+| `ARCHTYPE_SHUANGPIN_SCHEME` | 双拼方案：`ziranma`、`xiaohe`、`microsoft`、`sogou`、`abc`、`ziguang`、`pinyinjiajia`；设了就打开双拼 |
+| `ARCHTYPE_WUBI` | 五笔码表 `wubi86.tsv` 的路径（选了五笔时才载入），默认在用户数据目录、`/usr/share/archtype` 里找 |
+| `ARCHTYPE_SHIFT_TOGGLE` | 单按哪个 Shift 切英文：`both`（默认）、`left`、`right`、`off` |
+| `ARCHTYPE_TRADITIONAL` / `ARCHTYPE_S2T` | 繁体输出 / 简繁表路径 |
+| `ARCHTYPE_VERTICAL` | `1` 候选竖排 |
+| `ARCHTYPE_VOICE_KEY` | 语音键（fcitx5 键名），`none` 关掉语音 |
+| `ARCHTYPE_CUSTOM` | 自定义词文件路径 |
+| `ARCHTYPE_NO_UPDATE_CHECK` | 设了就不在后台检查更新 |
+| `ARCHTYPE_TRANSLATE` / `ARCHTYPE_TRANSLATE_URL` / `ARCHTYPE_TRANSLATE_MODEL` / `ARCHTYPE_TRANSLATE_TARGET` | 互译开关、服务地址、模型、语言 |
+| `ARCHTYPE_TRANSLATE_KEY_FILE` | 互译 Key 文件，默认 `$XDG_CONFIG_HOME/archtype/translate.key` |
 
 ## 交互行为
 
@@ -170,7 +170,7 @@ bigram 格式（可选）：
 - `/` 等没有对应中文标点的符号原样上屏；打拼音途中按它们，先上屏当前候选（`nihao/` → 你好/）
 - 首选候选对得上 emoji 时（`kaixin` → 开心），第三个候选插一个 emoji；`EmojiSuggest=False` 关掉
 - `Super+.`（`EmojiKey` 可改）打开表情面板：打拼音或英文搜 emoji 和符号，方向键挑，空格/回车/`1`–`6` 上屏，`Esc` 关闭
-- 单按 Shift（按下松开，中间没按别的键、不超过 0.5 秒）切 WowType 自己的英文模式：按键原样交给应用，
+- 单按 Shift（按下松开，中间没按别的键、不超过 0.5 秒）切 ArchType 自己的英文模式：按键原样交给应用，
   状态栏显示「英」；打到一半切英文时，已选的词 + 原始字母上屏。fcitx5 的「临时切换输入法」热键
   （默认左 Shift）生效时 fcitx5 会先把 Shift 吃掉，两者不会重复切换
 - 切换输入法时已选的词 + 原始字母上屏，不会丢。失去焦点时清空编辑区，不往别的窗口上屏
@@ -184,14 +184,14 @@ bigram 格式（可选）：
 ## 互译
 
 `Translate=True` 且填了 `TranslateBaseUrl`、`TranslateModel` 时，单按 Shift 是 中 → 英 → 译 → 中（状态栏「译」）；
-设了 `TranslateModeKey` 时单按 Shift 只切中英，「译」用这个键进出（插件认出键后带 `WOWTYPE_KEY_ACTION_TOGGLE_TRANSLATE` 交给会话，`ToggleKey` 是 `_TOGGLE_MODE`）。
-核心在 `core/src/translate.rs`（C 接口 `wowtype_translate_*`，见 `wowtype_core.h`）：
+设了 `TranslateModeKey` 时单按 Shift 只切中英，「译」用这个键进出（插件认出键后带 `ARCHTYPE_KEY_ACTION_TOGGLE_TRANSLATE` 交给会话，`ToggleKey` 是 `_TOGGLE_MODE`）。
+核心在 `core/src/translate.rs`（C 接口 `archtype_translate_*`，见 `archtype_core.h`）：
 
-- 所有上屏都经 `WowtypeEngine::emit()`；互译时不上屏，攒进 `WowtypeState::tsource_`
+- 所有上屏都经 `ArchtypeEngine::emit()`；互译时不上屏，攒进 `ArchtypeState::tsource_`
 - 照微信输入法摆：候选框当原文框（`auxUp` 是「中→英 互译：」，面板自己的 `preedit` 是原文 + 已选的词 + 拼音，
   拼音候选照常列在下面），译文写进应用的输入框（`clientPreedit`，带下划线）。应用不支持客户端编辑区时译文写在 `auxDown`
 - 原文改了、新译文还没写到上一句那么长时，输入框里先留着上一句（`tshown_`），免得一闪一闪
-- 原文停 0.5 秒（`kTranslateDelayUsec`，句末标点立刻）后 `wowtype_translate_start`：后台线程起系统 `curl`，
+- 原文停 0.5 秒（`kTranslateDelayUsec`，句末标点立刻）后 `archtype_translate_start`：后台线程起系统 `curl`，
   配置（含 `Authorization`）从标准输入给，不进命令行；请求 `stream:true`，按 SSE 边收边解析，服务不流式也认
 - 只要一种译法；译文行数超过原文就截掉并断开请求（有的模型译完还往下说）；同一句话缓存 64 句
 - `回车` / `空格` 上屏译文，没写完就记 `tpending_`，写完了自动上屏；`Shift+回车` 上屏原文；
@@ -202,8 +202,8 @@ bigram 格式（可选）：
 
 ## 选词学习
 
-每次上屏都会调用 `wowtype_engine_record_selection_ex`，带上**纠错后的拼音**
-（`wowtype_candidates_pinyin`），选够 3 次自动进用户词库；分几次选出来的整句也记一次。
+每次上屏都会调用 `archtype_engine_record_selection_ex`，带上**纠错后的拼音**
+（`archtype_candidates_pinyin`），选够 3 次自动进用户词库；分几次选出来的整句也记一次。
 最近 24 字节的已上屏文本（按 UTF-8 字符边界截）作为上下文传给引擎；
 句首词选好后，它也会作为剩余部分的上文。用户词库每 20 次上屏、失去焦点、退出时落盘。
 
@@ -211,7 +211,7 @@ bigram 格式（可选）：
 
     scripts/addon-test.sh [lexicon.tsv] [english.txt]
 
-起一个私有、无界面、无 D-Bus 的 fcitx5 实例（配置目录都在临时目录），只加载 wowtype
+起一个私有、无界面、无 D-Bus 的 fcitx5 实例（配置目录都在临时目录），只加载 archtype
 和 fcitx5 自带的 testim，用假输入上下文按键并检查上屏结果，不影响正在用的输入法。
 用真实词库 + 英文词表时 21 项全过；只用 demo 词典时有 3 项因为缺词失败。
 

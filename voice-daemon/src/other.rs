@@ -4,5 +4,5 @@ use crate::Options;
 use anyhow::Result;
 
 pub fn run(_opt: Options) -> Result<()> {
-    anyhow::bail!("wowtype-voiced 目前只实现了 Linux 平台；当前系统暂不支持")
+    anyhow::bail!("archtype-voiced 目前只实现了 Linux 平台；当前系统暂不支持")
 }

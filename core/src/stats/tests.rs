@@ -3,7 +3,7 @@ use std::path::PathBuf;
 
 fn temp_path(name: &str) -> PathBuf {
     let dir = std::env::temp_dir().join(format!(
-        "wowtype-stats-{}-{}-{}",
+        "archtype-stats-{}-{}-{}",
         std::process::id(),
         name,
         std::time::SystemTime::now()

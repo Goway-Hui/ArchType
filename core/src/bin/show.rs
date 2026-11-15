@@ -1,7 +1,7 @@
 //! 打印几条输入的候选，配置和 fcitx5 插件一致（候选上限 18、英文词表、纠错）。
 //!
 //! ```
-//! wowtype-show --lexicon lexicon.tsv [--english english.txt] [--max 18] [--context 文本] 拼音...
+//! archtype-show --lexicon lexicon.tsv [--english english.txt] [--max 18] [--context 文本] 拼音...
 //! ```
 //!
 //! 每个候选标出类型：`句` 整句（多个词拼的）、`词` 整个输入是一个词、
@@ -9,8 +9,8 @@
 
 use std::sync::Arc;
 
-use wowtype_core::lm::BigramLm;
-use wowtype_core::{Engine, EngineConfig, Lexicon, MemoryLexicon};
+use archtype_core::lm::BigramLm;
+use archtype_core::{Engine, EngineConfig, Lexicon, MemoryLexicon};
 
 fn fail(msg: &str) -> ! {
     eprintln!("{msg}");
@@ -40,7 +40,7 @@ fn main() {
             "--max" => max_candidates = take(&mut i).parse().unwrap_or(18),
             "--scores" => scores = true,
             "-h" | "--help" => {
-                println!("wowtype-show --lexicon <tsv> [--lm <words.lm>] [--english <txt>] [--max n] [--context 文本] [--scores] 拼音...");
+                println!("archtype-show --lexicon <tsv> [--lm <words.lm>] [--english <txt>] [--max n] [--context 文本] [--scores] 拼音...");
                 return;
             }
             other => inputs.push(other.to_string()),
@@ -57,8 +57,8 @@ fn main() {
         max_candidates,
         ..EngineConfig::default()
     };
-    let lm: Arc<dyn wowtype_core::lm::LanguageModel> = if !lm_path.is_empty() {
-        wowtype_core::lm::load_lm(&lm_path)
+    let lm: Arc<dyn archtype_core::lm::LanguageModel> = if !lm_path.is_empty() {
+        archtype_core::lm::load_lm(&lm_path)
             .unwrap_or_else(|e| fail(&format!("语言模型载入失败: {e:#}")))
     } else {
         Arc::new(BigramLm::default())
@@ -96,7 +96,7 @@ fn main() {
         let shown = candidates
             .iter()
             .find(|c| c.consumed >= input.len())
-            .and_then(|c| wowtype_core::preedit::segment_input(input, &c.pinyin))
+            .and_then(|c| archtype_core::preedit::segment_input(input, &c.pinyin))
             .unwrap_or_else(|| input.clone());
         println!("{input} [{shown}]: {}", line.join(" "));
     }

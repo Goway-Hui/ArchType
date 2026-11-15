@@ -1,17 +1,17 @@
 //! 运行时自检：确认词库、语言模型、简繁表、用户词等数据是否就位。
 //!
 //! ```
-//! wowtype-check [--lexicon path] [--lm tsv] [--arpa file] [--s2t tsv] [--user-dict tsv]
+//! archtype-check [--lexicon path] [--lm tsv] [--arpa file] [--s2t tsv] [--user-dict tsv]
 //! ```
 //!
-//! 默认读与插件相同的环境变量（WOWTYPE_LEXICON / WOWTYPE_LM / WOWTYPE_S2T / WOWTYPE_USER_DICT），
+//! 默认读与插件相同的环境变量（ARCHTYPE_LEXICON / ARCHTYPE_LM / ARCHTYPE_S2T / ARCHTYPE_USER_DICT），
 //! 所以在 Linux 上装完后跑一遍就能知道配置有没有生效。
 
 use std::path::Path;
 use std::sync::Arc;
 
-use wowtype_core::lm::{ArpaLm, BigramLm, LanguageModel};
-use wowtype_core::{symbols, Engine, Lexicon, MemoryLexicon};
+use archtype_core::lm::{ArpaLm, BigramLm, LanguageModel};
+use archtype_core::{symbols, Engine, Lexicon, MemoryLexicon};
 
 struct Report {
     ok: usize,
@@ -49,16 +49,16 @@ fn env_or(name: &str, default: &str) -> String {
 }
 
 fn main() {
-    let mut lexicon = env_or("WOWTYPE_LEXICON", "/usr/share/wowtype/lexicon.tsv");
-    let default_lm = if Path::new("/usr/share/wowtype/words.lm").exists() {
-        "/usr/share/wowtype/words.lm"
+    let mut lexicon = env_or("ARCHTYPE_LEXICON", "/usr/share/archtype/lexicon.tsv");
+    let default_lm = if Path::new("/usr/share/archtype/words.lm").exists() {
+        "/usr/share/archtype/words.lm"
     } else {
         ""
     };
-    let mut lm = env_or("WOWTYPE_LM", default_lm);
-    let mut arpa = env_or("WOWTYPE_ARPA", "");
-    let mut s2t = env_or("WOWTYPE_S2T", "/usr/share/wowtype/s2t.tsv");
-    let mut user_dict = env_or("WOWTYPE_USER_DICT", "");
+    let mut lm = env_or("ARCHTYPE_LM", default_lm);
+    let mut arpa = env_or("ARCHTYPE_ARPA", "");
+    let mut s2t = env_or("ARCHTYPE_S2T", "/usr/share/archtype/s2t.tsv");
+    let mut user_dict = env_or("ARCHTYPE_USER_DICT", "");
 
     let args: Vec<String> = std::env::args().collect();
     let mut i = 1;
@@ -74,7 +74,7 @@ fn main() {
             "--s2t" => s2t = take(&mut i),
             "--user-dict" => user_dict = take(&mut i),
             "-h" | "--help" => {
-                println!("wowtype-check [--lexicon path] [--lm tsv] [--arpa file] [--s2t tsv] [--user-dict tsv]");
+                println!("archtype-check [--lexicon path] [--lm tsv] [--arpa file] [--s2t tsv] [--user-dict tsv]");
                 return;
             }
             other => {
@@ -86,7 +86,7 @@ fn main() {
     }
 
     let mut report = Report::new();
-    println!("WowType 自检  (core {})", env!("CARGO_PKG_VERSION"));
+    println!("ArchType 自检  (core {})", env!("CARGO_PKG_VERSION"));
 
     // 1. 词库（必需）
     println!("\n[词库] {lexicon}");
@@ -137,7 +137,7 @@ fn main() {
             }
         }
     } else if !lm.is_empty() {
-        match wowtype_core::lm::load_lm(&lm) {
+        match archtype_core::lm::load_lm(&lm) {
             Ok(v) => {
                 report.ok("语言模型", &format!("{lm}"));
                 v
@@ -170,7 +170,7 @@ fn main() {
     if user_dict.is_empty() {
         report.warn(
             "用户词库",
-            "未配置（可由插件自动使用 XDG_DATA_HOME/wowtype/user.tsv）",
+            "未配置（可由插件自动使用 XDG_DATA_HOME/archtype/user.tsv）",
         );
     } else if Path::new(&user_dict).exists() {
         match engine.load_user_dict(&user_dict) {
@@ -207,13 +207,13 @@ fn main() {
         );
     }
 
-    match wowtype_core::shuangpin::encode(wowtype_core::shuangpin::Scheme::Ziranma, "zhong").first()
+    match archtype_core::shuangpin::encode(archtype_core::shuangpin::Scheme::Ziranma, "zhong").first()
     {
         Some([a, b]) => report.ok("双拼", &format!("zhong -> {}{}", *a as char, *b as char)),
         None => report.fail("双拼", "zhong 无法编码"),
     }
 
-    let canon = wowtype_core::syllable::fuzzy_canon("zhang");
+    let canon = archtype_core::syllable::fuzzy_canon("zhang");
     if canon == "zan" {
         report.ok("模糊音", "zhang -> zan");
     } else {

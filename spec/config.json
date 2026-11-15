@@ -1,9 +1,9 @@
 {
   "$comment": [
-    "WowType 设置契约：wowtype.conf 里每一项的键名、类型、默认值、范围或可选值，哪几端有。",
+    "ArchType 设置契约：archtype.conf 里每一项的键名、类型、默认值、范围或可选值，哪几端有。",
     "改设置项（加键、改名、改默认值、改范围或可选值）要先改这里，三端的测试都拿它对照，对不上 CI 就挂：",
-    "  fcitx5   fcitx5-addon/src/wowtype_engine.h 的 WowtypeConfig（scripts/addon-test.sh 编 wowtype-config-dump 导出来比）",
-    "  settings settings/wowtype-config（Linux 设置界面）的 DEFAULTS、RANGES 和各选项列表（scripts/test-config-contract.py）",
+    "  fcitx5   fcitx5-addon/src/archtype_engine.h 的 ArchtypeConfig（scripts/addon-test.sh 编 archtype-config-dump 导出来比）",
+    "  settings settings/archtype-config（Linux 设置界面）的 DEFAULTS、RANGES 和各选项列表（scripts/test-config-contract.py）",
     "文件格式：一行一个 键=值，开关写 True / False，数字写十进制，值可以带双引号。",
     "default 是写进文件的值；platformDefault 是某一端故意不一样的默认值，why 写原因。",
     "platforms 列出有这一项的端；没列的端不认这个键（读到了不管，写回时原样留着）。"
@@ -11,7 +11,7 @@
   "version": 1,
   "ends": {
     "fcitx5": "Linux 的 fcitx5 插件（C++）",
-    "settings": "Linux 的设置界面 wowtype-config（Python）"
+    "settings": "Linux 的设置界面 archtype-config（Python）"
   },
   "readRules": {
     "outOfRange": {
@@ -28,7 +28,7 @@
       "两边有双引号的值去掉引号，再把 \\\\、\\\"、\\n 还原（和 fcitx5 写文件时的转义对应）。"
     ],
     "cases": {
-      "$comment": "三端都跑：file 是整个 wowtype.conf 的原文，expect 是读出来的值（写进文件的样子）。只用三端都有的键。",
+      "$comment": "三端都跑：file 是整个 archtype.conf 的原文，expect 是读出来的值（写进文件的样子）。只用三端都有的键。",
       "items": [
         {
           "file": "TypoCorrection=false\nTraditional=1\nFuzzy=yes",
@@ -440,7 +440,7 @@
         "fcitx5",
         "settings"
       ],
-      "note": "输入方案：全拼、双拼、五笔 86。五笔要数据目录里有 wubi86.tsv，没有时设置里五笔灰掉，插件照全拼打并提示。name 三端都对照（fcitx5 的 EnumI18n、设置界面的 INPUT_SCHEMES、macOS 的 WowtypeConfig.InputScheme.name）",
+      "note": "输入方案：全拼、双拼、五笔 86。五笔要数据目录里有 wubi86.tsv，没有时设置里五笔灰掉，插件照全拼打并提示。name 三端都对照（fcitx5 的 EnumI18n、设置界面的 INPUT_SCHEMES、macOS 的 ArchtypeConfig.InputScheme.name）",
       "whenMissing": {
         "$comment": "文件里没有 InputScheme 这一行时：Shuangpin 是 True 就是 value，否则用 default。三端读文件时都照这条规矩。Shuangpin 已经不是设置项：只在这里读，三端存盘时都不写它，文件里有的那行下次存盘就没了。",
         "ifTrue": "Shuangpin",
@@ -586,7 +586,7 @@
         "fcitx5",
         "settings"
       ],
-      "note": "从别的输入法切到 WowType、开机后第一次用时是中文、英文，还是和上次切走时一样（Last）；换窗口不算。关了 Shift 切换、也没另设切换键（ToggleKey）时总是中文（只设了 TranslateModeKey 不算，它只进出「译」）。macOS 还没有：每个应用一份模式，分不清切输入法和换应用"
+      "note": "从别的输入法切到 ArchType、开机后第一次用时是中文、英文，还是和上次切走时一样（Last）；换窗口不算。关了 Shift 切换、也没另设切换键（ToggleKey）时总是中文（只设了 TranslateModeKey 不算，它只进出「译」）。macOS 还没有：每个应用一份模式，分不清切输入法和换应用"
     },
     {
       "key": "Traditional",
@@ -787,7 +787,7 @@
           "Control+Shift+space"
         ]
       },
-      "why": "预设只放两端默认都没人占的键：Ctrl+空格是 fcitx5 切换启用/禁用输入法的键、macOS 选上一个输入法的键（它们本身就在 WowType 和英文键盘之间切），系统先拿走，WowType 收不到，所以不当预设；文件里写了照样认",
+      "why": "预设只放两端默认都没人占的键：Ctrl+空格是 fcitx5 切换启用/禁用输入法的键、macOS 选上一个输入法的键（它们本身就在 ArchType 和英文键盘之间切），系统先拿走，ArchType 收不到，所以不当预设；文件里写了照样认",
       "platforms": [
         "fcitx5",
         "settings"
@@ -905,7 +905,7 @@
         "fcitx5",
         "settings"
       ],
-      "note": "互译语言，代码和核心的 translate::LANGUAGES 一样。name 三端都对照（fcitx5 的 EnumI18n、设置界面的 TRANSLATE_LANGUAGES、macOS 的 WowtypeConfig.translateLanguages）；english 只有设置界面有"
+      "note": "互译语言，代码和核心的 translate::LANGUAGES 一样。name 三端都对照（fcitx5 的 EnumI18n、设置界面的 TRANSLATE_LANGUAGES、macOS 的 ArchtypeConfig.translateLanguages）；english 只有设置界面有"
     },
     {
       "key": "TranslateBaseUrl",
@@ -1052,7 +1052,7 @@
     "keys": [
       "Settings"
     ],
-    "note": "fcitx5 配置工具里打开 wowtype-config 的按钮（ExternalOption），不存盘，不算设置项"
+    "note": "fcitx5 配置工具里打开 archtype-config 的按钮（ExternalOption），不存盘，不算设置项"
   },
   "translateProviders": {
     "$comment": "设置里「服务商」的预设：名字、接口地址、模型框空着时建议的模型。最后一项是「自己填地址」。设置界面（TRANSLATE_PROVIDERS）。",

@@ -1,13 +1,13 @@
 [Addon]
-Name=WowType Pinyin
-Name[zh_CN]=WowType 拼音引擎
+Name=ArchType Pinyin
+Name[zh_CN]=ArchType 拼音引擎
 Category=InputMethod
 Version=@PROJECT_VERSION@
 Enabled=True
-Library=libwowtype
+Library=libarchtype
 Type=SharedLibrary
 OnDemand=True
 Configurable=True
 
 [Addon/Dependencies]
-0=core:@WOWTYPE_FCITX_CORE_DEP@
+0=core:@ARCHTYPE_FCITX_CORE_DEP@

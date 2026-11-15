@@ -1,9 +1,9 @@
-// WowType 的日志：同时写 fcitx5 自己的日志和 ~/.local/state/wowtype/wowtype.log。
+// ArchType 的日志：同时写 fcitx5 自己的日志和 ~/.local/state/archtype/archtype.log。
 //
-// 文件给「WowType 设置 → 导出日志」用，出问题时用户导出来贴到 issue 里。
+// 文件给「ArchType 设置 → 导出日志」用，出问题时用户导出来贴到 issue 里。
 // 只记启动、载入、出错这类事情，**不记用户打的字、候选词和语音识别结果**。
-// 超过 512 KB 就把当前文件改名成 wowtype.log.1（只留这一份旧的）。
-// WOWTYPE_LOG=文件路径 改位置，WOWTYPE_LOG=0 不写文件。
+// 超过 512 KB 就把当前文件改名成 archtype.log.1（只留这一份旧的）。
+// ARCHTYPE_LOG=文件路径 改位置，ARCHTYPE_LOG=0 不写文件。
 #pragma once
 
 #include <chrono>
@@ -19,10 +19,10 @@
 
 #include <fcitx-utils/log.h>
 
-namespace wowtype {
+namespace archtype {
 
 inline std::string logFilePath() {
-    if (const char *path = std::getenv("WOWTYPE_LOG"); path && *path) {
+    if (const char *path = std::getenv("ARCHTYPE_LOG"); path && *path) {
         return std::string(path) == "0" ? std::string() : std::string(path);
     }
     std::string base;
@@ -33,7 +33,7 @@ inline std::string logFilePath() {
     } else {
         return {};
     }
-    return base + "/wowtype/wowtype.log";
+    return base + "/archtype/archtype.log";
 }
 
 inline void appendLogFile(char level, const std::string &message) {
@@ -101,8 +101,8 @@ private:
     std::ostringstream stream_;
 };
 
-} // namespace wowtype
+} // namespace archtype
 
-#define WLOG_I() ::wowtype::LogLine('I', __FILE__, __LINE__)
-#define WLOG_W() ::wowtype::LogLine('W', __FILE__, __LINE__)
-#define WLOG_E() ::wowtype::LogLine('E', __FILE__, __LINE__)
+#define WLOG_I() ::archtype::LogLine('I', __FILE__, __LINE__)
+#define WLOG_W() ::archtype::LogLine('W', __FILE__, __LINE__)
+#define WLOG_E() ::archtype::LogLine('E', __FILE__, __LINE__)
