@@ -273,7 +273,12 @@ STYLE_LIGHT = """
 .wt-nav row:selected { background: #2F6FED; color: white; }
 .wt-nav row:selected image, .wt-nav row:selected label { color: white; }
 .wt-content, .wt-content headerbar { background: #f5f7f6; box-shadow: none; }
-.wt-page-title { font-weight: 800; font-size: 20pt; margin: -14px 0 -8px 0; }
+.wt-page-title { font-weight: 800; font-size: 20pt; margin: -14px 0 -8px 0; color: #1f2724; }
+.wt-content preferencespage label,
+.wt-content preferencespage .title,
+.wt-content preferencespage .heading { color: #2a332f; }
+.wt-content preferencespage .subtitle { color: #6b7570; }
+.wt-content preferencespage .wt-warning .subtitle { color: @warning_color; }
 .wt-content list.boxed-list { border-radius: 12px; background: white; box-shadow: 0 0 0 1px #e6eae8; }
 .wt-content preferencesgroup > box > box > label.heading { color: #6b7570; }
 .wt-stats-page { background-color: #f5f7f6; }
@@ -313,7 +318,12 @@ STYLE_DARK = """
 .wt-nav row:selected { background: #2F6FED; color: white; }
 .wt-nav row:selected image, .wt-nav row:selected label { color: white; }
 .wt-content, .wt-content headerbar { background: #1d201f; box-shadow: none; }
-.wt-page-title { font-weight: 800; font-size: 20pt; margin: -14px 0 -8px 0; }
+.wt-page-title { font-weight: 800; font-size: 20pt; margin: -14px 0 -8px 0; color: #e6ece9; }
+.wt-content preferencespage label,
+.wt-content preferencespage .title,
+.wt-content preferencespage .heading { color: #e6ece9; }
+.wt-content preferencespage .subtitle { color: #a3aca8; }
+.wt-content preferencespage .wt-warning .subtitle { color: @warning_color; }
 .wt-content list.boxed-list { border-radius: 12px; background: #282c2a; box-shadow: 0 0 0 1px #3b4144; }
 .wt-content preferencesgroup > box > box > label.heading { color: #a3aca8; }
 .wt-stats-page { background-color: #1d201f; }
@@ -6066,7 +6076,13 @@ class SettingsApp(Adw.Application):
         # 主题名里带 dark 也按深色走，否则深色主题的白色文字会画在浅色卡片上，整页发灰。
         settings = Gtk.Settings.get_default()
         theme_name = (settings.props.gtk_theme_name or "").lower() if settings else ""
-        dark = Adw.StyleManager.get_default().get_dark() or "dark" in theme_name
+        env_theme = os.environ.get("GTK_THEME", "").lower()
+        dark = (Adw.StyleManager.get_default().get_dark()
+                or "dark" in theme_name or "dark" in env_theme)
+        # 主题可能在启动之后才加载：变了重新算一次
+        if settings is not None and not getattr(self, "theme_watch", False):
+            self.theme_watch = True
+            settings.connect("notify::gtk-theme-name", lambda *_: self.update_style_css())
         accent_text = "#6EA8FE" if dark else "#1D4ED8"
         css = (STYLE_DARK if dark else STYLE_LIGHT) + STYLE_ACCENT % accent_text
         if (Gtk.get_major_version(), Gtk.get_minor_version()) >= (4, 16):
@@ -6087,6 +6103,8 @@ class SettingsApp(Adw.Application):
         elif self.page:
             window.show_page(self.page)
         window.present()
+        # 主题可能到窗口 map 之后才加载完，再按实际主题算一次样式
+        GLib.idle_add(self.update_style_css)
 
 
 if __name__ == "__main__":
