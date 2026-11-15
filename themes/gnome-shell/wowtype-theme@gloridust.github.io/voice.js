@@ -1,6 +1,6 @@
 // 语音浮条：按住语音键说话时，在光标下面画一条白色浮条——
-// 左边绿色话筒（外圈跟着音量呼吸）、「正在听… 离线」、右边 24 根跟着真实音量跳的竖条；
-// 光标右边再画 5 根绿色竖条，像光标裂成了声波。
+// 左边蓝色话筒（外圈跟着音量呼吸）、「正在听… 离线」、右边 24 根跟着真实音量跳的竖条；
+// 光标右边再画 5 根蓝色竖条，像光标裂成了声波。
 //
 // 数据来自 fcitx5 里的 WowType 插件：插件发现这个扩展注册了 BUS_NAME，就不再在候选框里
 // 写文字提示，改为每 50 毫秒发一次 State 信号（状态、文字、音量、光标矩形）。
@@ -23,11 +23,11 @@ const STATE_RECOGNIZING = 2;
 const STATE_DONE = 3;
 const STATE_ERROR = 4;
 
-const GREEN = [47 / 255, 111 / 255, 237 / 255];
+const BLUE = [47 / 255, 111 / 255, 237 / 255];
 
 // 浮条里的尺寸（逻辑像素，跟着 GNOME 的缩放走）
 const MIC_SIZE = 46;          // 话筒那块的宽高
-const MIC_R = 15;             // 绿圆半径
+const MIC_R = 15;             // 蓝圆半径
 const HALO_R0 = 16;           // 光晕半径：安静时
 const HALO_R1 = 22.5;         //           大声时
 const BAR_COUNT = 24;
@@ -412,10 +412,10 @@ export class VoiceOverlay {
         cr.scale(k, k);
         const cx = MIC_SIZE / 2, cy = MIC_SIZE / 2;
         // 光晕：说话越大声越大
-        cr.setSourceRGBA(...GREEN, 0.16);
+        cr.setSourceRGBA(...BLUE, 0.16);
         cr.arc(cx, cy, mix(HALO_R0, HALO_R1, this._level), 0, 2 * Math.PI);
         cr.fill();
-        cr.setSourceRGBA(...GREEN, 1);
+        cr.setSourceRGBA(...BLUE, 1);
         cr.arc(cx, cy, MIC_R, 0, 2 * Math.PI);
         cr.fill();
         // 白色话筒：头、托、柄
@@ -438,7 +438,7 @@ export class VoiceOverlay {
         const k = h / BARS_H;
         cr.scale(k, k);
         const env = this._state === STATE_LISTENING ? this._level : 0;
-        cr.setSourceRGBA(...GREEN, 0.55 + 0.45 * env);
+        cr.setSourceRGBA(...BLUE, 0.55 + 0.45 * env);
         for (let i = 0; i < BAR_COUNT; i++) {
             const bh = mix(BAR_MIN, BAR_MAX, clamp(this._bars[i], 0, 1));
             roundedRect(cr, i * BAR_PITCH, (BARS_H - bh) / 2, BAR_W, bh, BAR_W / 2);
@@ -478,7 +478,7 @@ export class VoiceOverlay {
         const cr = area.get_context();
         const [, h] = area.get_surface_size();
         const kS = this._caretK;
-        cr.setSourceRGBA(...GREEN, 1);
+        cr.setSourceRGBA(...BLUE, 1);
         for (let i = 0; i < 5; i++) {
             const full = g.ch * mix(0.3, 1.55, clamp(this._caretBars[i], 0, 1));
             const bh = mix(g.ch, full, kS);

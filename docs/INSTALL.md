@@ -5,7 +5,7 @@ WowType 是 Fcitx 5 的输入法插件。安装时需要让插件、Fcitx 5 和�
 
 最低要求：Fcitx 5.0、C++20 编译器、CMake 3.16。构建使用当前稳定版 Rust 和仓库的 `Cargo.lock`。
 默认启用的语音功能需要 ALSA。设置界面需要 Python 3、PyGObject、GTK 4.6+、libadwaita 1.1+；
-绿色候选框主题和语音浮条（GNOME 扩展）需要 GNOME 45+。
+蓝色候选框主题和语音浮条（GNOME 扩展）需要 GNOME 45+。
 
 ## 选择安装方式
 
@@ -80,7 +80,7 @@ curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- --profile m
 22.04 一般直接用上面的一键安装。它的 fcitx5 是 5.0.14（backports 里也没有更新的），打字、语音、互译、
 设置界面都能用（22.04 的 libadwaita 是 1.1，设置界面里几个新控件换成了样子差不多的旧控件）。用不了的是：
 
-- **绿色候选框主题和语音浮条**：GNOME 扩展要 GNOME 45+，22.04 是 42。候选框是 Fcitx 5 默认的样子，
+- **蓝色候选框主题和语音浮条**：GNOME 扩展要 GNOME 45+，22.04 是 42。候选框是 Fcitx 5 默认的样子，
   语音输入的提示显示在候选框里。
 
 要从源码编的话，22.04 没有 `fcitx5-frontend-all`，GTK、Qt 前端分开装：

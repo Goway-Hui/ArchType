@@ -21,14 +21,14 @@
 }
 
 .kimpanel-popup-content .kimpanel-candidate-item:hover {
-  background-color: rgba(14, 175, 118, 0.16) !important;
+  background-color: rgba(47, 111, 237, 0.16) !important;
 }
 
 /* 选中的候选 */
 .kimpanel-popup-content .kimpanel-candidate-item:active,
 .kimpanel-popup-content .kimpanel-candidate-item:active:hover,
 .kimpanel-popup-content .kimpanel-candidate-item:active:focus {
-  background-color: #0eaf76 !important;
+  background-color: #2F6FED !important;
   color: #ffffff;
 }
 

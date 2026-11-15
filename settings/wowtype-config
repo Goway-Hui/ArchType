@@ -260,7 +260,7 @@ ENUMS = {
     "TranslateTarget": tuple(code for _label, code, _english in TRANSLATE_LANGUAGES),
 }
 
-# 设置窗口的样式（照微信输入法：薄荷绿渐变侧栏、绿色选中块、白色圆角卡片）
+# 设置窗口的样式（照微信输入法：浅蓝渐变侧栏、蓝色选中块、白色圆角卡片）
 STYLE_LIGHT = """
 .wt-sidebar { background-image: linear-gradient(180deg, #E2ECFC 0%, #EFF5FE 40%, #F8FBFF 100%); }
 .wt-sidebar label, .wt-sidebar image { color: #2a332f; }
@@ -282,10 +282,16 @@ STYLE_LIGHT = """
 .wt-content list.boxed-list { border-radius: 12px; background: white; box-shadow: 0 0 0 1px #e6eae8; }
 .wt-content preferencesgroup > box > box > label.heading { color: #6b7570; }
 .wt-stats-page { background-color: #f5f7f6; }
+.wt-stats-page label { color: #2a332f; }
+.wt-stats-page .wt-stat-label, .wt-stats-page .wt-stat-unit,
+.wt-stats-page .wt-stats-note, .wt-stats-page .wt-stat-note,
+.wt-stats-page .wt-top-rank { color: #6b7570; }
+.wt-stats-page .wt-chip .wt-stats-note { color: #59635e; }
 .wt-stats-page .wt-page-title { color: #1f2724; }
-.wt-stats-page stackswitcher button { color: #59635e; }
-.wt-stats-page stackswitcher button:checked { color: #2F6FED; }
-.wt-stats-card { background: white; border-radius: 12px; box-shadow: 0 0 0 1px #e6eae8; padding: 18px 20px; }
+.wt-stats-page stackswitcher button { color: #3a453f; }
+.wt-stats-page stackswitcher button:checked { color: #2F6FED; font-weight: 700; }
+.wt-stats-page stackswitcher button:hover:not(:checked) { color: #1f2724; }
+.wt-stats-card { background: white; border-radius: 12px; box-shadow: 0 0 0 1px #d8dedb; padding: 18px 20px; }
 .wt-stat-label { font-size: 9pt; color: #6b7570; }
 .wt-stat-value { font-size: 21pt; font-weight: 800; color: #2F6FED; }
 .wt-stat-unit { font-size: 9pt; color: #6b7570; }
@@ -293,9 +299,17 @@ STYLE_LIGHT = """
 .wt-stats-heading { font-weight: 700; font-size: 11pt; color: #3a453f; }
 .wt-stats-note { font-size: 8pt; color: #6b7570; }
 .wt-stats-line { font-size: 9pt; }
-.wt-chip { border: 1px solid #dfe4e2; border-radius: 6px; padding: 3px 7px; }
+.wt-chip { border: 1px solid #d5dbd8; border-radius: 6px; padding: 3px 7px; color: #2a332f; }
+.wt-chip label { color: #2a332f; }
+.wt-chip .wt-stats-note { color: #59635e; }
+.wt-top-rank { color: #59635e; }
+.wt-top-count { color: #3a453f; font-variant-numeric: tabular-nums; }
 .wt-key { border-radius: 5px; font-size: 8pt; padding: 0 2px; }
-.wt-key-0 { background: #eef1f0; color: #6b7570; }
+.wt-key-0 { background: #eef1f0; color: #59635e; }
+.wt-content progressbar trough, .wt-stats-page progressbar trough {
+  background: #e8ecea; border: none; border-radius: 999px; min-height: 8px; }
+.wt-content progressbar progress, .wt-stats-page progressbar progress {
+  background: #2F6FED; border: none; border-radius: 999px; min-height: 8px; }
 .wt-key-1 { background: alpha(#2F6FED, 0.20); color: #123B7A; }
 .wt-key-2 { background: alpha(#2F6FED, 0.40); color: #123B7A; }
 .wt-key-3 { background: alpha(#2F6FED, 0.65); color: white; }
@@ -305,6 +319,89 @@ STYLE_LIGHT = """
 .wt-swatch-2 { background: alpha(#2F6FED, 0.40); }
 .wt-swatch-3 { background: alpha(#2F6FED, 0.65); }
 .wt-swatch-4 { background: #2F6FED; }
+/* 行内容器文字：boxed-list 行默认吃主题变量，浅色主题下写死 */
+.wt-content list.boxed-list row { color: #2a332f; }
+.wt-content list.boxed-list row .subtitle { color: #59635e; }
+.wt-content list.boxed-list row.expander row .subtitle { color: #59635e; }
+/* SpinRow 的数字框：数值和 ± 按钮在白卡片上要看得清 */
+.wt-content list.boxed-list spinbutton { color: #1f2724; background: white; }
+.wt-content list.boxed-list spinbutton entry,
+.wt-content list.boxed-list spinbutton entry text,
+.wt-content list.boxed-list spinbutton text {
+  color: #1f2724; caret-color: #1f2724; font-style: normal; }
+.wt-content list.boxed-list spinbutton text { all: unset; color: #1f2724; font-style: normal; }
+.wt-content list.boxed-list spinbutton button { color: #3a453f; }
+.wt-content list.boxed-list spinbutton button:hover { background: alpha(#2F6FED, 0.12); }
+.wt-content list.boxed-list row:disabled label,
+.wt-content list.boxed-list row:disabled .subtitle,
+.wt-content list.boxed-list row:disabled spinbutton entry { color: #98a29d; }
+.wt-content list.boxed-list row:disabled spinbutton button { color: #a7b1ab; }
+.wt-content list.boxed-list spinbutton:disabled,
+.wt-content list.boxed-list spinbutton entry:disabled { color: #59635e; }
+.wt-content list.boxed-list spinbutton button:disabled { color: #8a938f; }
+/* ⓘ 信息按钮 */
+.wt-content list.boxed-list button.flat image { color: #59635e; }
+popover entry, popover searchentry { background: #f0f3f2; color: #1f2724; }
+popover entry > image, popover searchentry > image { color: #6b7570; }
+popover list.navigation-sidebar row { color: #1f2724; }
+popover list.navigation-sidebar row:hover { background: alpha(#2F6FED, 0.10); }
+popover list.navigation-sidebar row:selected { background: alpha(#2F6FED, 0.16); }
+popover list.navigation-sidebar row:selected label { color: #1D4ED8; font-weight: 600; }
+popover .dim-label, popover .dim-label label { color: #6b7570; }
+.wt-content list.boxed-list button.flat:hover image { color: #2F6FED; }
+/* 本应用的弹出菜单（下拉框、ⓘ 说明）：不随系统深色主题 */
+.wt-content popover,
+.wt-content popover > contents,
+window popover,
+window popover > contents {
+  background: white;
+  color: #1f2724;
+  box-shadow: none;
+  border: none;
+  outline: none;
+  /* 圆角要加在背景层上：只给里面的菜单盒子加圆角，外层还是白色直角 */
+  border-radius: 14px;
+}
+/* 弹出框下面带的那层半透明投影板：改成浅色细边 */
+window .gdkshadow,
+popover > stack,
+popover stack { background: white; border-radius: 14px; }
+popover label, popover modelbutton label { color: #1f2724; }
+popover modelbutton { color: #1f2724; }
+popover modelbutton:hover, popover modelbutton:hover > box { background: alpha(#2F6FED, 0.10); }
+popover modelbutton:checked, popover modelbutton:checked > box {
+  background: alpha(#2F6FED, 0.14); color: #1D4ED8; font-weight: 700;
+}
+/* 下拉的箭头小板子和它的箭头：白底、浅灰描边，别盖住这一行 */
+popover arrow,
+popover arrow.bottom {
+  background: white;
+  border: none;
+  box-shadow: none;
+}
+popover arrow.bottom > arrow {
+  background: #c9d0cd;
+}
+/* 自绘下拉菜单：白底圆角、条目悬浮浅蓝、选中蓝字加勾 */
+.wt-menu { background: white; border-radius: 12px; padding: 4px; }
+.wt-menu-list, .wt-menu-list row { background: transparent; border-radius: 8px; }
+.wt-menu-list row { min-height: 38px; }
+.wt-menu-list row:hover { background: alpha(#2F6FED, 0.10); }
+.wt-menu-list row:active { background: alpha(#2F6FED, 0.16); }
+.wt-menu-item-label { font-size: 10pt; color: #1f2724; }
+.wt-menu-list row:hover .wt-menu-item-label { color: #1D4ED8; }
+.wt-menu-check { color: #2F6FED; }
+/* 更新内容卡片：白底细边、正文深色，行距松一点；用 card 类会跟着深色 GTK 主题变黑板 */
+.wt-notes-card { background: white; border-radius: 12px; box-shadow: 0 0 0 1px #e6eae8; }
+.wt-notes-card label { color: #2a332f; line-height: 1.5; }
+
+/* 蓝色（建议操作）按钮：行里的文字色会继承下去，按钮上的字会变成深色；统一改成白字白图标 */
+button.suggested-action,
+button.suggested-action:hover,
+button.suggested-action:active,
+button.suggested-action:focus,
+button.suggested-action label,
+button.suggested-action image { color: #ffffff; }
 """
 STYLE_DARK = """
 .wt-sidebar { background-image: linear-gradient(180deg, #151F33 0%, #1A263D 45%, #202A3A 100%); }
@@ -327,10 +424,15 @@ STYLE_DARK = """
 .wt-content list.boxed-list { border-radius: 12px; background: #282c2a; box-shadow: 0 0 0 1px #3b4144; }
 .wt-content preferencesgroup > box > box > label.heading { color: #a3aca8; }
 .wt-stats-page { background-color: #1d201f; }
+.wt-stats-page label { color: #e6ece9; }
+.wt-stats-page .wt-stat-label, .wt-stats-page .wt-stat-unit,
+.wt-stats-page .wt-stats-note, .wt-stats-page .wt-stat-note,
+.wt-stats-page .wt-top-rank { color: #a3aca8; }
+.wt-stats-page .wt-chip .wt-stats-note { color: #c0c8c4; }
 .wt-stats-page .wt-page-title { color: #e6ece9; }
-.wt-stats-page stackswitcher button { color: #b8c1bd; }
-.wt-stats-page stackswitcher button:checked { color: #6EA8FE; }
-.wt-stats-card { background: #282c2a; border-radius: 12px; box-shadow: 0 0 0 1px #3b4144; padding: 18px 20px; }
+.wt-stats-page stackswitcher button { color: #cfd7d3; }
+.wt-stats-page stackswitcher button:checked { color: #6EA8FE; font-weight: 700; }
+.wt-stats-card { background: #282c2a; border-radius: 12px; box-shadow: 0 0 0 1px #464d4a; padding: 18px 20px; }
 .wt-stat-label { font-size: 9pt; color: #a3aca8; }
 .wt-stat-value { font-size: 21pt; font-weight: 800; color: #6EA8FE; }
 .wt-stat-unit { font-size: 9pt; color: #a3aca8; }
@@ -338,9 +440,17 @@ STYLE_DARK = """
 .wt-stats-heading { font-weight: 700; font-size: 11pt; color: #e6ece9; }
 .wt-stats-note { font-size: 8pt; color: #a3aca8; }
 .wt-stats-line { font-size: 9pt; }
-.wt-chip { border: 1px solid #3b4144; border-radius: 6px; padding: 3px 7px; }
+.wt-chip { border: 1px solid #464d4a; border-radius: 6px; padding: 3px 7px; color: #e6ece9; }
+.wt-chip label { color: #e6ece9; }
+.wt-chip .wt-stats-note { color: #c0c8c4; }
+.wt-top-rank { color: #a3aca8; }
+.wt-top-count { color: #e6ece9; font-variant-numeric: tabular-nums; }
 .wt-key { border-radius: 5px; font-size: 8pt; padding: 0 2px; }
-.wt-key-0 { background: #343a37; color: #a3aca8; }
+.wt-key-0 { background: #343a37; color: #b8c1bd; }
+.wt-content progressbar trough, .wt-stats-page progressbar trough {
+  background: #343a37; border: none; border-radius: 999px; min-height: 8px; }
+.wt-content progressbar progress, .wt-stats-page progressbar progress {
+  background: #6EA8FE; border: none; border-radius: 999px; min-height: 8px; }
 .wt-key-1 { background: alpha(#6EA8FE, 0.22); color: #CFE0FF; }
 .wt-key-2 { background: alpha(#6EA8FE, 0.42); color: #EAF1FF; }
 .wt-key-3 { background: alpha(#6EA8FE, 0.68); color: #0B1B33; }
@@ -350,8 +460,72 @@ STYLE_DARK = """
 .wt-swatch-2 { background: alpha(#6EA8FE, 0.42); }
 .wt-swatch-3 { background: alpha(#6EA8FE, 0.68); }
 .wt-swatch-4 { background: #6EA8FE; }
+.wt-content list.boxed-list row { color: #e6ece9; }
+.wt-content list.boxed-list row .subtitle { color: #a3aca8; }
+.wt-content list.boxed-list row.expander row .subtitle { color: #a3aca8; }
+.wt-content list.boxed-list spinbutton { color: #e6ece9; background: #282c2a; }
+.wt-content list.boxed-list spinbutton entry,
+.wt-content list.boxed-list spinbutton entry text,
+.wt-content list.boxed-list spinbutton text {
+  color: #e6ece9; caret-color: #e6ece9; font-style: normal; }
+.wt-content list.boxed-list spinbutton button { color: #cfd7d3; }
+.wt-content list.boxed-list spinbutton button:hover { background: alpha(#6EA8FE, 0.16); }
+.wt-content list.boxed-list row:disabled label,
+.wt-content list.boxed-list row:disabled .subtitle,
+.wt-content list.boxed-list row:disabled spinbutton entry { color: #8a938f; }
+.wt-content list.boxed-list row:disabled spinbutton button { color: #79837e; }
+.wt-content list.boxed-list spinbutton:disabled,
+.wt-content list.boxed-list spinbutton entry:disabled { color: #a3aca8; }
+.wt-content list.boxed-list spinbutton button:disabled { color: #6b7570; }
+.wt-content list.boxed-list button.flat image { color: #a3aca8; }
+popover entry, popover searchentry { background: #343a37; color: #e6ece9; }
+popover entry > image, popover searchentry > image { color: #a3aca8; }
+popover list.navigation-sidebar row { color: #e6ece9; }
+popover list.navigation-sidebar row:hover { background: alpha(#6EA8FE, 0.14); }
+popover list.navigation-sidebar row:selected { background: alpha(#6EA8FE, 0.20); }
+popover list.navigation-sidebar row:selected label { color: #CFE0FF; font-weight: 600; }
+popover .dim-label, popover .dim-label label { color: #a3aca8; }
+.wt-content list.boxed-list button.flat:hover image { color: #6EA8FE; }
+.wt-content popover,
+.wt-content popover > contents,
+window popover,
+window popover > contents {
+  background: #282c2a;
+  color: #e6ece9;
+  box-shadow: none;
+  border: none;
+  outline: none;
+  border-radius: 14px;
+}
+popover label, popover modelbutton label { color: #e6ece9; }
+popover modelbutton { color: #e6ece9; }
+popover modelbutton:hover, popover modelbutton:hover > box { background: alpha(#6EA8FE, 0.14); }
+popover modelbutton:checked, popover modelbutton:checked > box {
+  background: alpha(#6EA8FE, 0.20); color: #CFE0FF; font-weight: 700;
+}
+popover arrow,
+popover arrow.bottom { background: #282c2a; border: none; box-shadow: none; }
+popover arrow.bottom > arrow { background: #5a625e; }
+.wt-menu { background: #282c2a; border-radius: 12px; padding: 4px; }
+.wt-menu-list, .wt-menu-list row { background: transparent; border-radius: 8px; }
+.wt-menu-list row { min-height: 38px; }
+.wt-menu-list row:hover { background: alpha(#6EA8FE, 0.14); }
+.wt-menu-list row:active { background: alpha(#6EA8FE, 0.20); }
+.wt-menu-item-label { font-size: 10pt; color: #e6ece9; }
+.wt-menu-list row:hover .wt-menu-item-label { color: #CFE0FF; }
+.wt-menu-check { color: #6EA8FE; }
+.wt-notes-card { background: #282c2a; border-radius: 12px; box-shadow: 0 0 0 1px #464d4a; }
+.wt-notes-card label { color: #e6ece9; line-height: 1.5; }
+
+/* 蓝色（建议操作）按钮：行里的文字色会继承下去，按钮上的字会变成深色；统一改成白字白图标 */
+button.suggested-action,
+button.suggested-action:hover,
+button.suggested-action:active,
+button.suggested-action:focus,
+button.suggested-action label,
+button.suggested-action image { color: #ffffff; }
 """
-# 开关、单选框、主按钮换成 WowType 绿（旧版 libadwaita 用命名颜色，1.6 起用 CSS 变量）
+# 开关、单选框、主按钮换成 WowType 蓝（旧版 libadwaita 用命名颜色，1.6 起用 CSS 变量）
 STYLE_ACCENT = """
 @define-color accent_bg_color #2F6FED;
 @define-color accent_color %s;
@@ -1585,7 +1759,7 @@ def apply_gnome_theme(on):
 
 
 def init_default_theme():
-    """第一次用 WowType 时把绿色主题打开（只做一次，之后听用户的）。
+    """第一次用 WowType 时把蓝色主题打开（只做一次，之后听用户的）。
 
     不覆盖用户自己选的别的 fcitx5 主题；GNOME 上用户关过这个扩展的也不动。
     fcitx5 还没起来时什么都不做，下次再试。
@@ -1974,13 +2148,13 @@ def _md_inline(text):
 
 
 def release_highlights(notes):
-    """发布说明里只留「## 这一版」那一节（去掉标题本身）；没有这一节就原样返回。
+    """发布说明里只留「## 这一版…」那一节（去掉标题本身）；没有这一节就原样返回。
 
     后面的安装步骤、自动生成的提交列表对已经装好的人没用，放进「更新内容」只会很长。
     """
     lines = notes.strip().splitlines()
     for i, line in enumerate(lines):
-        if re.match(r"^##\s*这一版\s*$", line.strip()):
+        if re.match(r"^##\s*这一版", line.strip()):
             body = []
             for rest in lines[i + 1:]:
                 if re.match(r"^#{1,2}\s", rest):
@@ -3403,6 +3577,169 @@ class _SpinRow(Adw.ActionRow):
         self.props.value = value
 
 
+
+class _ComboRow(Adw.ActionRow):
+    """ComboRow 的替身（也当统一样式用）：弹出菜单自己画，浅色下不变成系统的深色菜单。
+
+    model 用 Gtk.StringList；selected 属性、notify::selected、set_selected/get_selected 与原生一致。
+    """
+    __gtype_name__ = "WowTypeComboRow"
+    selected = GObject.Property(type=GObject.TYPE_UINT, default=0)
+
+    def __init__(self, title="", subtitle=None, model=None, **kwargs):
+        super().__init__(title=title, **kwargs)
+        if subtitle:
+            self.set_subtitle(subtitle)
+        self._model = model or Gtk.StringList.new([])
+        self._arrow = Gtk.Image(icon_name="pan-down-symbolic")
+        self._arrow.set_valign(Gtk.Align.CENTER)
+        self.add_suffix(self._arrow)
+        self._popover = None
+        self.set_activatable_widget(None)
+        self.connect("activated", lambda _r: self.open_menu())
+        # 兜底：ActionRow 的 activated 在有些版本里没有 activatable widget 不发；
+        # 直接在行上装点击手势，保证点行就能开菜单。
+        gesture = Gtk.GestureClick()
+        gesture.set_button(0)  # 任意键
+        gesture.connect("released", self._on_click)
+        self.add_controller(gesture)
+        # 键盘也能开：Enter / 空格（照原生 ComboRow 的行为）
+        key = Gtk.EventControllerKey()
+        key.connect("key-pressed", self._on_key)
+        self.add_controller(key)
+
+    def _on_click(self, gesture, _n, x, y):
+        gesture.set_state(Gtk.EventSequenceState.CLAIMED)
+        self.open_menu()
+
+    def _on_key(self, controller, keyval, _keycode, _state):
+        if keyval in (Gdk.KEY_Return, Gdk.KEY_KP_Enter, Gdk.KEY_space, Gdk.KEY_KP_Space):
+            self.open_menu()
+            return True
+        if keyval in (Gdk.KEY_Down, Gdk.KEY_Up) and self._popover is not None:
+            return True  # 菜单开着时方向键在菜单内
+        return False
+
+    # ---- 与原生一致的 API
+    def set_model(self, model):
+        self._model = model
+        self._sync_arrow_label()
+        if self._popover is not None:
+            self._popover = None  # 下次打开重建
+
+    def get_model(self):
+        return self._model
+
+    def get_selected(self):
+        return self.props.selected
+
+    def set_selected(self, index):
+        self.props.selected = index
+        self._sync_arrow_label()
+
+    def _strings(self):
+        out = []
+        if self._model is None:
+            return out
+        for i in range(self._model.get_n_items()):
+            item = self._model.get_item(i)
+            out.append(item.get_string() if hasattr(item, "get_string") else str(item))
+        return out
+
+    def _sync_arrow_label(self):
+        strings = self._strings()
+        index = self.props.selected
+        # 原生 ComboRow 不在行上显示已选文字；标题本身就是行内容。保持原样。
+
+    # ---- 弹出菜单
+    def open_menu(self):
+        if not self.get_sensitive() or not self.get_realized():
+            return
+        if self._popover is not None and self._popover.get_visible():
+            self._popover.popdown()
+            return
+        strings = self._strings()
+        index = self.props.selected
+        box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
+        box.add_css_class("wt-menu")
+        list_box = Gtk.ListBox(selection_mode=Gtk.SelectionMode.NONE)
+        list_box.add_css_class("wt-menu-list")
+        for i, text in enumerate(strings):
+            row = Gtk.Box(spacing=10, margin_top=5, margin_bottom=5,
+                          margin_start=12, margin_end=12)
+            label = Gtk.Label(label=text, xalign=0, hexpand=True)
+            label.add_css_class("wt-menu-item-label")
+            row.append(label)
+            if i == index:
+                check = Gtk.Image(icon_name="object-select-symbolic")
+                check.add_css_class("wt-menu-check")
+                row.append(check)
+            item = Gtk.ListBoxRow(child=row)
+            item.add_css_class("wt-menu-item")
+            item.menu_index = i
+            list_box.append(item)
+        list_box.connect("row-activated", self._on_row_activated)
+        box.append(list_box)
+        popover = Gtk.Popover(child=box)
+        popover.set_autohide(True)
+        popover.set_has_arrow(False)
+        popover.set_parent(self)
+        popover.set_pointing_to(self._menu_rect())
+        popover.set_position(Gtk.PositionType.BOTTOM)
+        # 菜单宽度由内容决定（和顶栏的菜单一样），量出来以后把右边缘对到这一行的右边缘：
+        # set_pointing_to 的 rect 定在「行宽减菜单宽」处，popover 的右边就落在这一行的右边。
+        popover.connect("notify::width", self._align_menu)
+        self._popover = popover
+        self._popover_index = index
+        # 先量出菜单宽度、把右边对好再显示：popup 时宽度还是 0，直接显示会先在行中间闪一下。
+        popover.set_opacity(0)
+        popover.popup()
+        GLib.idle_add(self._align_menu, popover, None)
+        GLib.timeout_add(800, self._reveal_menu, popover)  # 量不出宽度也要露出来
+
+    def _align_menu(self, popover, _pspec, _tries=0):
+        # 宽度还没量出来（第一帧是 0）时隔一帧再试，等布局给了宽度再把右边对齐。
+        width = popover.get_width()
+        if width <= 1:
+            if _tries < 30 and popover.get_visible():
+                GLib.timeout_add(16, self._align_menu, popover, None, _tries + 1)
+            return
+        rect = Gdk.Rectangle()
+        rect.x = max(0, self.get_width() - width)
+        rect.y = 0
+        rect.width = width
+        rect.height = max(1, self.get_height())
+        popover.set_pointing_to(rect)
+        # 位置定好后再露出来，避免先出现在中间再跳到右边。
+        if popover.get_opacity() != 1.0:
+            GLib.timeout_add(16, self._reveal_menu, popover)
+        return False
+
+    def _reveal_menu(self, popover):
+        if popover.get_visible():
+            popover.set_opacity(1.0)
+        return False
+
+    def _menu_rect(self):
+        # set_pointing_to 的坐标相对 popover 的父 widget（就是这一行）：
+        # rect = 行的整个矩形，position=BOTTOM 让菜单贴着行的下边缘展开。
+        # Gdk.Rectangle 是 boxed 结构，PyGObject 会忽略构造参数（只给 DeprecationWarning），
+        # 那样 rect 全是 0，popover 会锚到这行的左上角、盖住下面的行。只能建完再赋值。
+        rect = Gdk.Rectangle()
+        rect.x = 0
+        rect.y = 0
+        rect.width = max(1, self.get_width())
+        rect.height = max(1, self.get_height())
+        return rect
+
+    def _on_row_activated(self, _box, item):
+        index = item.menu_index
+        if index != self.props.selected:
+            self.props.selected = index
+            self.notify("selected")
+        self._popover.popdown()
+
+
 class _EntryRow(Adw.ActionRow):
     """Adw.EntryRow（1.2）：标题在左，输入框在右。changed、entry-activated 跟原生的一样从这一行发出。"""
     __gtype_name__ = "WowTypeEntryRow"
@@ -3557,6 +3894,7 @@ class _FileDialog:
 ToolbarView = getattr(Adw, "ToolbarView", _ToolbarView)
 SwitchRow = getattr(Adw, "SwitchRow", _SwitchRow)
 SpinRow = getattr(Adw, "SpinRow", _SpinRow)
+ComboRow = _ComboRow
 EntryRow = getattr(Adw, "EntryRow", _EntryRow)
 PasswordEntryRow = getattr(Adw, "PasswordEntryRow", _PasswordEntryRow)
 # libadwaita 1.2–1.4 有 ResponseAppearance 但没有 AlertDialog：两个要配套
@@ -3979,10 +4317,12 @@ class SettingsWindow(Adw.ApplicationWindow):
             line = Gtk.Box(spacing=8)
             rank = Gtk.Label(label=str(index), xalign=1)
             rank.set_size_request(18, -1)
-            rank.add_css_class("wt-stats-note")
+            rank.add_css_class("wt-top-rank")
             line.append(rank)
             line.append(Gtk.Label(label=stats_key_name(code), xalign=0, hexpand=True))
-            line.append(Gtk.Label(label=f"{count:,} 次", xalign=1))
+            count_label = Gtk.Label(label=f"{count:,} 次", xalign=1)
+            count_label.add_css_class("wt-top-count")
+            line.append(count_label)
             top_box.append(line)
         card.append(top_box)
         page.append(card)
@@ -4020,7 +4360,7 @@ class SettingsWindow(Adw.ApplicationWindow):
         maximum = max((count for _key, count in series), default=0) or 1
         gap = 3
         bar = max(1.0, (width - gap * (len(series) - 1)) / len(series))
-        cr.set_source_rgba(0.055, 0.686, 0.463, 0.9)
+        cr.set_source_rgba(0.184, 0.435, 0.929, 0.95)
         for index, (_key, count) in enumerate(series):
             if count <= 0:
                 continue
@@ -4036,8 +4376,8 @@ class SettingsWindow(Adw.ApplicationWindow):
     def stats_kind_page(self, page, data):
         kinds = stats_scope_counts(data)["kinds"]
         parts = [
-            ("汉字", stats_number(kinds.get("han")), (0.055, 0.686, 0.463)),
-            ("字母", stats_number(kinds.get("latin")), (0.298, 0.604, 1.0)),
+            ("汉字", stats_number(kinds.get("han")), (0.184, 0.435, 0.929)),
+            ("字母", stats_number(kinds.get("latin")), (0.031, 0.686, 0.557)),
             ("数字", stats_number(kinds.get("number")), (0.960, 0.651, 0.137)),
             ("标点", stats_number(kinds.get("punct")), (0.541, 0.576, 0.651)),
             ("表情", stats_number(kinds.get("emoji")), (0.910, 0.416, 0.651)),
@@ -4053,7 +4393,7 @@ class SettingsWindow(Adw.ApplicationWindow):
                  ("互译", "translate")]
         parts = [(label, stats_number(sources.get(key)), color) for
                  (label, key), color in zip(names, [
-                     (0.055, 0.686, 0.463), (0.298, 0.604, 1.0),
+                     (0.184, 0.435, 0.929), (0.031, 0.686, 0.557),
                      (0.960, 0.651, 0.137), (0.910, 0.416, 0.651)])]
         self.stats_ratio_page(page, "语言模式", parts, "还没有输入记录。")
 
@@ -4197,13 +4537,13 @@ class SettingsWindow(Adw.ApplicationWindow):
         page.add(status)
 
         cands = Adw.PreferencesGroup(title="候选词")
-        self.layout_row = Adw.ComboRow(title="排列方向",
+        self.layout_row = ComboRow(title="排列方向",
                                        model=Gtk.StringList.new(["横排", "竖排"]))
         self.layout_row.set_selected(1 if self.values["CandidateLayout"] == "Vertical" else 0)
         self.layout_row.connect("notify::selected", self.on_layout_changed)
         cands.add(self.layout_row)
         self.arrow_names = [name for _, name in ARROW_KEYS]
-        self.arrow_row = Adw.ComboRow(title="方向键",
+        self.arrow_row = ComboRow(title="方向键",
                                       model=Gtk.StringList.new([label for label, _ in ARROW_KEYS]))
         self.add_info(self.arrow_row,
                       "选「左右键移动光标」时，← → 把光标移进打了一半的拼音，打的字母插在光标处，"
@@ -4236,7 +4576,7 @@ class SettingsWindow(Adw.ApplicationWindow):
         page.add(cands)
 
         look = Adw.PreferencesGroup(title="外观")
-        self.look_row = Adw.ComboRow(
+        self.look_row = ComboRow(
             title="界面主题", model=Gtk.StringList.new(["跟随系统", "浅色", "深色"]))
         self.look_row.set_selected(
             {"system": 0, "light": 1, "dark": 2}.get(read_state().get("theme", "system"), 0))
@@ -4463,7 +4803,7 @@ class SettingsWindow(Adw.ApplicationWindow):
                      "Wubi86": "86 版，z 键临时打拼音" if has_wubi
                      else "没有找到五笔码表 wubi86.tsv，重新安装 WowType 可以修好"}
         self.scheme_names = [name for _, name in SHUANGPIN_SCHEMES]
-        self.scheme_row = Adw.ComboRow(
+        self.scheme_row = ComboRow(
             title="双拼方案", model=Gtk.StringList.new([label for label, _ in SHUANGPIN_SCHEMES]))
         current = self.values.get("ShuangpinScheme", "Ziranma")
         self.scheme_row.set_selected(
@@ -4498,7 +4838,7 @@ class SettingsWindow(Adw.ApplicationWindow):
             "单按一下 Shift 切到英文，字母和半角标点直接上屏，再按一下回到中文。"
             "打到一半切英文，已经打的字母原样上屏。"))
         self.shift_names = [name for _, name in SHIFT_TOGGLES]
-        self.shift_row = Adw.ComboRow(
+        self.shift_row = ComboRow(
             title="单按 Shift", model=Gtk.StringList.new([label for label, _ in SHIFT_TOGGLES]))
         current = self.values.get("ShiftToggle", "Both")
         self.shift_row.set_selected(
@@ -4514,7 +4854,7 @@ class SettingsWindow(Adw.ApplicationWindow):
         for row in self.key_rows.values():
             switch.add(row)
         self.initial_names = [name for _, name in INITIAL_MODES]
-        self.initial_row = Adw.ComboRow(
+        self.initial_row = ComboRow(
             title="切到 WowType 时",
             subtitle="从别的输入法切过来、开机后第一次用时；换窗口不变",
             model=Gtk.StringList.new([label for label, _ in INITIAL_MODES]))
@@ -4547,7 +4887,7 @@ class SettingsWindow(Adw.ApplicationWindow):
         self.add_info(rare, "候选里也列出极少用的生僻字。系统自带的字体一般显示不了，会是方块。")
         pinyin.add(rare)
         self.punct_names = [name for _, name in PUNCT_STYLES]
-        self.punct_row = Adw.ComboRow(
+        self.punct_row = ComboRow(
             title="标点样式", model=Gtk.StringList.new([label for label, _ in PUNCT_STYLES]))
         self.add_info(self.punct_row, "数字后面的符号总是半角的，比如 3.14。")
         current = self.values.get("PunctuationStyle", "Fullwidth")
@@ -4569,7 +4909,7 @@ class SettingsWindow(Adw.ApplicationWindow):
                                  "复制过的密码也会被记下并显示出来。")
         extras.add(clipboard)
         self.select_names = [name for _, name in SELECT_KEYS]
-        self.select_row = Adw.ComboRow(
+        self.select_row = ComboRow(
             title="分号、引号选词", model=Gtk.StringList.new([label for label, _ in SELECT_KEYS]))
         self.add_info(self.select_row, "用引号选词后，引号不能再用来隔开拼音（xi'an）。")
         current = self.values.get("SelectKeys", "Off")
@@ -4626,7 +4966,7 @@ class SettingsWindow(Adw.ApplicationWindow):
         if current not in self.emoji_keys:
             labels.append(f"其他（{current}）")
             self.emoji_keys.append(current)
-        self.emoji_key_row = Adw.ComboRow(title="表情面板快捷键", model=Gtk.StringList.new(labels))
+        self.emoji_key_row = ComboRow(title="表情面板快捷键", model=Gtk.StringList.new(labels))
         self.add_info(self.emoji_key_row,
                       "按快捷键打开表情面板，打拼音或英文搜 emoji 和符号（xiao、pizza、youjiantou），"
                       "方向键挑，空格或回车上屏，Esc 关闭。打了一半的拼音再按快捷键，直接拿它来搜。\n\n"
@@ -4751,11 +5091,26 @@ class SettingsWindow(Adw.ApplicationWindow):
         app = self.get_application()
         if app is not None:
             app.update_style_css()
+        # 候选框配色跟着走：用户选了浅色/深色就钉死，别再用系统深色判定
+        # （system 才交给 fcitx5 的 UseDarkTheme 跟随系统）。
+        # 蓝色主题开关还没建出来（初始化时的 set_selected）时跳过。
+        theme_row = getattr(self, "theme_row", None)
+        if theme_row is not None and theme_row.get_active():
+            if index == 1:  # 浅色
+                self.fcitx.set_config(CLASSICUI_URI, {"UseDarkTheme": "False"})
+            elif index == 2:  # 深色
+                self.fcitx.set_config(CLASSICUI_URI, {"UseDarkTheme": "True"})
 
     def on_theme_toggled(self, row, _param):
         on = row.get_active()
         self.fcitx.set_config(CLASSICUI_URI, classicui_theme_values(on))
-        update_state(theme_default_done=True)
+        update_state(theme_default_done=True, wowtype_theme="True" if on else "False")
+        # 界面主题如果钉了浅色/深色，候选框深浅判定跟着钉住（system 才跟随系统）
+        preference = read_state().get("theme", "system")
+        if on and preference == "light":
+            self.fcitx.set_config(CLASSICUI_URI, {"UseDarkTheme": "False"})
+        elif on and preference == "dark":
+            self.fcitx.set_config(CLASSICUI_URI, {"UseDarkTheme": "True"})
         log(f"用户{'打开' if on else '关掉'}了 WowType 主题")
         message = apply_gnome_theme(on)
         if message is None:
@@ -4774,7 +5129,7 @@ class SettingsWindow(Adw.ApplicationWindow):
         if current not in names:
             labels.append(f"其他（{current}）")
             names.append(current)
-        row = Adw.ComboRow(title=title, model=Gtk.StringList.new(labels))
+        row = ComboRow(title=title, model=Gtk.StringList.new(labels))
         self.add_info(row, info)
         row.key_names = names
         row.set_selected(names.index(current))
@@ -4974,7 +5329,7 @@ class SettingsWindow(Adw.ApplicationWindow):
         if current not in self.voice_keys:
             labels.append(f"其他（{current}）")
             self.voice_keys.append(current)
-        self.key_row = Adw.ComboRow(title="语音键", model=Gtk.StringList.new(labels))
+        self.key_row = ComboRow(title="语音键", model=Gtk.StringList.new(labels))
         self.key_row.set_selected(self.voice_keys.index(current))
         self.key_row.connect("notify::selected", lambda row, _p: self.set_value(
             "VoiceKey", self.voice_keys[row.get_selected()]))
@@ -5126,7 +5481,7 @@ class SettingsWindow(Adw.ApplicationWindow):
         self.translate_row.connect("notify::active", self.on_translate_toggled)
         intro.add(self.translate_row)
         self.target_codes = [code for _, code, _ in TRANSLATE_LANGUAGES]
-        self.target_row = Adw.ComboRow(
+        self.target_row = ComboRow(
             title="翻译成", model=Gtk.StringList.new([label for label, _, _ in TRANSLATE_LANGUAGES]))
         self.add_info(self.target_row, "中文翻成这种语言；这种语言（和别的外文）翻成中文。")
         current = self.values.get("TranslateTarget", "en")
@@ -5144,7 +5499,7 @@ class SettingsWindow(Adw.ApplicationWindow):
             "名字里带 mini、flash、turbo 的小模型更快。\n\n"
             "隐私：只在切到「译」时把打的字发给你选的服务，密码框里不翻译；WowType 自己不经手、不收集。"
             f"Key 只存在这台电脑上（{_home(TRANSLATE_KEY_FILE)}）。"))
-        self.provider_row = Adw.ComboRow(
+        self.provider_row = ComboRow(
             title="服务商", model=Gtk.StringList.new([name for name, _, _ in TRANSLATE_PROVIDERS]))
         self.provider_syncing = True
         self.provider_row.set_selected(provider_index(self.values["TranslateBaseUrl"]))
@@ -5182,7 +5537,7 @@ class SettingsWindow(Adw.ApplicationWindow):
         self.service_group = service
 
         # 用什么翻译：下拉菜单，默认本地模型；选「自定义」才出现填接口的地方
-        self.engine_row = Adw.ComboRow(
+        self.engine_row = ComboRow(
             title="用什么翻译",
             model=Gtk.StringList.new([label for label, _ in TRANSLATE_ENGINES]))
         self.engine_row.set_selected(0 if self.values["TranslateLocal"] == "True" else 1)
@@ -5821,7 +6176,7 @@ class SettingsWindow(Adw.ApplicationWindow):
                                      margin_top=14, margin_bottom=14,
                                      margin_start=16, margin_end=16)
         notes_card = Gtk.Box()
-        notes_card.add_css_class("card")
+        notes_card.add_css_class("wt-notes-card")
         notes_card.append(self.notes_label)
         self.notes_group.add(notes_card)
         page.add(self.notes_group)
@@ -6160,7 +6515,7 @@ class SettingsApp(Adw.Application):
             self.theme_watch = True
             settings.connect("notify::gtk-theme-name", lambda *_: self.update_style_css())
         accent_text = "#6EA8FE" if dark else "#1D4ED8"
-        css = (STYLE_DARK if dark else STYLE_LIGHT) + STYLE_ACCENT % accent_text
+        css = (STYLE_DARK if dark else STYLE_LIGHT) + (dark and '\n@define-color window_bg_color #1d201f;\n@define-color window_fg_color #e6ece9;\n@define-color view_bg_color #232625;\n@define-color view_fg_color #e6ece9;\n@define-color card_bg_color #282c2a;\n@define-color card_fg_color #e6ece9;\n@define-color popover_bg_color #282c2a;\n@define-color popover_fg_color #e6ece9;\n@define-color dialog_bg_color #282c2a;\n@define-color dialog_fg_color #e6ece9;\n@define-color sidebar_bg_color #1A263D;\n@define-color sidebar_fg_color #e6ece9;\n@define-color sidebar_border_color #464d4a;\n@define-color sidebar_backdrop_color #171d2b;\n@define-color headerbar_bg_color #1d201f;\n@define-color headerbar_fg_color #e6ece9;\n@define-color borders #464d4a;\n@define-color theme_bg_color #1d201f;\n@define-color theme_fg_color #e6ece9;\n' or '\n/* 用户系统的 adw-gtk3 变量文件是深色的：本应用里按所选明暗重定义一遍，\n   弹出菜单、开关、对话框都从这里取色 */\n@define-color window_bg_color #f5f7f6;\n@define-color window_fg_color #1f2724;\n@define-color view_bg_color #ffffff;\n@define-color view_fg_color #1f2724;\n@define-color card_bg_color #ffffff;\n@define-color card_fg_color #1f2724;\n@define-color popover_bg_color #ffffff;\n@define-color popover_fg_color #1f2724;\n@define-color dialog_bg_color #ffffff;\n@define-color dialog_fg_color #1f2724;\n@define-color sidebar_bg_color #eff5fe;\n@define-color sidebar_fg_color #2a332f;\n@define-color sidebar_border_color #d8dedb;\n@define-color sidebar_backdrop_color #e8eef8;\n@define-color headerbar_bg_color #f5f7f6;\n@define-color headerbar_fg_color #1f2724;\n@define-color borders #d8dedb;\n@define-color theme_bg_color #f5f7f6;\n@define-color theme_fg_color #1f2724;\n') + STYLE_ACCENT % accent_text
         if (Gtk.get_major_version(), Gtk.get_minor_version()) >= (4, 16):
             css += STYLE_ACCENT_VARS % accent_text
         css_load(self.style_css, css)
@@ -6282,6 +6637,7 @@ if __name__ == "__main__":
         assert "```" not in notes and '<a href="https://x.y/z">' in notes
         assert release_highlights("## 这一版\n\n- 新功能\n\n升级后重启。\n\n## 安装\n\n装法\n") == \
             "- 新功能\n\n升级后重启。"
+        assert release_highlights("## 这一版要注意\n\n- 修复\n\n## 安装\n\n装法\n") == "- 修复"
         assert release_highlights("## What's Changed\n* x") == "## What's Changed\n* x"
         import tempfile
         with tempfile.TemporaryDirectory() as tmp:
