@@ -6111,6 +6111,7 @@ class SettingsApp(Adw.Application):
         Adw.StyleManager.get_default().set_color_scheme(
             Adw.ColorScheme.FORCE_DARK if dark else Adw.ColorScheme.FORCE_LIGHT)
         # 主题可能在启动之后才加载：变了重新算一次
+        settings = Gtk.Settings.get_default()
         if settings is not None and not getattr(self, "theme_watch", False):
             self.theme_watch = True
             settings.connect("notify::gtk-theme-name", lambda *_: self.update_style_css())
