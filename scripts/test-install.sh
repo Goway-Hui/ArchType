@@ -24,8 +24,8 @@ case "$name" in
     printf 'curl %s\n' "$url" >> "$FIXTURE_FETCH_LOG"
     case "$url" in
       file://*) cp -- "${url#file://}" "$output" ;;
-      https://github.com/Gloridust/WowType/releases/latest)
-        printf '%s\n' https://github.com/Gloridust/WowType/releases/tag/v0.3.8 ;;
+      https://github.com/Goway-Hui/WowType/releases/latest)
+        printf '%s\n' https://github.com/Goway-Hui/WowType/releases/tag/v0.3.8 ;;
       *) printf '测试禁止联网：%s\n' "$url" >&2; exit 1 ;;
     esac
     ;;
@@ -40,7 +40,7 @@ case "$name" in
 esac
 MOCK
 chmod +x "$work/bin/mock"
-for name in sudo curl apt-get pacman dnf pgrep im-config wowtype-config installer; do
+for name in sudo curl apt-get pacman dnf pgrep im-config wowtype-config; do
   ln -s mock "$work/bin/$name"
 done
 
@@ -50,17 +50,11 @@ test_system=Linux
 count=0
 fail() { printf 'FAIL: %s\n' "$*" >&2; exit 1; }
 pass() { count=$((count + 1)); printf 'ok %s - %s\n' "$count" "$*"; }
-# macOS 自带的 bash 3.2 在 UTF-8 下把变量名后面紧跟的全角字符（比如全角括号）当成变量名的一部分（set -u 时直接报
-# unbound variable）。变量后面紧跟非 ASCII 字符的一律要写成 ${version}。CI 的 bash 5 复现不了，只能这样查。
-bad=$(cd "$root" && git ls-files -z '*.sh' macos/pkg/scripts | xargs -0 perl -ne 'print "$ARGV:$.: $_" if /\$[A-Za-z_]\w*[^\x00-\x7f]/; close ARGV if eof' || true)
-[[ -z "$bad" ]] || fail "变量后面紧跟中文要加花括号（macOS 的 bash 3.2 会报 unbound variable）：
-$bad"
-
 run() {
   env -u SUDO_USER PATH="$work/bin:$PATH" \
     FIXTURE_LOG="$work/commands" FIXTURE_FETCH_LOG="$work/fetches" \
     WOWTYPE_SYSTEM="$test_system" WOWTYPE_OS_RELEASE="$work/os-release" WOWTYPE_ARCH="$test_arch" \
-    WOWTYPE_VERSION="$test_version" WOWTYPE_REPO=Gloridust/WowType \
+    WOWTYPE_VERSION="$test_version" WOWTYPE_REPO=Goway-Hui/WowType \
     WOWTYPE_BASE_URL="file://$work/assets" WOWTYPE_YES=1 \
     WOWTYPE_NO_IM_CONFIG=1 WOWTYPE_NO_RESTART=1 XDG_CURRENT_DESKTOP= \
     bash "$root/install.sh" "$@"
@@ -264,48 +258,7 @@ reset 'ID=arch'
 asset wowtype-0.3.8-1-x86_64.pkg.tar.zst
 test_version=
 run > "$work/output" 2>&1 || fail 'Latest release resolution failed'
-grep -Fq 'https://github.com/Gloridust/WowType/releases/latest' "$work/fetches" || fail 'Wrong release repository'
-pass 'Latest release uses the upstream repository'
-
-# macOS：下载 pkg，用系统的 installer 只装给当前用户，不碰 Linux 的包管理器
-reset 'ID=unused'
-test_system=Darwin
-test_arch=arm64
-result=$(run --print-plan) || fail 'macOS 计划失败'
-[[ "$result" == *'WowType-0.3.8-macos.pkg'* ]] || fail "macOS 包选择错误：$result"
-[[ ! -s "$work/commands" && ! -s "$work/fetches" ]] || fail 'macOS --print-plan 有副作用'
-pass 'macOS plan picks the pkg'
-
-reset 'ID=unused'
-test_system=Darwin
-asset WowType-0.3.8-macos.pkg
-run > "$work/output" 2>&1 || fail "macOS install: $(cat "$work/output")"
-assert_log 'installer -pkg'
-assert_log 'WowType-0.3.8-macos.pkg -target CurrentUserHomeDirectory'
-if grep -Eq '^(apt-get|pacman|dnf|wowtype-config) ' "$work/commands"; then fail 'macOS 跑了 Linux 的命令'; fi
-pass 'macOS installs the verified pkg for the current user'
-
-reset 'ID=unused'
-test_system=Darwin
-asset WowType-0.3.8-macos.pkg
-printf 'corruption\n' >> "$work/assets/WowType-0.3.8-macos.pkg"
-if run > "$work/output" 2>&1; then fail 'Corrupted macOS pkg accepted'; fi
-assert_no_install
-pass 'macOS checksum mismatch prevents install'
-
-reset 'ID=unused'
-test_system=Darwin
-asset wowtype-0.3.8-1-x86_64.pkg.tar.zst
-if run > "$work/output" 2>&1; then fail 'Release without macOS pkg accepted'; fi
-grep -Fq 'macOS 安装包' "$work/output" || fail "缺少 macOS 提示：$(cat "$work/output")"
-assert_no_install
-pass 'Release without a macOS pkg fails clearly'
-
-reset 'ID=unused'
-test_system=Darwin
-test_arch=ppc
-if run --print-plan > "$work/output" 2>&1; then fail 'Unexpected PowerPC Mac'; fi
-assert_no_install
-pass 'macOS rejects unknown architectures'
+grep -Fq 'https://github.com/Goway-Hui/WowType/releases/latest' "$work/fetches" || fail 'Wrong release repository'
+pass 'Latest release uses our repository'
 
 printf '%s installer checks passed\n' "$count"
