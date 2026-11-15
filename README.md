@@ -8,8 +8,8 @@
 
 一个 fcitx5 拼音输入法：长句一次打完、打一半就有词、按错键也能认出来，越用越懂你。
 
-[![CI](https://github.com/Gloridust/WowType/actions/workflows/ci.yml/badge.svg)](https://github.com/Gloridust/WowType/actions/workflows/ci.yml)
-[![Release](https://img.shields.io/github/v/release/Gloridust/WowType?include_prereleases&label=release)](https://github.com/Gloridust/WowType/releases)
+[![CI](https://github.com/Goway-Hui/WowType/actions/workflows/ci.yml/badge.svg)](https://github.com/Goway-Hui/WowType/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/github/v/release/Goway-Hui/WowType?include_prereleases&label=release)](https://github.com/Goway-Hui/WowType/releases)
 ![fcitx5](https://img.shields.io/badge/fcitx5-%E2%89%A5%205.0-blue)
 ![License](https://img.shields.io/badge/license-MIT%20%2F%20Apache--2.0-green)
 
@@ -107,7 +107,7 @@
 Ubuntu 22.04 / 24.04 / 26.04、Debian 13、deepin 23 / 25、Arch Linux（及衍生版）、Fedora、macOS 上，在终端里运行：
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/Gloridust/WowType/main/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/Goway-Hui/WowType/main/install.sh | bash
 ```
 
 在 Linux 上它会（macOS 上见[下面](#macos)）：
@@ -136,7 +136,7 @@ macOS 12 或更新，Apple 芯片和 Intel 都行。
 打开「终端」（启动台里搜「终端」，或按 `⌘空格` 输入 Terminal），粘贴下面这行，回车：
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/Gloridust/WowType/main/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/Goway-Hui/WowType/main/install.sh | bash
 ```
 
 它会下载最新的 `WowType-<版本>-macos.pkg`，按 `SHA256SUMS` 校验，然后只装给你自己（装到 `~/Library/Input Methods`），
@@ -145,7 +145,7 @@ curl -fsSL https://raw.githubusercontent.com/Gloridust/WowType/main/install.sh |
 
 #### 下载安装包
 
-不想用终端的话，到 [Releases](https://github.com/Gloridust/WowType/releases) 下载 `WowType-<版本>-macos.pkg`，双击安装。
+不想用终端的话，到 [Releases](https://github.com/Goway-Hui/WowType/releases) 下载 `WowType-<版本>-macos.pkg`，双击安装。
 安装包**没有 Apple 开发者签名**，第一次打开时系统会说「无法验证」：点「完成」，打开「系统设置 → 隐私与安全性」，
 往下找到 WowType 那一条，点「仍要打开」，输入开机密码后安装器就会打开。之后升级还是同样的步骤。
 
@@ -176,7 +176,7 @@ im-config -n fcitx5
 
 ##### 方式一：安装包
 
-到 [Releases](https://github.com/Gloridust/WowType/releases) 页面下载和你系统对应的那**一个**文件
+到 [Releases](https://github.com/Goway-Hui/WowType/releases) 页面下载和你系统对应的那**一个**文件
 `wowtype_<版本>_<发行版>_<架构>.deb`（发行版是 `ubuntu22.04`、`ubuntu24.04`、`ubuntu26.04`、`debian13`、`deepin23`、`deepin25`，架构是 `amd64` 或 `arm64`，deepin 只有 `amd64`），词库已经包含在里面。
 不知道自己是哪个发行版、哪种架构：
 
@@ -198,7 +198,7 @@ sudo apt install ./wowtype_*.deb
 
 ###### Fedora
 
-到 [Releases](https://github.com/Gloridust/WowType/releases) 下载 `wowtype-<版本>-1.fc<Fedora 版本>.<架构>.rpm`（架构是 `x86_64` 或 `aarch64`，词库已经在包里），然后：
+到 [Releases](https://github.com/Goway-Hui/WowType/releases) 下载 `wowtype-<版本>-1.fc<Fedora 版本>.<架构>.rpm`（架构是 `x86_64` 或 `aarch64`，词库已经在包里），然后：
 
 ```bash
 sudo dnf install ./wowtype-*.rpm
@@ -215,7 +215,7 @@ wowtype-config --add-to-group      # 把 WowType 加进 fcitx5 的输入法列�
 ```nix
 # flake.nix
 inputs.wowtype = {
-  url = "github:Gloridust/WowType/release";   # 跟正式版；想锁某一版写 github:Gloridust/WowType/v0.3.10
+  url = "github:Goway-Hui/WowType/release";   # 跟正式版；想锁某一版写 github:Goway-Hui/WowType/v0.3.10
   inputs.nixpkgs.follows = "nixpkgs";         # 和系统用同一份 fcitx5
 };
 
@@ -517,7 +517,7 @@ WowType 默认用自己的绿色主题：选中的词是图标里的那种绿，
 
 WowType 自己的日志在 `~/.local/state/wowtype/wowtype.log`（满 512 KB 换一个，旧的留一份 `.1`）。
 
-问题没解决，欢迎[提 issue](https://github.com/Gloridust/WowType/issues)，把导出的日志拖进去。
+问题没解决，欢迎[提 issue](https://github.com/Goway-Hui/WowType/issues)，把导出的日志拖进去。
 
 ## 工作原理
 

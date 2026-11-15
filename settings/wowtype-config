@@ -37,7 +37,7 @@ from gi.repository import Adw, Gdk, Gio, GLib, GObject, Gtk, Pango  # noqa: E402
 
 APP_ID = "io.github.Gloridust.WowType.Config"
 VERSION = "@VERSION@"
-HOMEPAGE = "https://github.com/Gloridust/WowType"
+HOMEPAGE = "https://github.com/Goway-Hui/WowType"
 INSTALL_GUIDE = f"{HOMEPAGE}/blob/main/docs/INSTALL.md"
 
 
@@ -1781,7 +1781,7 @@ def export_diagnostics(path):
 
 # ---------------------------------------------------------------- 更新
 
-REPO = "Gloridust/WowType"
+REPO = "Goway-Hui/WowType"
 RELEASE_API = f"https://api.github.com/repos/{REPO}/releases/latest"
 RELEASES_PAGE = f"{HOMEPAGE}/releases"
 CACHE_DIR = os.path.join(_xdg("XDG_CACHE_HOME", "~/.cache"), "wowtype")

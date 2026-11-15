@@ -219,7 +219,7 @@ private struct ToastView: View {
 
 // MARK: 常规
 
-private let issuesURL = URL(string: "https://github.com/Gloridust/WowType/issues/new")!
+private let issuesURL = URL(string: "https://github.com/Goway-Hui/WowType/issues/new")!
 /// 系统设置的「键盘」（只打开，不改系统设置）
 private let keyboardSettingsURL = URL(string: "x-apple.systempreferences:com.apple.Keyboard-Settings.extension")!
 
