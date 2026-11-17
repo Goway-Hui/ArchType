@@ -646,6 +646,47 @@ typedef struct {
 /* 返回 0 成功，-1 参数为 NULL。 */
 int archtype_session_view(ArchtypeSession *session, ArchtypeSessionView *out);
 
+/* ---------------- 打字统计（1.11 起） ----------------
+ *
+ * 只记本机的聚合计数：每天各类字符数、活跃毫秒、每个键按下的次数、候选位置。
+ * 不保存输入内容、按键顺序或上下文。输入法用 archtype_stats_* 记录，设置界面读同一个 JSON 文件。
+ *
+ * 口径：两次上屏间隔超过 10 秒算休息，不计入活跃时长；速度只算汉字与字母；
+ * 长按只算一次；密码框里的按键和上屏不计。统计默认打开，设置界面可以关闭或清空。
+ */
+typedef struct ArchtypeStats ArchtypeStats;
+
+/* 创建记录器。path 是统计文件的绝对路径；失败返回 NULL，原因用 archtype_last_error 取。 */
+ArchtypeStats *archtype_stats_new(const char *path);
+void archtype_stats_free(ArchtypeStats *stats);
+
+/* 一次物理按键。platform：0 = X11/fcitx5（code 是 XKB 键码），1 = macOS（NSEvent.keyCode）。
+ * down 非 0 表示按下，0 表示松开。返回 0 成功。 */
+int archtype_stats_key(ArchtypeStats *stats, int platform, unsigned int code, int down,
+                      int64_t now_ms);
+
+/* 一次上屏。text 只用来分类（汉字/字母/数字/标点/表情），不落盘。
+ * source：quanpin / shuangpin / english / translate；scheme 是双拼方案 id，没有传 NULL/空串。
+ * cand_index：候选在列表里的位置（1 起），不是选候选上屏时传 0。返回 0 成功。 */
+int archtype_stats_commit(ArchtypeStats *stats, const char *text, const char *source,
+                         const char *scheme, int cand_index, int64_t now_ms);
+
+/* 把攒着的计数写进文件（失焦、退出时调用）。返回 0 成功，-1 失败。 */
+int archtype_stats_flush(ArchtypeStats *stats, int64_t now_ms);
+
+/* 缓存的开关：1 开，0 关。最多 30 秒重读一次文件。 */
+int archtype_stats_enabled(ArchtypeStats *stats);
+
+/* 设置界面用：清空统计（保留开关，换一个随机代数）。返回 0 成功。 */
+int archtype_stats_clear_file(const char *path, uint64_t generation);
+
+/* 设置界面用：打开或关闭统计。返回 0 成功。 */
+int archtype_stats_set_enabled(const char *path, int enabled);
+
+/* 当前 Unix 毫秒。 */
+int64_t archtype_stats_now_ms(void);
+
+
 #ifdef __cplusplus
 }
 #endif

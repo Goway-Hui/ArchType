@@ -68,6 +68,13 @@ bool envFlag(const char *name, bool fallback) {
 
 constexpr const char *kConfigFile = "conf/archtype.conf";
 
+/// 统计用的墙上时间（Unix 毫秒）：日界和 10 秒间隔都按它算。
+int64_t statsNowMs() {
+    return std::chrono::duration_cast<std::chrono::milliseconds>(
+               std::chrono::system_clock::now().time_since_epoch())
+        .count();
+}
+
 std::string userDataDir() {
     std::string base;
     if (const char *data = std::getenv("XDG_DATA_HOME"); data && *data) {
@@ -806,6 +813,15 @@ ArchtypeEngine::ArchtypeEngine(fcitx::Instance *instance)
     applyConfig();
     setupVoiceOverlay();
     setupControl();
+    const std::string statsDir = userDataDir();
+    if (!statsDir.empty()) {
+        const std::string statsPath = statsDir + "/stats.json";
+        stats_ = archtype_stats_new(statsPath.c_str());
+        if (!stats_) {
+            WLOG_W() << "ArchType: 建不了打字统计 " << statsPath << "："
+                     << (archtype_last_error() ? archtype_last_error() : "unknown");
+        }
+    }
 }
 
 namespace {
@@ -849,6 +865,60 @@ void ArchtypeEngine::setupControl() {
     } catch (const std::exception &e) {
         WLOG_I() << "ArchType: 连不上会话总线，外部命令切不了模式：" << e.what();
     }
+}
+
+void ArchtypeEngine::recordStats(const std::string &text, const ArchtypeFrame *frame) {
+    if (!stats_ || text.empty()) {
+        return;
+    }
+    const std::string src = typingSource();
+    const std::string scheme = shuangpin_ ? typingScheme() : std::string();
+    // 上游 0.5.1 的 frame 没有选中候选的序号，候选位置先记 0（不影响字符/按键统计）
+    unsigned candidate = 0;
+    (void)frame;
+    archtype_stats_commit(stats_, text.c_str(), src.c_str(),
+                         scheme.empty() ? nullptr : scheme.c_str(),
+                         static_cast<int>(candidate), statsNowMs());
+}
+
+void ArchtypeEngine::recordKey(fcitx::InputContext *ic, const fcitx::Key &key, bool down) {
+    if (!stats_ || !ic) {
+        return;
+    }
+    if (ic->capabilityFlags().test(fcitx::CapabilityFlag::PasswordOrSensitive)) {
+        return;
+    }
+    archtype_stats_key(stats_, 0, static_cast<unsigned>(key.code()), down ? 1 : 0, statsNowMs());
+}
+
+void ArchtypeEngine::flushStats() {
+    if (!stats_) {
+        return;
+    }
+    if (archtype_stats_flush(stats_, statsNowMs()) != 0) {
+        WLOG_W() << "ArchType: 打字统计写入失败："
+                 << (archtype_last_error() ? archtype_last_error() : "unknown");
+    }
+}
+
+std::string ArchtypeEngine::typingSource() const {
+    if (translateMode_) {
+        return "translate";
+    }
+    if (asciiMode_) {
+        return "english";
+    }
+    return shuangpin_ ? "shuangpin" : "quanpin";
+}
+
+std::string ArchtypeEngine::typingScheme() const {
+    std::string id = shuangpinScheme_;
+    for (char &ch : id) {
+        if (ch >= 'A' && ch <= 'Z') {
+            ch = static_cast<char>(ch - 'A' + 'a');
+        }
+    }
+    return id;
 }
 
 std::string ArchtypeEngine::modeName() const {
@@ -1031,6 +1101,11 @@ void ArchtypeEngine::maybeSwitchLexicon() {
     if (core_) {
         archtype_engine_free(core_);
         core_ = nullptr;
+    flushStats();
+    if (stats_) {
+        archtype_stats_free(stats_);
+        stats_ = nullptr;
+    }
         // 简繁表、五笔码表是载进这个引擎的，新引擎载好后 applyCoreSettings 再载
         conversionLoaded_ = false;
         wubiLoaded_ = false;
@@ -1421,6 +1496,7 @@ void ArchtypeEngine::finishCommit(fcitx::InputContext *ic, ArchtypeState *state,
     const bool learned = countLearned(frame);
     if (ic && !text.empty()) {
         // 会话已经补好了空格；互译时攒原文也是会话做的，这里上屏的是译文、原文或不在互译时的字
+        recordStats(text, frame);
         ic->commitString(text);
     }
     // 会话上屏时已经清好了它上屏的那部分，这里从不 reset 会话（reset 会把还在打的丢掉）：只丢掉抄的候选，
@@ -2029,6 +2105,7 @@ void ArchtypeEngine::keyEvent(const fcitx::InputMethodEntry & /*entry*/,
     }
     auto *state = ic->propertyFor(&factory_);
     const fcitx::Key key = event.key();
+    recordKey(ic, key, !event.isRelease());
     const auto sym = key.sym();
     // 联想开着时按了别的键：会话关掉了联想、键交给了应用（没有 frame 要画）时，候选框上的联想也收起来。
     // 放在最后（各条路都处理完、frame 用完以后）
@@ -2230,6 +2307,7 @@ void ArchtypeEngine::deactivate(const fcitx::InputMethodEntry &entry,
     voiceKeyDown_ = false;
     reset(entry, event);
     maybeSaveUserDict(true);
+    flushStats();
 }
 
 void ArchtypeEngine::reset(const fcitx::InputMethodEntry & /*entry*/,
@@ -2710,6 +2788,7 @@ uint32_t ArchtypeEngine::tickTranslate() {
     }
     if (frame->commit) {
         // 按过回车，译好了：上屏译文（正在打的拼音留着，不清编辑区）
+        recordStats(frame->commit, frame);
         ic->commitString(frame->commit);
         translateDrawn_.clear();
         updateInputPanel(ic, state);

@@ -501,6 +501,16 @@ private:
 public:
 
 private:
+    /// 一次上屏记进打字统计（只分类计数，不保存文字）。`frame` 带候选位置时一并记。
+    void recordStats(const std::string &text, const ArchtypeFrame *frame);
+    /// 记一次按键（按键热力图）。密码框里的按键不计。
+    void recordKey(fcitx::InputContext *ic, const fcitx::Key &key, bool down);
+    /// 把攒着的统计写进文件（失焦、退出时）。
+    void flushStats();
+    /// 当前输入模式在统计里的名字。
+    std::string typingSource() const;
+    /// 双拼方案在统计里的名字（小写枚举名）；不是双拼时为空。
+    std::string typingScheme() const;
     std::string recentEmojiPath() const;
     /// 把引擎、上文、设置同步给会话（引擎是后台载入的，设置可能刚改过）。
     void syncSession(ArchtypeState *state);
@@ -634,6 +644,9 @@ private:
     fcitx::Key toggleKey_;
     fcitx::Key translateModeKey_;
     /// 最近用过的 emoji（最近的在前），存在 ~/.local/share/archtype/emoji-recent.txt。
+
+    /// 打字统计（按天聚合，见 core/src/stats.rs）；数据目录不可写时为空。
+    ArchtypeStats *stats_ = nullptr;
 
     ArchtypeVoice *voice_ = nullptr;
     /// 语音结果同时复制到剪贴板（默认关）。
