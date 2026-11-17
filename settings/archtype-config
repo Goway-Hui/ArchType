@@ -5254,7 +5254,8 @@ class SettingsWindow(Adw.ApplicationWindow):
 
         split = Gtk.Box()
         split.append(sidebar)
-        split.append(Gtk.Separator(orientation=Gtk.Orientation.VERTICAL))
+        # 侧栏和内容区靠背景色区分，不再画分隔线：Gtk.Separator 用的是系统主题的边框色，
+        # 深色 GTK 主题下在浅色页面里会是一根黑线。
         split.append(content)
         self.set_content(split)
         self.set_size_request(640, 460)
