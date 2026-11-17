@@ -193,6 +193,7 @@ install -Dm644 dist/data/WUBI-LICENSE $lic/LICENSE.rime-wubi
 %{_datadir}/gnome-shell/extensions/archtype-theme@goway-hui.github.io/
 %{_datadir}/applications/io.github.GowayHui.ArchType.Config.desktop
 %{_datadir}/icons/hicolor/*/apps/archtype.*
+%{_datadir}/icons/hicolor/scalable/status/archtype-stats-symbolic.svg
 %{_datadir}/archtype/
 
 %post
