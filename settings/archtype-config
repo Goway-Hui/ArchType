@@ -362,6 +362,12 @@ STYLE_LIGHT = """
 .wt-nav row:selected { background: #2F6FED; color: white; }
 .wt-nav row:selected image, .wt-nav row:selected label { color: white; }
 .wt-content, .wt-content headerbar { background: #f5f7f6; box-shadow: none; }
+/* 顶栏的菜单、最小化/最大化/关闭图标：浅色下用深色，别继承系统深色主题的浅灰 */
+.wt-content headerbar image,
+.wt-sidebar headerbar image,
+window headerbar image { color: #1f2724; }
+.wt-content headerbar button:hover image,
+.wt-sidebar headerbar button:hover image { color: #1f2724; }
 .wt-page-title { font-weight: 800; font-size: 20pt; margin: -14px 0 -8px 0; color: #1f2724; }
 .wt-content preferencespage label,
 .wt-content preferencespage .title,
