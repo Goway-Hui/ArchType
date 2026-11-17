@@ -44,6 +44,7 @@ pub const ARCHTYPE_KEY_HINT_NO_AUTO_SPACE: u32 = crate::session::key_hints::NO_A
 pub const ARCHTYPE_KEY_HINT_PANEL_OPEN: u32 = crate::session::key_hints::PANEL_OPEN;
 pub const ARCHTYPE_KEY_HINT_NO_TRANSLATE: u32 = crate::session::key_hints::NO_TRANSLATE;
 pub const ARCHTYPE_KEY_HINT_SURROUNDING: u32 = crate::session::key_hints::SURROUNDING;
+pub const ARCHTYPE_KEY_HINT_NO_LEARN: u32 = crate::session::key_hints::NO_LEARN;
 
 /// 外壳自己的翻译器（C 布局，1.10 起）：macOS 用它把自己的翻译器（测试里是假的）交给会话。
 /// 函数都不阻塞。poll 把这次的原文、译文、出错原因写进三个出参（在下一次 poll 前有效），
@@ -128,6 +129,8 @@ pub const ARCHTYPE_PANEL_NORMAL: c_int = 0;
 pub const ARCHTYPE_PANEL_EXPANDED: c_int = 1;
 pub const ARCHTYPE_PANEL_EMOJI: c_int = 2;
 pub const ARCHTYPE_PANEL_TOOL: c_int = 3;
+/// 1.11 起：上屏以后的联想（`ArchtypeSessionConfig.association` 开着时才有）。
+pub const ARCHTYPE_PANEL_ASSOCIATION: c_int = 4;
 
 pub const ARCHTYPE_TOOL_NONE: c_int = 0;
 pub const ARCHTYPE_TOOL_MENU: c_int = 1;
@@ -234,6 +237,8 @@ pub struct ArchtypeSessionConfig {
     pub wubi_hint: c_int,
     /// 1.10 起：另设了进出「译」的快捷键，单按 Shift 只在中 ↔ 英之间切，默认 0。
     pub translate_key: c_int,
+    /// 1.11 起：上屏以后的联想，默认 0（旧外壳不认识联想、画不出来；设置里的默认值是开，外壳照设置填）。
+    pub association: c_int,
 }
 
 impl Default for ArchtypeSessionConfig {
@@ -274,6 +279,7 @@ impl Default for ArchtypeSessionConfig {
             wubi_auto_commit: c_int::from(config.wubi_auto_commit),
             wubi_hint: c_int::from(config.wubi_hint),
             translate_key: c_int::from(config.translate_key),
+            association: c_int::from(config.association),
         }
     }
 }
@@ -327,6 +333,7 @@ impl ArchtypeSessionConfig {
             wubi_auto_commit: self.wubi_auto_commit != 0,
             wubi_hint: self.wubi_hint != 0,
             translate_key: self.translate_key != 0,
+            association: self.association != 0,
         }
     }
 }
@@ -357,8 +364,6 @@ pub struct ArchtypeCandidateInfo {
     pub emoji: *const c_char,
     /// 1.10 起：候选后面的小字（五笔还要打的码、反查的五笔码），没有是空串。
     pub comment: *const c_char,
-    /// 1.11 起：候选在列表里的位置（1 起）；0 表示不知道。
-    pub index: usize,
 }
 
 pub const ARCHTYPE_CAND_WORD: c_int = 0;
@@ -374,7 +379,6 @@ struct CCandidate {
     comment: CString,
     consumed: usize,
     kind: c_int,
-    index: usize,
 }
 
 impl CCandidate {
@@ -388,11 +392,10 @@ impl CCandidate {
             commit: self.commit.as_ptr(),
             emoji: self.emoji.as_ptr(),
             comment: self.comment.as_ptr(),
-            index: self.index,
         }
     }
 
-    fn new(c: &Candidate, index: usize) -> Self {
+    fn new(c: &Candidate) -> Self {
         Self {
             text: to_c(&c.text),
             pinyin: to_c(&c.pinyin),
@@ -400,7 +403,6 @@ impl CCandidate {
             emoji: to_c(&c.emoji),
             comment: to_c(&c.comment),
             consumed: c.consumed,
-            index,
             kind: match c.kind {
                 CandidateKind::Word => ARCHTYPE_CAND_WORD,
                 CandidateKind::Plain => ARCHTYPE_CAND_PLAIN,
@@ -441,8 +443,6 @@ pub struct ArchtypeFrame {
     pub translate_status: *const c_char,
     /// 1.10 起：translate_text 是译完的最终结果。
     pub translate_done: c_int,
-    /// 1.11 起：这次上屏的候选在列表里的位置（1 起）；不是选候选为 0。
-    pub choice_index: usize,
 }
 
 impl Default for ArchtypeFrame {
@@ -470,7 +470,6 @@ impl Default for ArchtypeFrame {
             translate_title: EMPTY.as_ptr(),
             translate_status: EMPTY.as_ptr(),
             translate_done: 0,
-            choice_index: 0,
         }
     }
 }
@@ -538,10 +537,7 @@ impl ArchtypeSession {
         self.commit = frame.commit.as_deref().map(to_c);
         self.preedit = to_c(&frame.preedit);
         self.shown_start = frame.cand_start;
-        self.last_choice = self
-            .session
-            .last_choice()
-            .map(|c| CCandidate::new(c, self.session.last_choice_index()));
+        self.last_choice = self.session.last_choice().map(CCandidate::new);
         self.frame = ArchtypeFrame {
             handled: c_int::from(frame.handled),
             commit: self.commit.as_ref().map_or(ptr::null(), |c| c.as_ptr()),
@@ -552,6 +548,7 @@ impl ArchtypeSession {
                 Panel::Expanded => ARCHTYPE_PANEL_EXPANDED,
                 Panel::Emoji => ARCHTYPE_PANEL_EMOJI,
                 Panel::Tool => ARCHTYPE_PANEL_TOOL,
+                Panel::Association => ARCHTYPE_PANEL_ASSOCIATION,
             },
             cand_count: frame.cand_count,
             cand_cursor: frame
@@ -567,7 +564,6 @@ impl ArchtypeSession {
             wake_after_ms: frame.wake_after_ms,
             ..ArchtypeFrame::default()
         };
-        self.frame.choice_index = self.session.last_choice_index();
         if !frame.aux.is_empty() {
             self.aux = to_c(&frame.aux);
             self.frame.aux = self.aux.as_ptr();
@@ -644,8 +640,7 @@ impl ArchtypeSession {
                 .session
                 .display_candidates()
                 .iter()
-                .enumerate()
-                .map(|(index, candidate)| CCandidate::new(candidate, index + 1))
+                .map(CCandidate::new)
                 .collect();
             self.c_generation = self.session.generation();
         }
@@ -955,6 +950,13 @@ pub unsafe extern "C" fn archtype_session_open_panel(session: *const ArchtypeSes
         Some(Tool::Emoji { symbols: true }) => ARCHTYPE_TOOL_SYMBOLS,
         Some(Tool::Emoji { symbols: false }) => ARCHTYPE_TOOL_EMOJI,
     }
+}
+
+/// 联想开着（上屏以后的联想行，`ARCHTYPE_PANEL_ASSOCIATION`）返回 1，没有是 0。不改会话，
+/// 之前拿到的 frame 照样有效。（1.11 起）
+#[no_mangle]
+pub unsafe extern "C" fn archtype_session_association(session: *const ArchtypeSession) -> c_int {
+    unsafe { session.as_ref() }.map_or(0, |handle| c_int::from(handle.session.association_open()))
 }
 
 /// 最近用过的 emoji 存在这个文件（一行一个，进程内所有会话共用；读进已有的）。

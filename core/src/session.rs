@@ -14,6 +14,8 @@
 //! - 空格、回车、数字、分号引号选词、计算器和双拼分号进编辑区，翻页、移光标和
 //!   横排下键展开的候选面板（页和光标照 fcitx5 的候选列表：各管各的，光标可以不在这一页上）。
 //!
+//! - 上屏以后的联想（[`Config::association`]）：一页常跟在后面的词，Tab 进去选（见 [`Session::key`]）。
+//!
 //! 还没挪的键 [`Session::key`] 返回 `handled = false`，外壳接着用自己的旧逻辑处理
 //! （打字途中的标点、其他可见字符、吃掉的光标键）。鼠标点候选按全局序号调
 //! [`Session::choose`]，表情面板往编辑区加搜索词用 [`Session::append`]，这些过渡用法挪完以后会删掉。
@@ -133,6 +135,10 @@ pub mod key_hints {
     pub const NO_TRANSLATE: u32 = 1 << 2;
     /// 应用告诉了光标周围的文字：[`Key::prev_char`] 是 None 时光标前确实没有字（不是读不到）。
     pub const SURROUNDING: u32 = 1 << 3;
+    /// 密码框：选的词也不学（不进 history.tsv 和用户词库）。回车上屏的原始字母串哪里都不学，不用这个标记。
+    /// 和 NO_TRANSLATE 分开：macOS 只知道系统全局的「安全输入」开没开（终端开了安全键盘输入时所有输入框都算），
+    /// 拿它判断会让学习在所有地方静默停掉。
+    pub const NO_LEARN: u32 = 1 << 4;
 }
 
 /// 互译用的翻译器（[`crate::translate::Translator`]，或外壳自己的实现）。都不阻塞。
@@ -318,6 +324,9 @@ pub struct Selection {
     pub pinyin: String,
     /// 用掉的原始输入字节数。
     pub bytes: usize,
+    /// 选它时引擎学到的东西在学习日志里的区间（[`Engine::learn_mark`]）：退格把它退回编辑区、
+    /// Esc 放弃时按这个撤销（[`Engine::undo_learning`]）。没学（以词定字、五笔）是空的。
+    pub learn: std::ops::Range<u64>,
 }
 
 /// 一次调用之后外壳要做的事。
@@ -369,7 +378,14 @@ pub enum Panel {
     Emoji,
     /// v + 空格的工具栏（菜单、剪贴板、常用语）：竖排一列，一页 [`TOOL_PAGE`] 个。
     Tool,
+    /// 上屏以后的联想（没在打字）：一页常跟在后面的词，照普通候选框画（横排 / 竖排照设置），
+    /// 提示在 [`Frame::aux`]。按 Tab 进了联想行时 [`Frame::cand_cursor`] 是光标，没进是 None（不画光标、不画序号）。
+    Association,
 }
+
+/// 编辑区里还没选词的部分最多几个键，见 [`Session::push_input`]。
+/// 日常的整句四五十个字母（实测 51 个字母一个键 16 ms），64 留了余量。
+pub const MAX_PENDING_BYTES: usize = 64;
 
 /// 工具栏一页几个。
 pub const TOOL_PAGE: usize = 9;
@@ -397,6 +413,22 @@ struct ToolState {
     /// 表情面板的搜索词（打拼音或英文）
     query: String,
 }
+
+/// 上屏以后的联想。
+#[derive(Clone, Debug)]
+struct Association {
+    /// 显示的词（开着繁体时是转换过的）。
+    items: Vec<Candidate>,
+    /// 词库里的写法，选了以后拿它学。
+    plain: Vec<String>,
+    /// 按 Tab 进了联想行：空格、回车、数字选，方向键、Tab 移光标，Esc 退出。没进时这些键照原来的规则处理。
+    focused: bool,
+    cursor: usize,
+}
+
+/// 联想行上方的提示。
+const ASSOCIATION_HINT: &str = "联想：Tab 选词";
+const ASSOCIATION_FOCUSED_HINT: &str = "联想：空格或数字上屏，Esc 退出";
 
 /// 展开面板一行几个候选。
 pub const GRID_COLS: usize = 6;
@@ -498,6 +530,9 @@ pub struct Config {
     pub wubi_auto_commit: bool,
     /// 五笔的逐码提示（以打的码开头的更长的码的词）后面显示还要打的码。
     pub wubi_hint: bool,
+    /// 上屏以后的联想：选词上屏、整句上屏以后给出一页常跟在后面的词（[`Engine::associate`]）。
+    /// 设置里默认开；这里默认关（外壳不认识联想就画不出来，C 接口里旧外壳没给这一项时也是关）。
+    pub association: bool,
 }
 
 impl Default for Config {
@@ -524,6 +559,7 @@ impl Default for Config {
             wubi: false,
             wubi_auto_commit: true,
             wubi_hint: true,
+            association: false,
         }
     }
 }
@@ -612,8 +648,6 @@ pub struct Session<'e> {
     pending: Option<String>,
     /// 这次调用上屏的字是选哪个候选来的；原样上屏输入时是 None。
     last_choice: Option<Candidate>,
-    /// 这个候选在列表里的位置（1 起）；没选候选时是 0。
-    last_choice_index: usize,
     /// 这次调用忘掉了学过的词（frame 取走）。
     forgot: bool,
     /// 这次调用上屏的里有学到的选词（frame 取走）。
@@ -639,6 +673,15 @@ pub struct Session<'e> {
     tool: Option<ToolState>,
     /// 最近一次按键或 tick 的时刻（毫秒）。
     now_ms: u64,
+    /// 上一次上屏学到的东西（学习日志的区间，含选句首词时学的）：上屏后紧接着按退格时撤销。
+    /// 之后按了别的键、又上屏了别的字（标点、空格）、放弃时清掉。
+    undo_commit: Option<std::ops::Range<u64>>,
+    /// 这次上屏开始学习前的学习日志位置（没有已选的词时，上屏的学习从这里算）。
+    commit_start: Option<u64>,
+    /// 上屏以后的联想，没有是 None。
+    association: Option<Association>,
+    /// 这次调用选词上屏了（后面没再上屏标点之类）：调用结束时出联想。
+    association_due: bool,
 }
 
 impl Default for Session<'_> {
@@ -660,7 +703,6 @@ impl Default for Session<'_> {
             grid_cursor: 0,
             pending: None,
             last_choice: None,
-            last_choice_index: 0,
             forgot: false,
             learned: false,
             quotes: [false; 2],
@@ -675,6 +717,10 @@ impl Default for Session<'_> {
             translation: Translation::default(),
             tool: None,
             now_ms: 0,
+            undo_commit: None,
+            commit_start: None,
+            association: None,
+            association_due: false,
         }
     }
 }
@@ -727,6 +773,9 @@ impl<'e> Session<'e> {
             }
             self.config = config;
             self.fresh = false;
+            if !self.config.association {
+                self.close_association();
+            }
         }
     }
 
@@ -748,7 +797,6 @@ impl<'e> Session<'e> {
     /// 处理一次按键。
     pub fn key(&mut self, key: &Key) -> Frame {
         self.last_choice = None;
-        self.last_choice_index = 0;
         if key.time_ms != 0 {
             self.now_ms = key.time_ms;
         }
@@ -763,6 +811,14 @@ impl<'e> Session<'e> {
         }
         self.prev_char = key.prev_char;
         self.hints = key.hints;
+        if !is_modifier_keysym(key.keysym) {
+            // 上屏后紧接着按退格（编辑区空着，退格要交给应用删字）：刚才那次上屏是打错了，
+            // 学到的东西退回去。按了别的键就不算了（只修最近一次、只在紧接着时）
+            let undo = self.undo_commit.take();
+            if let Some(span) = undo.filter(|_| self.backspace_undoes(key)) {
+                self.unlearn(&span);
+            }
+        }
         let surrounding = key.hints & key_hints::SURROUNDING != 0;
         if key.prev_char.is_some() || surrounding {
             self.last_char = key.prev_char;
@@ -770,7 +826,10 @@ impl<'e> Session<'e> {
         if surrounding {
             self.check_context(key.prev_char);
         }
-        let handled = self.handle_key(key);
+        let handled = match self.association_key(key) {
+            Some(handled) => handled,
+            None => self.handle_key(key),
+        };
         if !handled && key.keysym != 0 && !is_modifier_keysym(key.keysym) {
             // 这个键交给了应用（退格、Delete、方向键、回车、快捷键、英文和半角的字……），
             // 应用里的字或光标可能变了：会话记的光标前的字、上文都不算数了。
@@ -782,7 +841,178 @@ impl<'e> Session<'e> {
                 self.set_context("");
             }
         }
+        self.settle_association();
         self.frame(handled)
+    }
+
+    /// 联想开着时的键。Some：联想处理完了；None：联想关了（或者是单按的修饰键，联想留着），照原来的规则处理。
+    ///
+    /// 联想出来以后最常做的是接着打拼音、数字、标点，按空格、回车交给应用，这些都不能被联想抢走：
+    /// 没进联想行时只有 Tab（进联想行）和 Esc（关掉，吃掉）是联想的，别的键先关掉联想再照常处理——
+    /// 数字也是（中文后面接着打数字很常见，见 AutoSpaceDigits），所以数字不选联想。
+    /// 进联想行用 Tab 不用下键：没在打字时方向键是挪应用里的光标（上屏后发现前面打错了，正要挪过去改），
+    /// 下键在打字途中还管展开面板、竖排时挪候选，Tab 在中文后面几乎不会紧接着用。
+    /// 进了联想行：空格、回车、数字选，左右（上下）键、Tab、Shift+Tab 移光标，Esc 退出；别的键退出联想再照常处理。
+    fn association_key(&mut self, key: &Key) -> Option<bool> {
+        let state = self.association.as_ref()?;
+        if is_modifier_keysym(key.keysym) {
+            return None;
+        }
+        let mods = key.modifiers & !(modifier::CAPS | modifier::NUMLOCK);
+        let plain = mods & (modifier::CTRL | modifier::ALT | modifier::SUPER) == 0 && key.action == KeyAction::None;
+        let n = state.items.len();
+        if state.focused && plain {
+            let cursor = state.cursor.min(n.saturating_sub(1));
+            let shift = mods & modifier::SHIFT != 0;
+            let moved = match key.keysym {
+                keysym::SPACE | keysym::RETURN | keysym::KP_ENTER => {
+                    self.choose_association(cursor);
+                    return Some(true);
+                }
+                keysym::ESCAPE => {
+                    self.close_association();
+                    return Some(true);
+                }
+                keysym::LEFT | keysym::UP | keysym::ISO_LEFT_TAB => Some(cursor.saturating_sub(1)),
+                keysym::TAB if shift => Some(cursor.saturating_sub(1)),
+                keysym::RIGHT | keysym::DOWN | keysym::TAB => Some((cursor + 1).min(n.saturating_sub(1))),
+                _ => None,
+            };
+            if let Some(cursor) = moved {
+                if let Some(state) = self.association.as_mut() {
+                    state.cursor = cursor;
+                }
+                return Some(true);
+            }
+            if let Some(digit) = key.digit() {
+                if (1..=n).contains(&digit) {
+                    self.choose_association(digit - 1);
+                }
+                return Some(true);
+            }
+        } else if plain && mods == 0 {
+            match key.keysym {
+                keysym::TAB => {
+                    if let Some(state) = self.association.as_mut() {
+                        state.focused = true;
+                        state.cursor = 0;
+                    }
+                    return Some(true);
+                }
+                keysym::ESCAPE => {
+                    self.close_association();
+                    return Some(true);
+                }
+                _ => {}
+            }
+        }
+        self.close_association();
+        None
+    }
+
+    /// 关掉联想。
+    fn close_association(&mut self) {
+        if self.association.take().is_some() {
+            self.generation += 1;
+        }
+    }
+
+    /// 联想开着（外壳画联想行、鼠标点了按 [`Session::choose`] 选）。
+    pub fn association_open(&self) -> bool {
+        self.association.is_some()
+    }
+
+    /// 能不能出联想：设置开着、有引擎、中文模式、没在打字、没开面板；五笔、「译」、密码框（不能翻译的输入框）不出。
+    fn association_allowed(&self) -> bool {
+        self.config.association
+            && self.engine.is_some()
+            && self.mode == Mode::Chinese
+            && !self.config.wubi
+            && !self.composing()
+            && self.tool.is_none()
+            && self.hints & key_hints::NO_TRANSLATE == 0
+            && self.translation.source.is_empty()
+    }
+
+    /// 一次调用结束：这次选词上屏了（后面没再上屏别的）就按上文出联想。
+    fn settle_association(&mut self) {
+        if !std::mem::take(&mut self.association_due) || !self.association_allowed() {
+            return;
+        }
+        let Some(engine) = self.engine else {
+            return;
+        };
+        let just = self.last_choice.as_ref().map(|c| c.text.clone()).unwrap_or_default();
+        let plain = engine.associate(&self.context, &just, self.page_size().min(9));
+        if plain.is_empty() {
+            return;
+        }
+        let items = plain
+            .iter()
+            .map(|word| {
+                let text = engine.shown_text(word);
+                Candidate {
+                    commit: text.clone(),
+                    text,
+                    kind: CandidateKind::Word,
+                    ..Candidate::default()
+                }
+            })
+            .collect();
+        self.association = Some(Association {
+            items,
+            plain,
+            focused: false,
+            cursor: 0,
+        });
+        self.generation += 1;
+    }
+
+    /// 选第 index 个联想：上屏，和普通选词一样记一次选词（学搭配），接着出下一轮联想。
+    fn choose_association(&mut self, index: usize) -> bool {
+        // 序号不对什么也不做（联想留着）
+        if !self.association.as_ref().is_some_and(|a| index < a.items.len()) {
+            return false;
+        }
+        let Some(state) = self.association.take() else {
+            return false;
+        };
+        self.generation += 1;
+        let (Some(item), Some(plain)) = (state.items.get(index), state.plain.get(index)) else {
+            return false;
+        };
+        self.commit_start = Some(self.learn_mark());
+        if self.engine.is_some() {
+            self.learn(plain, "");
+            self.learned = true;
+        }
+        self.finish(item.commit.clone());
+        self.last_choice = Some(item.clone());
+        self.association_due = true;
+        true
+    }
+
+    /// 这个键是上屏后紧接着的退格：不带修饰键（CapsLock、NumLock 不算），没在打字、没开面板，
+    /// 也没在「译」里攒原文（那时退格删的是原文）。
+    fn backspace_undoes(&self, key: &Key) -> bool {
+        key.keysym == keysym::BACKSPACE
+            && key.action == KeyAction::None
+            && key.modifiers & !(modifier::CAPS | modifier::NUMLOCK) == 0
+            && !self.composing()
+            && self.tool.is_none()
+            && self.translation.source.is_empty()
+    }
+
+    /// 学习日志现在的位置；没有引擎是 0。
+    fn learn_mark(&self) -> u64 {
+        self.engine.map_or(0, Engine::learn_mark)
+    }
+
+    /// 撤销学习日志 span 里学到的东西。
+    fn unlearn(&self, span: &std::ops::Range<u64>) {
+        if let Some(engine) = self.engine.filter(|_| !span.is_empty()) {
+            engine.undo_learning(span.start, span.end);
+        }
     }
 
     /// 应用告诉了光标前的字（读得到周围文字）、没在打字：会话记的上文要和它对得上。
@@ -1126,6 +1356,7 @@ impl<'e> Session<'e> {
     }
 
     fn open_tool_now(&mut self, tool: Tool, query: String) {
+        self.close_association();
         if self.composing() {
             self.clear();
         }
@@ -1452,6 +1683,9 @@ impl<'e> Session<'e> {
         if self.tool.is_some() {
             return self.tool.as_ref().map_or(&[], |t| t.items.as_slice());
         }
+        if self.association.is_some() {
+            return self.association.as_ref().map_or(&[], |a| a.items.as_slice());
+        }
         self.candidates()
     }
 
@@ -1480,6 +1714,7 @@ impl<'e> Session<'e> {
         if mode == self.mode {
             return;
         }
+        self.close_association();
         if self.mode == Mode::Translate {
             // 离开「译」：攒着的原文原样上屏，正在打的拼音留着接着打
             self.commit_source();
@@ -1658,6 +1893,10 @@ impl<'e> Session<'e> {
         let Some(first) = text.chars().next() else {
             return;
         };
+        // 后面又上屏了别的（标点、空格）：退格删的是它，不是刚才学的词；联想也不出了
+        self.undo_commit = None;
+        self.association_due = false;
+        self.close_association();
         if self.translating() {
             // 互译：上屏的字攒成原文，过一会儿（句末标点立刻）发请求
             self.translation.source.push_str(text);
@@ -1688,6 +1927,9 @@ impl<'e> Session<'e> {
         if text.is_empty() {
             return;
         }
+        self.undo_commit = None;
+        self.association_due = false;
+        self.close_association();
         self.pending.get_or_insert_with(String::new).push_str(text);
         self.remember(text);
     }
@@ -1717,9 +1959,9 @@ impl<'e> Session<'e> {
                         self.input.replace_range(at - prev..at, "");
                         self.caret = Some(at - prev);
                     } else {
-                        self.selections.pop();
+                        self.pop_selection();
                     }
-                } else if self.selections.pop().is_none() {
+                } else if !self.pop_selection() {
                     self.input.pop();
                 }
                 self.fresh = false;
@@ -2102,17 +2344,19 @@ impl<'e> Session<'e> {
             String::new()
         };
         self.last_choice = None;
-        self.last_choice_index = 0;
         if chosen.consumed < self.remaining().len() {
+            let mark = self.learn_mark();
             self.push_selection(Selection {
                 text: pick.to_string(),
                 plain,
                 pinyin,
                 bytes: chosen.consumed,
+                learn: mark..mark,
             });
         } else {
             let text = self.selected_text() + &pick.to_string();
             self.finish(text);
+            self.association_due = true;
         }
         true
     }
@@ -2195,6 +2439,11 @@ impl<'e> Session<'e> {
     }
 
     fn push_input(&mut self, c: char) {
+        // 还没选词的部分最多 MAX_PENDING_BYTES 个键：再长的键吃掉不收。候选是每按一个键重算的，
+        // 一长串只打声母的输入（zhzhzh…）耗时涨得比长度快，56 个字母时一个键要 200 ms
+        if self.remaining().len() >= MAX_PENDING_BYTES && !self.calc_active() {
+            return;
+        }
         let at = self.caret();
         if at < self.input.len() {
             // 光标在拼音中间（#129）：插在光标处，光标跟着往后
@@ -2213,7 +2462,7 @@ impl<'e> Session<'e> {
     /// 上文也不算数了（回来时光标可能在别处）。互译攒着的原文不动，要丢掉用 [`Session::clear_translation`]。
     pub fn reset(&mut self, commit_pending: bool) -> Frame {
         self.last_choice = None;
-        self.last_choice_index = 0;
+        self.close_association();
         if commit_pending && self.composing() {
             self.commit_input_now();
         } else {
@@ -2223,6 +2472,12 @@ impl<'e> Session<'e> {
             self.set_context("");
             self.prev_char = None;
             self.last_char = None;
+            // 工具栏、表情面板跟着编辑区一起收：失去焦点后面板已经看不见了，会话里还开着的话，
+            // 回来打的字母进了表情搜索，空格和数字上屏的是表情，单按 Shift 也切不了中英文
+            self.close_tool();
+            // 按着 Shift 时切走的，回来松开不算「单按 Shift」
+            self.shift.down = None;
+            self.undo_commit = None;
         }
         if commit_pending && !self.translation.source.is_empty() {
             self.commit_source();
@@ -2253,6 +2508,13 @@ impl<'e> Session<'e> {
         };
         if self.tool.is_some() {
             self.tool_frame(&mut frame);
+            return frame;
+        }
+        if let Some(state) = &self.association {
+            frame.panel = Panel::Association;
+            frame.cand_count = state.items.len();
+            frame.cand_cursor = state.focused.then_some(state.cursor.min(state.items.len().saturating_sub(1)));
+            frame.aux = if state.focused { ASSOCIATION_FOCUSED_HINT } else { ASSOCIATION_HINT }.to_owned();
             return frame;
         }
         if let Some((view, wake)) = self.translate_view() {
@@ -2307,6 +2569,14 @@ impl<'e> Session<'e> {
                 grid_cursor: state.cursor,
             };
         }
+        if let Some(state) = &self.association {
+            return View {
+                page: 0,
+                cursor: if state.focused { state.cursor } else { 0 },
+                expanded: false,
+                grid_cursor: 0,
+            };
+        }
         self.candidates();
         View {
             page: self.page,
@@ -2333,21 +2603,22 @@ impl<'e> Session<'e> {
         self.last_choice.as_ref()
     }
 
-    /// 上一次上屏的候选在列表里的位置（1 起）；不是选候选上屏时为 0。
-    pub fn last_choice_index(&self) -> usize {
-        self.last_choice_index
-    }
-
-    fn set_last_choice(&mut self, chosen: Candidate, index: usize) {
-        self.last_choice = Some(chosen);
-        self.last_choice_index = index.saturating_add(1);
-    }
-
+    /// 放弃编辑区（Esc、删光、失去焦点）：已选的句首词学到的东西也退回去（选错了才会放弃）。
     fn clear(&mut self) {
+        while self.pop_selection() {}
         self.input.clear();
-        self.selections.clear();
         self.caret = None;
         self.fresh = false;
+    }
+
+    /// 退回最后一个已选的词（退格、放弃），撤销选它时学到的。没有已选的词返回 false。
+    fn pop_selection(&mut self) -> bool {
+        let Some(selection) = self.selections.pop() else {
+            return false;
+        };
+        self.unlearn(&selection.learn);
+        self.fresh = false;
+        true
     }
 
     /// 还没选词的那段在 input 里从哪个字节开始。
@@ -2706,7 +2977,6 @@ impl<'e> Session<'e> {
     /// 序号不对时什么也不做（handled = false）。过渡：外壳的鼠标点候选、展开面板点一行用。
     pub fn choose(&mut self, index: usize) -> Frame {
         self.last_choice = None;
-        self.last_choice_index = 0;
         if self.tool.is_some() {
             let ok = self.tool.as_ref().is_some_and(|t| index < t.items.len());
             if ok {
@@ -2714,14 +2984,20 @@ impl<'e> Session<'e> {
             }
             return self.frame(ok);
         }
+        if self.association.is_some() {
+            // 联想行：鼠标点了一个（序号就是显示的第几个）
+            let handled = self.choose_association(index);
+            self.settle_association();
+            return self.frame(handled);
+        }
         let handled = self.choose_now(index);
+        self.settle_association();
         self.frame(handled)
     }
 
     /// 选候选框里显示的第 index 个（一页，或展开面板的一屏），见 [`Session::choose`]。
     pub fn select(&mut self, index: usize) -> Frame {
         self.last_choice = None;
-        self.last_choice_index = 0;
         if self.tool.is_some() {
             let shown = self.frame(false);
             return self.choose(shown.cand_start + index);
@@ -2731,7 +3007,13 @@ impl<'e> Session<'e> {
         self.forgot = shown.forgot;
         self.learned = shown.learned;
         self.mode_changed = shown.mode_changed;
+        if self.association.is_some() {
+            let handled = self.choose_association(index);
+            self.settle_association();
+            return self.frame(handled);
+        }
         let handled = index < shown.cand_count && self.choose_now(shown.cand_start + index);
+        self.settle_association();
         self.frame(handled)
     }
 
@@ -2746,35 +3028,39 @@ impl<'e> Session<'e> {
                 self.finish(text);
                 // 打字推荐的 emoji：记进最近用过（表情面板里排最前）
                 crate::recent_emoji::remember(&chosen.emoji);
-                self.set_last_choice(chosen, index);
+                self.last_choice = Some(chosen);
             }
             CandidateKind::Plain if chosen.consumed >= remaining => {
                 let text = self.selected_text() + &chosen.text;
                 self.finish(text);
-                self.set_last_choice(chosen, index);
+                self.last_choice = Some(chosen);
             }
             _ if chosen.consumed < remaining => {
-                // 句首词：先放进已选栈，剩下的拼音继续选
+                // 句首词：先放进已选栈，剩下的拼音继续选。学到的记下区间：退格退回、Esc 放弃时撤销
+                let start = self.learn_mark();
                 self.learn(&chosen.text, &chosen.pinyin);
+                let end = self.learn_mark();
                 self.push_selection(Selection {
                     plain: self.plain_of(&chosen.text),
                     text: chosen.text,
                     pinyin: chosen.pinyin,
                     bytes: chosen.consumed,
+                    learn: start..end,
                 });
             }
             _ => {
                 self.commit_with(&chosen.text, &chosen.pinyin);
-                self.set_last_choice(chosen, index);
+                // 选了引擎的词上屏（不是原样上屏的字母、英文）：出联想
+                self.association_due = !chosen.pinyin.is_empty();
+                self.last_choice = Some(chosen);
             }
         }
         true
     }
 
-    /// 上屏已选的词 + 还没选的原始输入，原始输入也记一次选词（和回车、`reset(true)` 一样）。
+    /// 上屏已选的词 + 还没选的原始输入（和回车、`reset(true)` 一样）。原始字母串不记选词。
     pub fn commit_input(&mut self) -> Frame {
         self.last_choice = None;
-        self.last_choice_index = 0;
         self.commit_input_now();
         self.frame(true)
     }
@@ -2787,9 +3073,15 @@ impl<'e> Session<'e> {
     /// 已选的词 + tail 上屏，记选词，清空。
     fn commit_with(&mut self, tail: &str, tail_pinyin: &str) {
         let text = self.selected_text() + tail;
-        if self.engine.is_some() && !text.is_empty() && !self.wubi() {
+        self.commit_start = Some(self.learn_mark());
+        // 回车、打字途中按标点上屏的原始字母串（没有拼音）不记：排序用不上它（原始串和英文候选的位置
+        // 不看选词记录，没有拼音也收不进用户词库），记下来只是在 history.tsv 里留一份明文——
+        // 终端里的 sudo 提示没有密码框标记，中文模式下打密码再回车，密码就这样进了输入习惯
+        let raw_tail = tail_pinyin.is_empty() && tail.is_ascii();
+        let learns = !self.selections.is_empty() || (!tail.is_empty() && !raw_tail);
+        if self.engine.is_some() && learns && !self.wubi() && !self.sensitive() {
             self.learned = true;
-            if !tail.is_empty() {
+            if !tail.is_empty() && !raw_tail {
                 // 带上拼音：选够次数后引擎会自动把这个词收进用户词库
                 self.learn(tail, tail_pinyin);
             }
@@ -2800,7 +3092,7 @@ impl<'e> Session<'e> {
                 && self.selections.iter().all(|s| !s.pinyin.is_empty())
             {
                 // 分几次选出来的也记一次，下次能一次打出来。四个字以内的当成用户造的词，
-                // 用一次就收进用户词库（「霜」「频」「阁」→ 霜频阁）；更长的是整句，照常按次数学。
+                // 第二次这样拼出来就收进用户词库（「霜」「频」「阁」→ 霜频阁）；更长的是整句，照常按次数学。
                 let mut pinyin = String::new();
                 for selection in &self.selections {
                     pinyin.push_str(&selection.pinyin);
@@ -2820,15 +3112,23 @@ impl<'e> Session<'e> {
         self.finish(text);
     }
 
+    /// 密码框（外壳给的 [`key_hints::NO_LEARN`]）：什么都不学。
+    fn sensitive(&self) -> bool {
+        self.hints & key_hints::NO_LEARN != 0
+    }
+
     /// 记一次选词。上文和算候选时一样（已上屏的字 + 已选的词）。
     /// 五笔（连同临时拼音）什么都不学：码位固定，选的词也不该进拼音的选词热度和用户词库。
-    fn learn(&self, word: &str, pinyin: &str) {
-        let Some(engine) = self.engine.filter(|_| !self.wubi()) else {
+    fn learn(&mut self, word: &str, pinyin: &str) {
+        let Some(engine) = self.engine.filter(|_| !self.wubi() && !self.sensitive()) else {
             return;
         };
         let context = self.context.clone() + &self.selected_text();
         engine.set_context(utf8_tail(&context, CONTEXT_BYTES));
         engine.record_selection_with_pinyin(word, Some(pinyin).filter(|p| !p.is_empty()));
+        // 外壳靠它数「有几次学习还没存」：选句首词进已选栈时也学了，之后按 Esc、失去焦点放弃，
+        // 不报的话这次学习不计数，退出时可能不存
+        self.learned = true;
     }
 
     /// 候选在词库里的写法（开着繁体时候选是转换过的），见 [`Engine::lexicon_form`]。
@@ -2839,17 +3139,30 @@ impl<'e> Session<'e> {
 
     /// 记分几次选出来拼成的词，见 [`Engine::record_composed_word`]。上文是还没选词时的上文。
     fn learn_composed(&self, word: &str, pinyin: &str) {
-        let Some(engine) = self.engine.filter(|_| !self.wubi()) else {
+        let Some(engine) = self.engine.filter(|_| !self.wubi() && !self.sensitive()) else {
             return;
         };
         engine.set_context(utf8_tail(&self.context, CONTEXT_BYTES));
         engine.record_composed_word(word, pinyin);
     }
 
-    /// 上屏 text（空的不上屏，frame 取走），清空编辑区。
+    /// 上屏 text（空的不上屏，frame 取走），清空编辑区。已选的词连同这次学到的都算这次上屏的，
+    /// 上屏后紧接着按退格时一起撤销。
     fn finish(&mut self, text: String) {
+        let end = self.learn_mark();
+        let start = self
+            .selections
+            .first()
+            .map(|s| s.learn.start)
+            .or(self.commit_start)
+            .unwrap_or(end);
+        self.commit_start = None;
+        self.selections.clear();
         self.clear();
         self.emit(&text);
+        if !text.is_empty() {
+            self.undo_commit = (start < end).then_some(start..end);
+        }
     }
 
     /// 选了句首词，压进已选栈（测试里不带引擎时用）。

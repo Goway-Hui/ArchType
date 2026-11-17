@@ -1,5 +1,6 @@
 #include "archtype_engine.h"
 #include "clipboard_copy.h"
+#include "data_files.h"
 #include "archtype_log.h"
 
 #include <algorithm>
@@ -11,6 +12,7 @@
 #include <exception>
 #include <filesystem>
 #include <fstream>
+#include <functional>
 #include <memory>
 #include <string>
 #include <string_view>
@@ -66,13 +68,6 @@ bool envFlag(const char *name, bool fallback) {
 
 constexpr const char *kConfigFile = "conf/archtype.conf";
 
-/// 统计用的墙上时间（Unix 毫秒）：日界和 10 秒间隔都按它算。
-int64_t statsNowMs() {
-    return std::chrono::duration_cast<std::chrono::milliseconds>(
-               std::chrono::system_clock::now().time_since_epoch())
-        .count();
-}
-
 std::string userDataDir() {
     std::string base;
     if (const char *data = std::getenv("XDG_DATA_HOME"); data && *data) {
@@ -96,16 +91,44 @@ std::string userDataDir() {
 }
 
 /// 按顺序找第一个存在的文件：环境变量 > 用户数据目录 > 系统目录。
+/// 用户目录里那份是安装包自带数据的旧副本（版本不比系统目录的新，见 isStaleBundledCopy）时让给系统目录。
 std::string findDataFile(const char *envName, const std::string &fileName) {
     if (const char *env = std::getenv(envName); env && *env) {
         return env;
     }
     std::error_code ec;
     const std::string user = userDataDir();
-    if (!user.empty() && std::filesystem::exists(user + "/" + fileName, ec)) {
-        return user + "/" + fileName;
-    }
     const std::string system = std::string(kSystemDataDir) + "/" + fileName;
+    if (!user.empty() && std::filesystem::exists(user + "/" + fileName, ec)) {
+        const std::string mine = user + "/" + fileName;
+        const std::string mineVersion = archtype::dataFileVersion(mine, fileName);
+        const std::string systemVersion = archtype::dataFileVersion(system, fileName);
+        const auto versionNote = [](const std::string &version) {
+            return version.empty() ? std::string("没有版本标记") : "版本 " + version;
+        };
+        if (archtype::isStaleBundledCopy(mine, system, fileName)) {
+            WLOG_I() << "ArchType: " << mine << "（" << versionNote(mineVersion)
+                     << "）是安装包自带数据的旧副本，改用 " << system << "（" << versionNote(systemVersion)
+                     << "；用户目录那份没在用，可以删掉）";
+            return system;
+        }
+        // 用户自己放的（训练的 words.lm、自己做的词库、自己下的新数据）照旧优先
+        if (archtype::readDataMarker(mine)) {
+            WLOG_I() << "ArchType: 用 " << mine << "（" << versionNote(mineVersion) << "），安装包带的是 "
+                     << versionNote(systemVersion);
+            return mine;
+        }
+        // 没有标记的：比安装包带的旧时提一句
+        std::error_code userEc;
+        std::error_code systemEc;
+        const auto userTime = std::filesystem::last_write_time(mine, userEc);
+        const auto systemTime = std::filesystem::last_write_time(system, systemEc);
+        if (!userEc && !systemEc && systemTime > userTime) {
+            WLOG_W() << "ArchType: 用的是 " << mine << "，它比 " << system
+                     << " 旧；不是你自己放的话，删掉它就会用安装包带的新版";
+        }
+        return mine;
+    }
     if (std::filesystem::exists(system, ec)) {
         return system;
     }
@@ -237,6 +260,37 @@ std::pair<std::uintmax_t, long long> fileStamp(const std::string &path) {
     return {size, static_cast<long long>(time.time_since_epoch().count())};
 }
 
+/// 整句增强模型（字级神经语言模型）用哪一份：环境变量 ARCHTYPE_NNLM 指定了就只用它；否则先用用户导入的
+/// 微信输入法模型（wetype/nlrgpt2_nnlm.bin，腾讯的，不随 ArchType 分发），没有再用 nnlm.bin（安装包自带的
+/// ArchType 自己训的，在系统数据目录；用户目录里放了一份就先用那份）。都没有返回空。
+/// what 写上是哪一份，给日志用。
+std::string findNnlm(std::string &what) {
+    if (const char *env = std::getenv("ARCHTYPE_NNLM"); env && *env) {
+        what = "环境变量 ARCHTYPE_NNLM 指定的模型";
+        return env;
+    }
+    if (std::string wetype = findDataFile("ARCHTYPE_NNLM", "wetype/nlrgpt2_nnlm.bin"); !wetype.empty()) {
+        what = "导入的微信输入法模型";
+        return wetype;
+    }
+    if (std::string own = findDataFile("ARCHTYPE_NNLM", "nnlm.bin"); !own.empty()) {
+        what = own.starts_with(std::string(kSystemDataDir) + "/") ? "ArchType 自带的整句增强模型"
+                                                                    : "用户目录里的 nnlm.bin";
+        return own;
+    }
+    what.clear();
+    return {};
+}
+
+/// 认模型文件换没换：路径 + 大小 + 修改时间；没有模型是空串。
+std::string nnlmStamp(const std::string &path) {
+    if (path.empty()) {
+        return {};
+    }
+    const auto [size, time] = fileStamp(path);
+    return path + ":" + std::to_string(size) + ":" + std::to_string(time);
+}
+
 /// 用这个词库建核心；语言模型坏了（版本不对、文件不完整）不该让输入法整个用不了，
 /// 不带它再试一次（这时 lm 清空）。
 ArchtypeEngineHandle *openCore(const std::string &lexicon, std::string &lm) {
@@ -251,8 +305,37 @@ ArchtypeEngineHandle *openCore(const std::string &lexicon, std::string &lm) {
     return core;
 }
 
+/// 载入失败的文件（还在的话）改名成 <原名>.bad-<时间戳> 留着，免得接下来存的把它盖掉：
+/// 盖上去的只有这次运行里学到的，原来攒的全没了。返回 true 表示可以往 path 存了
+/// （改好名了，或者文件已经不在了）；改不了名返回 false，这次先不存。
+bool setAsideUnreadFile(const std::string &path, const char *what) {
+    std::error_code ec;
+    if (!std::filesystem::exists(std::filesystem::symlink_status(path, ec))) {
+        return true;
+    }
+    char stamp[32] = "0";
+    const std::time_t now = std::time(nullptr);
+    std::tm local{};
+    if (localtime_r(&now, &local)) {
+        std::strftime(stamp, sizeof(stamp), "%Y%m%d-%H%M%S", &local);
+    }
+    std::string backup = path + ".bad-" + stamp;
+    for (int i = 2; std::filesystem::exists(std::filesystem::symlink_status(backup, ec)); ++i) {
+        backup = path + ".bad-" + stamp + "-" + std::to_string(i);
+    }
+    std::filesystem::rename(path, backup, ec);
+    if (ec) {
+        WLOG_W() << "ArchType: " << what << " " << path << " 启动时没读出来，想改名留着也没改成（"
+                 << ec.message() << "），这次先不存，免得把它盖掉";
+        return false;
+    }
+    WLOG_W() << "ArchType: " << what << " " << path << " 启动时没读出来，原文件改名留在 " << backup
+             << "，新学到的另存";
+    return true;
+}
+
 /// 在后台线程里做的事：载入词库、语言模型、各种开关和用户词。
-ArchtypeEngineHandle *loadCore(const std::string &userDict, std::string lexicon) {
+ArchtypeLoaded loadCore(const std::string &userDict, std::string lexicon) {
     if (lexicon.ends_with("/demo_lexicon.tsv")) {
         WLOG_W() << "ArchType: 没找到 lexicon.tsv，用 demo 词典（只有几十个词）";
     }
@@ -279,8 +362,10 @@ ArchtypeEngineHandle *loadCore(const std::string &userDict, std::string lexicon)
         WLOG_E() << "ArchType: 初始化 Rust 核心失败，词典=" << lexicon
                       << "，错误="
                       << (archtype_last_error() ? archtype_last_error() : "unknown");
-        return nullptr;
+        return {};
     }
+    ArchtypeLoaded result;
+    result.core = core;
 
     const std::string english = findDataFile("ARCHTYPE_ENGLISH", "english.txt");
     if (!english.empty()) {
@@ -289,16 +374,19 @@ ArchtypeEngineHandle *loadCore(const std::string &userDict, std::string lexicon)
             WLOG_I() << "ArchType: 载入英文词 " << loaded << " 个";
         }
     }
-    // 微信输入法的字级神经语言模型（不随 ArchType 分发，本机有才用）
-    if (const std::string nnlm = findDataFile("ARCHTYPE_NNLM", "wetype/nlrgpt2_nnlm.bin");
-        !nnlm.empty()) {
+    // 整句增强模型：先用导入的微信输入法模型，没有再用安装包自带的 nnlm.bin（findNnlm）
+    std::string nnlmWhat;
+    if (const std::string nnlm = findNnlm(nnlmWhat); !nnlm.empty()) {
         const int loaded = archtype_engine_load_nnlm(core, nnlm.c_str());
         if (loaded > 0) {
-            WLOG_I() << "ArchType: 载入神经语言模型（" << loaded << " 字）";
+            WLOG_I() << "ArchType: 载入整句增强模型：" << nnlmWhat << " " << nnlm << "（" << loaded << " 字）";
+            result.nnlmStamp = nnlmStamp(nnlm);
         } else {
-            WLOG_W() << "ArchType: 神经语言模型载入失败 " << nnlm << "："
+            WLOG_W() << "ArchType: 整句增强模型载入失败（" << nnlmWhat << "）" << nnlm << "："
                          << (archtype_last_error() ? archtype_last_error() : "unknown");
         }
+    } else {
+        WLOG_I() << "ArchType: 没有整句增强模型（没导入微信输入法的，安装包里也没有 nnlm.bin）";
     }
     // 用户自己训的领域词级模型（可选），和 words.lm 混着用
     if (const std::string domain = findDataFile("ARCHTYPE_DOMAIN_LM", "words.domain.lm");
@@ -310,18 +398,28 @@ ArchtypeEngineHandle *loadCore(const std::string &userDict, std::string lexicon)
                          << (archtype_last_error() ? archtype_last_error() : "unknown");
         }
     }
-    if (!userDict.empty()) {
+    // 文件在、却没读出来（读不了、不是 UTF-8……）：记下来，存之前先把原文件改名留着（maybeSaveUserDict），
+    // 不然下次存盘会用只有这次运行里学到的内容把它盖掉。文件不在是第一次用，不算
+    const auto present = [](const std::string &path) {
+        std::error_code ec;
+        return std::filesystem::exists(std::filesystem::symlink_status(path, ec));
+    };
+    if (!userDict.empty() && present(userDict)) {
         const int loaded = archtype_engine_load_user_dict(core, userDict.c_str());
         if (loaded > 0) {
             WLOG_I() << "ArchType: 载入用户词 " << loaded << " 条";
+        } else if (loaded < 0) {
+            result.userDictUnread = true;
+            WLOG_W() << "ArchType: 用户词库载入失败 " << userDict << "："
+                         << (archtype_last_error() ? archtype_last_error() : "unknown");
         }
     }
-    if (const std::string history = historyPathFor(userDict);
-        !history.empty() && std::filesystem::exists(history)) {
+    if (const std::string history = historyPathFor(userDict); !history.empty() && present(history)) {
         const int loaded = archtype_engine_load_history(core, history.c_str());
         if (loaded >= 0) {
             WLOG_I() << "ArchType: 载入输入习惯 " << loaded << " 条";
         } else {
+            result.historyUnread = true;
             WLOG_W() << "ArchType: 输入习惯载入失败 " << history << "："
                          << (archtype_last_error() ? archtype_last_error() : "unknown");
         }
@@ -331,7 +429,17 @@ ArchtypeEngineHandle *loadCore(const std::string &userDict, std::string lexicon)
                         .count();
     WLOG_I() << "ArchType: 词典 " << lexicon << " 载入完成，用时 " << ms << " ms"
                  << (lm.empty() ? "（没有语言模型）" : "，语言模型 " + lm);
-    return core;
+    return result;
+}
+
+/// 打字途中会话不管的键里，照常交给应用的那些：修饰键和锁定键本身（Shift / Ctrl / Alt / Super、
+/// 大写锁定、数字锁定、AltGr、切换键盘布局的键），还有认不出来的键（没有 keysym）。别的都吃掉。
+bool passesWhileComposing(fcitx::KeySym sym) {
+    const auto value = static_cast<uint32_t>(sym);
+    return sym == FcitxKey_None || sym == FcitxKey_VoidSymbol ||
+           (value >= FcitxKey_Shift_L && value <= FcitxKey_Hyper_R) ||
+           (value >= FcitxKey_ISO_Lock && value <= FcitxKey_ISO_Level5_Lock) ||
+           sym == FcitxKey_Mode_switch || sym == FcitxKey_Num_Lock || sym == FcitxKey_Scroll_Lock;
 }
 
 /// 候选窗里显示的样子：自定义词里的换行、制表符画成 ⏎、⇥，不把候选窗撑乱。
@@ -515,6 +623,10 @@ public:
     uint64_t candGeneration_ = UINT64_MAX;
     /// 开着的工具栏 / 表情面板（ARCHTYPE_TOOL_*），会话管。
     int panel() const { return archtype_session_open_panel(session_); }
+    /// 会话开着上屏以后的联想（没在打字）。
+    bool associating() const { return archtype_session_association(session_) != 0; }
+    /// 候选框上画着联想行：会话关掉了联想、键又交给了应用时要收起来。
+    bool associationShown_ = false;
 
     /// 全部原始输入（包括已经选过词的部分）。
     std::string input() const { return archtype_session_input(session_); }
@@ -541,6 +653,9 @@ public:
     }
     void clear() {
         archtype_session_reset(session_, 0);
+        // 按下了 Shift 还没松开，输入框就被重置、失去焦点（Shift+点鼠标选字、按着 Shift 换窗口）：和按住
+        // Shift 时按了别的键一样报给会话，再松开就不算单按 Shift、不切中英文
+        sessionKey(FcitxKey_VoidSymbol, 0, ARCHTYPE_KEY_ACTION_OBSERVE);
         forgetCandidates();
     }
 
@@ -616,6 +731,62 @@ private:
     bool mirroring_ = false;
 };
 
+/// 工具栏、表情面板、展开面板的列表：候选框上的翻页按钮、滚轮和直接调列表的，都和键盘上按
+/// Page Up / Page Down、上下键一样交给会话，再照会话的光标整个重画（ArchtypeEngine::panelListKey）。
+/// 让 CommonCandidateList 自己翻的话只是换了显示的那一页，会话的光标还在原来那一页，接着按数字、
+/// 空格选的是原来那页的。
+class ArchtypePanelList final : public fcitx::CommonCandidateList {
+public:
+    ArchtypePanelList(ArchtypeEngine *engine, fcitx::InputContext *ic, ArchtypeState *state)
+        : engine_(engine), ic_(ic->watch()), state_(state) {}
+
+    void prev() override { act(FcitxKey_Page_Up); }
+    void next() override { act(FcitxKey_Page_Down); }
+    void prevCandidate() override {
+        // 第一个（展开面板是第一行）上不再往上：展开面板里那是收起
+        if (globalCursorIndex() > 0) {
+            act(FcitxKey_Up);
+        }
+    }
+    void nextCandidate() override { act(FcitxKey_Down); }
+    void setPage(int page) override {
+        // 一屏一屏翻会话。重画会换掉输入框的列表，翻完之前自己先留着
+        const auto keep = shown();
+        if (!keep) {
+            return;
+        }
+        const int steps = page - currentPage();
+        for (int i = 0; i < std::min(std::abs(steps), 1000) && ic_.get(); ++i) {
+            engine_->panelListKey(ic_.get(), state_, steps < 0 ? FcitxKey_Page_Up : FcitxKey_Page_Down);
+        }
+    }
+
+    /// 建列表时照会话的光标摆好（只摆自己）：setGlobalCursorIndex 只设光标、不翻页，先翻到光标那一页，
+    /// 不然光标走到后面几页时看不到。
+    void place(std::size_t page, std::size_t cursor) {
+        CommonCandidateList::setPage(static_cast<int>(page));
+        setGlobalCursorIndex(static_cast<int>(cursor));
+    }
+
+private:
+    /// 输入框现在显示的就是这个列表才返回它（不是的话是一个过时的列表，不能拿它去翻会话）。
+    std::shared_ptr<fcitx::CandidateList> shown() const {
+        auto *ic = ic_.get();
+        auto list = ic ? ic->inputPanel().candidateList() : nullptr;
+        return list.get() == this ? list : nullptr;
+    }
+
+    void act(fcitx::KeySym sym) {
+        if (const auto keep = shown()) {
+            engine_->panelListKey(ic_.get(), state_, sym);
+        }
+    }
+
+    ArchtypeEngine *engine_;
+    fcitx::TrackableObjectReference<fcitx::InputContext> ic_;
+    ArchtypeState *state_;
+};
+
 } // namespace
 
 ArchtypeEngine::ArchtypeEngine(fcitx::Instance *instance)
@@ -635,15 +806,6 @@ ArchtypeEngine::ArchtypeEngine(fcitx::Instance *instance)
     applyConfig();
     setupVoiceOverlay();
     setupControl();
-    const std::string statsDir = userDataDir();
-    if (!statsDir.empty()) {
-        const std::string statsPath = statsDir + "/stats.json";
-        stats_ = archtype_stats_new(statsPath.c_str());
-        if (!stats_) {
-            WLOG_W() << "ArchType: 建不了打字统计 " << statsPath << "："
-                     << (archtype_last_error() ? archtype_last_error() : "unknown");
-        }
-    }
 }
 
 namespace {
@@ -653,6 +815,8 @@ constexpr char kControlInterface[] = "org.archtype.Input1";
 } // namespace
 
 std::string ArchtypeControl::mode() { return engine_->modeName(); }
+
+std::string ArchtypeControl::version() { return ARCHTYPE_ADDON_VERSION; }
 
 std::string ArchtypeControl::setMode(const std::string &mode) {
     if (!engine_->setModeByName(mode)) {
@@ -819,6 +983,23 @@ void ArchtypeEngine::reloadConfig() {
     applyConfig();
     wantedLexicon_ = resolveLexicon(*config_.lexicon);
     maybeSwitchLexicon();
+    // 设置界面刚导入（或删掉）了微信输入法的模型（导入、删除完会让插件重新读设置）：要用的那份变了就载入，
+    // 不用重启 fcitx5。删掉导入的以后换回安装包自带的 nnlm.bin；两份都没有时已经载入的留到下次重启。
+    // 词库还在后台载入时不用管，载入那边会读到新文件
+    if (core_) {
+        std::string what;
+        const std::string nnlm = findNnlm(what);
+        const std::string stamp = nnlmStamp(nnlm);
+        if (!stamp.empty() && stamp != nnlmStamp_) {
+            if (archtype_engine_load_nnlm(core_, nnlm.c_str()) > 0) {
+                WLOG_I() << "ArchType: 换用整句增强模型：" << what << " " << nnlm;
+                nnlmStamp_ = stamp;
+            } else {
+                WLOG_W() << "ArchType: 整句增强模型载入失败（" << what << "）" << nnlm << "："
+                             << (archtype_last_error() ? archtype_last_error() : "unknown");
+            }
+        }
+    }
 }
 
 void ArchtypeEngine::maybeSwitchLexicon() {
@@ -829,10 +1010,11 @@ void ArchtypeEngine::maybeSwitchLexicon() {
         if (loading_.wait_for(std::chrono::seconds(0)) != std::future_status::ready) {
             return; // 还在载入上一个：coreReady() 载完时再来
         }
-        core_ = loading_.get();
+        takeLoaded();
     }
     if (core_) {
-        maybeSaveUserDict(true);
+        // 新引擎载入时要读这两个文件：等写完
+        maybeSaveUserDict(true, true);
     }
     // 候选、编辑区都是旧词库算出来的，先清掉
     instance_->inputContextManager().foreach([this](fcitx::InputContext *ic) {
@@ -903,6 +1085,7 @@ void ArchtypeEngine::applyConfig() {
                                             : ArchtypeSelectKeys::Off;
     }
     pickChar_ = envOr("ARCHTYPE_PICK_CHAR", *config_.pickChar);
+    association_ = envOr("ARCHTYPE_ASSOCIATION", *config_.association);
     dateTime_ = envOr("ARCHTYPE_DATETIME", *config_.dateTime);
     calculator_ = envOr("ARCHTYPE_CALC", *config_.calculator);
     toolbar_ = envOr("ARCHTYPE_TOOLBAR", *config_.toolbar);
@@ -1121,7 +1304,7 @@ bool ArchtypeEngine::canToggleMode() const {
 
 ArchtypeEngine::~ArchtypeEngine() {
     if (loading_.valid()) {
-        core_ = loading_.get();
+        takeLoaded();
     }
     // 会话借用引擎和翻译器：先让它们放开，再释放（ABI.md：要比会话活得久）
     instance_->inputContextManager().foreach([this](fcitx::InputContext *ic) {
@@ -1131,14 +1314,10 @@ ArchtypeEngine::~ArchtypeEngine() {
         return true;
     });
     if (core_) {
-        maybeSaveUserDict(true);
+        // 退出前等后台存盘写完（free 也会等，这里能把失败记进日志）
+        maybeSaveUserDict(true, true);
         archtype_engine_free(core_);
         core_ = nullptr;
-    }
-    flushStats();
-    if (stats_) {
-        archtype_stats_free(stats_);
-        stats_ = nullptr;
     }
     voiceTimer_.reset();
     if (voice_) {
@@ -1152,13 +1331,21 @@ ArchtypeEngine::~ArchtypeEngine() {
     }
 }
 
+void ArchtypeEngine::takeLoaded() {
+    const ArchtypeLoaded loaded = loading_.get();
+    core_ = loaded.core;
+    userDictUnread_ = loaded.userDictUnread;
+    historyUnread_ = loaded.historyUnread;
+    nnlmStamp_ = loaded.nnlmStamp;
+}
+
 bool ArchtypeEngine::coreReady() {
     if (core_) {
         return true;
     }
     if (loading_.valid() &&
         loading_.wait_for(std::chrono::seconds(0)) == std::future_status::ready) {
-        core_ = loading_.get();
+        takeLoaded();
         if (wantedLexicon_ != lexicon_ || fileStamp(lexicon_) != lexiconStamp_) {
             // 载入途中配置换了词库：这个不用了，换新的
             maybeSwitchLexicon();
@@ -1184,39 +1371,57 @@ std::string ArchtypeEngine::userDictPath() const {
     return dir + "/user.tsv";
 }
 
-void ArchtypeEngine::maybeSaveUserDict(bool force) {
-    if (!core_ || (!force && unsavedCommits_ < kSaveEvery) || unsavedCommits_ == 0) {
+void ArchtypeEngine::maybeSaveUserDict(bool force, bool wait) {
+    if (!core_) {
         return;
+    }
+    // 存盘在核心的后台线程上（ABI 1.11）：这里只抄一份数据，不等两次 fsync。上次写失败了现在才知道：
+    // 记下来，这次接着存（写的都是整份，存成了就补上了）
+    if (archtype_engine_save_wait(core_, 0) < 0) {
+        WLOG_W() << "ArchType: 用户词库或输入习惯保存失败："
+                     << (archtype_last_error() ? archtype_last_error() : "unknown");
+        unsavedCommits_ = std::max(unsavedCommits_, kSaveEvery);
     }
     const std::string path = userDictPath();
-    if (path.empty()) {
-        return;
+    if (!path.empty() && unsavedCommits_ > 0 && (force || unsavedCommits_ >= kSaveEvery)) {
+        // 载入时没读出来的文件，第一次存之前先改名留着（只做一次；改不了名就先不存那个文件，下次再试）
+        if (userDictUnread_ && setAsideUnreadFile(path, "用户词库")) {
+            userDictUnread_ = false;
+        }
+        const std::string history = historyPathFor(path);
+        if (historyUnread_ && (history.empty() || setAsideUnreadFile(history, "输入习惯"))) {
+            historyUnread_ = false;
+        }
+        const bool dictQueued =
+            !userDictUnread_ && archtype_engine_save_user_dict_async(core_, path.c_str()) == 0;
+        const bool historyQueued = !historyUnread_ && !history.empty() &&
+                                   archtype_engine_save_history_async(core_, history.c_str()) == 0;
+        if (dictQueued && historyQueued) {
+            unsavedCommits_ = 0;
+        }
     }
-    const bool dictSaved = archtype_engine_save_user_dict(core_, path.c_str()) == 0;
-    const std::string history = historyPathFor(path);
-    const bool historySaved =
-        !history.empty() && archtype_engine_save_history(core_, history.c_str()) == 0;
-    if (!historySaved) {
-        WLOG_W() << "ArchType: 输入习惯保存失败 " << history << "："
+    if (wait && archtype_engine_save_wait(core_, -1) < 0) {
+        WLOG_W() << "ArchType: 用户词库或输入习惯保存失败："
                      << (archtype_last_error() ? archtype_last_error() : "unknown");
     }
-    if (dictSaved && historySaved) {
-        unsavedCommits_ = 0;
+}
+
+bool ArchtypeEngine::countLearned(const ArchtypeFrame *frame) {
+    if (!frame || !frame->learned || !core_) {
+        return false;
     }
+    ++unsavedCommits_;
+    return true;
 }
 
 void ArchtypeEngine::finishCommit(fcitx::InputContext *ic, ArchtypeState *state,
                                  const ArchtypeFrame *frame) {
     // 会话已经清空编辑区、记过选词和上文、补好了空格；这里上屏、攒着存用户词库
     const std::string text = frame && frame->commit ? frame->commit : "";
-    const bool learned = frame && frame->learned;
+    const bool learned = countLearned(frame);
     if (ic && !text.empty()) {
         // 会话已经补好了空格；互译时攒原文也是会话做的，这里上屏的是译文、原文或不在互译时的字
-        recordStats(text, frame);
         ic->commitString(text);
-    }
-    if (learned && core_ && !text.empty()) {
-        ++unsavedCommits_;
     }
     // 会话上屏时已经清好了它上屏的那部分，这里从不 reset 会话（reset 会把还在打的丢掉）：只丢掉抄的候选，
     // 会话还在打字就重新抄（五笔顶字：首选上屏，新打的字母开始下一个码；离开「译」：拼音留着接着打）
@@ -1271,6 +1476,7 @@ void ArchtypeEngine::syncSession(ArchtypeState *state) {
     config.wubi = wubi_ ? 1 : 0;
     config.wubi_auto_commit = *config_.wubiAutoCommit ? 1 : 0;
     config.wubi_hint = *config_.wubiHint ? 1 : 0;
+    config.association = association_ ? 1 : 0;
     archtype_session_configure(state->session_, &config);
 }
 
@@ -1287,7 +1493,8 @@ const ArchtypeFrame *ArchtypeEngine::sessionKey(fcitx::InputContext *ic, Archtyp
         hints |= ARCHTYPE_KEY_HINT_NO_AUTO_SPACE;
     }
     if (ic && !translatable(ic)) {
-        hints |= ARCHTYPE_KEY_HINT_NO_TRANSLATE;
+        // fcitx5 的 Password / Sensitive 是这个输入框自己的能力位，确定是密码框：选的词也不学
+        hints |= ARCHTYPE_KEY_HINT_NO_TRANSLATE | ARCHTYPE_KEY_HINT_NO_LEARN;
     }
     // 读得到周围文字时会话拿光标前的字核对自己记的上文（在应用里删过、改过就作废）
     const auto prev = prevChar(ic);
@@ -1356,19 +1563,27 @@ void ArchtypeEngine::applySessionFrame(fcitx::InputContext *ic, ArchtypeState *s
         maybeSaveUserDict(true);
     }
     if (frame && frame->commit) {
-        // 学没学到词看 frame->learned；选了 emoji 由会话记进最近用过。
-        // 候选位置从 frame->choice_index 拿（1.11），统计用。
+        // 学没学到词看 frame->learned；选了 emoji 由会话记进最近用过
         finishCommit(ic, state, frame);
         updateInputPanel(ic, state);
         return;
     }
+    // 没有要上屏的字也可能学到了：「译」里选的词进了原文，不在 frame->commit 里。也记一次、攒够了存，
+    // 不然只在「译」里打字的话，失去焦点、退出时一条都不存（frame 在下一次调会话前有效，先读出来）
+    const bool learned = countLearned(frame);
     if (!state->composing()) {
         state->forgetCandidates();
         updateInputPanel(ic, state);
+        if (learned) {
+            maybeSaveUserDict(false);
+        }
         return;
     }
     const bool wasExpanded = state->expanded_;
     const bool recopied = syncView(state);
+    if (learned) {
+        maybeSaveUserDict(false);
+    }
     if (recopied || wasExpanded || state->expanded_) {
         updateInputPanel(ic, state);
         return;
@@ -1418,7 +1633,7 @@ void ArchtypeEngine::refreshCandidates(ArchtypeState *state) {
     state->panelPage_ = 0;
     state->panelCursor_ = 0;
     const bool panelOpen = state->panel() != ARCHTYPE_TOOL_NONE;
-    if (!panelOpen && (state->remaining().empty() || !coreReady())) {
+    if (!panelOpen && !state->associating() && (state->remaining().empty() || !coreReady())) {
         return;
     }
     // 候选（引擎候选 + 计算器、emoji 推荐、数字按键 emoji、日期时间，或者开着的工具栏 / 表情面板的条目）由会话算，
@@ -1475,7 +1690,7 @@ void ArchtypeEngine::sampleClipboard(fcitx::InputContext *ic) {
     }
 }
 
-void ArchtypeEngine::fillToolPanel(fcitx::InputPanel &panel, ArchtypeState *state) {
+void ArchtypeEngine::fillToolPanel(fcitx::InputContext *ic, ArchtypeState *state) {
     // 工具栏（菜单、剪贴板、常用语）：竖排一列，一页 9 个，数字键选这一页的
     constexpr std::size_t kToolPageSize = 9;
     const std::size_t n = state->candidates_.size();
@@ -1483,17 +1698,35 @@ void ArchtypeEngine::fillToolPanel(fcitx::InputPanel &panel, ArchtypeState *stat
         return;
     }
     const std::size_t cursor = std::min(state->panelCursor_, n - 1);
-    auto list = std::make_unique<fcitx::CommonCandidateList>();
+    // 翻到哪一页由会话的光标定（鼠标翻页也交给会话），屏幕上的第 N 项就是按 N 选的那一项
+    auto list = std::make_unique<ArchtypePanelList>(this, ic, state);
     list->setLayoutHint(fcitx::CandidateLayoutHint::Vertical);
     list->setPageSize(static_cast<int>(kToolPageSize));
     list->setSelectionKey(fcitx::Key::keyListFromString("1 2 3 4 5 6 7 8 9"));
     for (std::size_t i = 0; i < n; ++i) {
         list->append<ArchtypeToolWord>(this, state, i, state->candidates_[i].text);
     }
-    // setGlobalCursorIndex 只设光标、不翻页：先翻到光标那一页，不然光标走到后面几页时看不到
-    list->setPage(static_cast<int>(cursor / kToolPageSize));
-    list->setGlobalCursorIndex(static_cast<int>(cursor));
-    panel.setCandidateList(std::move(list));
+    list->place(cursor / kToolPageSize, cursor);
+    ic->inputPanel().setCandidateList(std::move(list));
+}
+
+void ArchtypeEngine::panelListKey(fcitx::InputContext *ic, ArchtypeState *state, fcitx::KeySym sym) {
+    if (!ic || !state) {
+        return;
+    }
+    // 面板还开着才交给会话（没开着时这个键在会话里是别的意思）；不管怎样都照会话现在的样子重画
+    ArchtypeSessionView view{};
+    view.size = sizeof(view);
+    const bool expanded = state->composing() &&
+                          archtype_session_view(state->session_, &view) == 0 && view.expanded != 0;
+    if (state->panel() != ARCHTYPE_TOOL_NONE || expanded) {
+        if (const ArchtypeFrame *frame = sessionKey(ic, state, fcitx::Key(sym));
+            frame && frame->handled) {
+            applySessionFrame(ic, state, frame);
+            return;
+        }
+    }
+    updateInputPanel(ic, state);
 }
 
 void ArchtypeEngine::choosePanelItem(fcitx::InputContext *ic, ArchtypeState *state,
@@ -1544,6 +1777,7 @@ void ArchtypeEngine::updateInputPanel(fcitx::InputContext *ic,
                                      ArchtypeState *state) {
     auto &panel = ic->inputPanel();
     panel.reset();
+    state->associationShown_ = false;
 
     if (const int open = state->panel(); open != ARCHTYPE_TOOL_NONE) {
         // 工具栏 / 表情面板：条目、光标、提示、搜索词都是会话给的
@@ -1558,9 +1792,9 @@ void ArchtypeEngine::updateInputPanel(fcitx::InputContext *ic,
         }
         if (!state->candidates_.empty()) {
             if (open == ARCHTYPE_TOOL_EMOJI || open == ARCHTYPE_TOOL_SYMBOLS) {
-                fillGridPanel(panel, state);
+                fillGridPanel(ic, state);
             } else {
-                fillToolPanel(panel, state);
+                fillToolPanel(ic, state);
             }
         }
         ic->updatePreedit();
@@ -1572,6 +1806,9 @@ void ArchtypeEngine::updateInputPanel(fcitx::InputContext *ic,
     if (!state->composing()) {
         if (translate) {
             fillTranslateView(ic, state, panel);
+        } else if (state->associating()) {
+            fillAssociation(panel, state);
+            state->associationShown_ = true;
         }
         ic->updatePreedit();
         ic->updateUserInterface(fcitx::UserInterfaceComponent::InputPanel);
@@ -1597,7 +1834,7 @@ void ArchtypeEngine::updateInputPanel(fcitx::InputContext *ic,
     }
 
     if (state->expanded_ && !state->candidates_.empty()) {
-        fillGridPanel(panel, state);
+        fillGridPanel(ic, state);
     } else if (!state->candidates_.empty()) {
         auto candidates = std::make_unique<ArchtypeSessionList>(state);
         candidates->setLayoutHint(horizontal_
@@ -1624,12 +1861,43 @@ void ArchtypeEngine::updateInputPanel(fcitx::InputContext *ic,
     ic->updateUserInterface(fcitx::UserInterfaceComponent::InputPanel);
 }
 
+/// 上屏以后的联想：会话给的一页，照普通候选框画，上方是会话给的提示。没按 Tab 进联想行时不画光标、
+/// 不画序号（数字不选联想，照常交给应用）；进了以后光标和 1–9 照常。鼠标点了和普通候选一样走 commitCandidate。
+void ArchtypeEngine::fillAssociation(fcitx::InputPanel &panel, ArchtypeState *state) {
+    syncView(state);
+    const ArchtypeFrame *frame = archtype_session_frame(state->session_);
+    if (frame && frame->aux) {
+        panel.setAuxUp(fcitx::Text(frame->aux));
+    }
+    const int cursor = frame ? frame->cand_cursor : -1;
+    const std::size_t n = state->candidates_.size();
+    if (n == 0) {
+        return;
+    }
+    auto list = std::make_unique<fcitx::CommonCandidateList>();
+    list->setLayoutHint(horizontal_ ? fcitx::CandidateLayoutHint::Horizontal
+                                    : fcitx::CandidateLayoutHint::Vertical);
+    list->setPageSize(static_cast<int>(n));
+    if (cursor >= 0) {
+        list->setSelectionKey(fcitx::Key::keyListFromString("1 2 3 4 5 6 7 8 9"));
+    } else {
+        list->setSelectionKey(fcitx::KeyList{});
+    }
+    for (std::size_t i = 0; i < n; ++i) {
+        list->append<ArchtypeCandidateWord>(this, state, i, shownCandidate(state->candidates_[i]));
+    }
+    if (cursor >= 0 && static_cast<std::size_t>(cursor) < n) {
+        list->setGlobalCursorIndex(cursor);
+    }
+    panel.setCandidateList(std::move(list));
+}
+
 /// 展开的候选面板：竖排列表的每一项是一行（kGridCols 个词），一屏 kGridRows 行。
 ///
 /// 照微信输入法的样子：光标所在行标 １–６，光标处的词用〔〕框起来；同一屏里各列
 /// 按最宽的词补齐，这样上下键在同一列里走。classic UI 和 kimpanel 都只会画一行或
 /// 一列，画不了真正的网格，所以用全角字符拼出来。
-void ArchtypeEngine::fillGridPanel(fcitx::InputPanel &panel, ArchtypeState *state) {
+void ArchtypeEngine::fillGridPanel(fcitx::InputContext *ic, ArchtypeState *state) {
     static const char *kLabels[] = {"\uFF11", "\uFF12", "\uFF13",
                                     "\uFF14", "\uFF15", "\uFF16"};
     static_assert(sizeof(kLabels) / sizeof(kLabels[0]) == kGridCols);
@@ -1639,7 +1907,8 @@ void ArchtypeEngine::fillGridPanel(fcitx::InputPanel &panel, ArchtypeState *stat
     const std::size_t rows = (n + kGridCols - 1) / kGridCols;
     const std::size_t cursorRow = state->gridCursor_ / kGridCols;
 
-    auto list = std::make_unique<fcitx::CommonCandidateList>();
+    // 一屏一屏翻也交给会话（ArchtypePanelList）：光标跟着到新的一屏，数字、空格选的是看到的这一屏
+    auto list = std::make_unique<ArchtypePanelList>(this, ic, state);
     list->setLayoutHint(fcitx::CandidateLayoutHint::Vertical);
     list->setPageSize(static_cast<int>(kGridRows));
     list->setSelectionKey(fcitx::KeyList{}); // 不要行号：编号画在行里
@@ -1668,10 +1937,9 @@ void ArchtypeEngine::fillGridPanel(fcitx::InputPanel &panel, ArchtypeState *stat
             list->append<ArchtypeGridRow>(this, state, r, std::move(line));
         }
     }
-    // 先翻到光标所在的那一屏（setGlobalCursorIndex 不翻页），下键走到第 7 行以后才看得到
-    list->setPage(static_cast<int>(cursorRow / kGridRows));
-    list->setGlobalCursorIndex(static_cast<int>(cursorRow));
-    panel.setCandidateList(std::move(list));
+    // 先翻到光标所在的那一屏，下键走到第 7 行以后才看得到
+    list->place(cursorRow / kGridRows, cursorRow);
+    ic->inputPanel().setCandidateList(std::move(list));
 }
 
 void ArchtypeEngine::selectGridRow(fcitx::InputContext *ic, ArchtypeState *state,
@@ -1735,8 +2003,12 @@ void ArchtypeEngine::commitCandidate(fcitx::InputContext *ic,
     if (frame->commit) {
         finishCommit(ic, state, frame);
     } else {
-        // 句首词进了已选栈，剩下的拼音继续选
+        // 句首词进了已选栈，剩下的拼音继续选；「译」里是选的词进了原文（没有要上屏的字，学到了照样记）
+        const bool learned = countLearned(frame);
         refreshCandidates(state);
+        if (learned) {
+            maybeSaveUserDict(false);
+        }
     }
     updateInputPanel(ic, state);
 }
@@ -1758,10 +2030,16 @@ void ArchtypeEngine::keyEvent(const fcitx::InputMethodEntry & /*entry*/,
     auto *state = ic->propertyFor(&factory_);
     const fcitx::Key key = event.key();
     const auto sym = key.sym();
-
-    // 按键热力图：所有按键都经过这里（输入法消费掉的、还给应用的都算），松开也传，
-    // 长按和合成的自动重复由核心去重。密码框在 recordKey 里排除。
-    recordKey(ic, event.origKey(), !event.isRelease());
+    // 联想开着时按了别的键：会话关掉了联想、键交给了应用（没有 frame 要画）时，候选框上的联想也收起来。
+    // 放在最后（各条路都处理完、frame 用完以后）
+    struct AfterKey {
+        std::function<void()> done;
+        ~AfterKey() { done(); }
+    } afterKey{[this, ic, state] {
+        if (state->associationShown_ && !state->associating()) {
+            updateInputPanel(ic, state);
+        }
+    }};
 
     if (voice_ && handleVoiceKey(ic, state, event)) {
         return;
@@ -1865,21 +2143,19 @@ void ArchtypeEngine::keyEvent(const fcitx::InputMethodEntry & /*entry*/,
             updateInputPanel(ic, state);
         }
 
-        // 标点、符号（先上屏候选再上屏标点）也由会话处理了；会话不管的只剩下面这些
-        // 编辑区里光标没法移动，这些键吃掉，免得应用里的光标乱跑
-        if (key.isCursorMove() || sym == FcitxKey_Tab || sym == FcitxKey_Delete) {
+        // 标点、符号（先上屏候选再上屏标点）也由会话处理了。会话不管的键（Home / End / Delete / Tab、
+        // 小键盘的 + - * / .、F1–F12、Insert、不是 ASCII 的键……）都吃掉：编辑区里的字还没上屏，
+        // 这时交给应用，应用里的光标会乱跑，小键盘的 + 排到「你好」前面，F5 把网页刷新掉。
+        // 修饰键、锁定键本身照常交给应用（按住 Ctrl 再按别的键、大写锁定），不然应用里对不上按下和松开
+        if (!passesWhileComposing(sym)) {
             event.filterAndAccept();
-            return;
         }
+        return;
     }
 
     // 没在打字时也交给会话：字母（大写原样保留，Hello、iPhone 要用到）开始编辑区；
     // 标点换成中文标点（半角样式、数字后面的、没有中文写法的 / + 交给应用）；
     // 汉字后面打数字要补空格时会话自己上屏（第5章）
-    // （打字途中的键上面已经交给过会话了，会话不管的交给应用）
-    if (state->composing()) {
-        return;
-    }
     if (const ArchtypeFrame *frame = sessionKey(ic, state, key); frame && frame->handled) {
         applySessionFrame(ic, state, frame);
         event.filterAndAccept();
@@ -1949,9 +2225,11 @@ void ArchtypeEngine::deactivate(const fcitx::InputMethodEntry &entry,
     if (voiceActive() && voiceIc_.get() == event.inputContext()) {
         cancelVoice();
     }
+    // 按住语音键时焦点切走（或者换了输入法）：松开的那一下到不了这里。不清掉的话，回来后第一次按语音键
+    // 会被当成还按着时的自动重复吃掉，没有反应
+    voiceKeyDown_ = false;
     reset(entry, event);
     maybeSaveUserDict(true);
-    flushStats();
 }
 
 void ArchtypeEngine::reset(const fcitx::InputMethodEntry & /*entry*/,
@@ -2037,6 +2315,8 @@ void ArchtypeEngine::followSessionMode(fcitx::InputContext *ic, ArchtypeState *s
     const bool committed = frame->commit != nullptr;
     if (committed) {
         finishCommit(ic, state, frame);
+    } else {
+        countLearned(frame);
     }
     switchMode(ic, state, mode == ARCHTYPE_MODE_ENGLISH, mode == ARCHTYPE_MODE_TRANSLATE, true);
     if (committed || state->composing()) {
@@ -2071,6 +2351,8 @@ void ArchtypeEngine::syncMode(fcitx::InputContext *ic, ArchtypeState *state) {
         if (frame && frame->commit && ic) {
             finishCommit(ic, state, frame);
             updateInputPanel(ic, state);
+        } else {
+            countLearned(frame);
         }
     };
     if (want == ARCHTYPE_MODE_TRANSLATE) {
@@ -2252,6 +2534,19 @@ bool ArchtypeEngine::pollVoice() {
         } else {
             showVoice(ic, "🎙 " + text, {});
         }
+#ifdef ARCHTYPE_CONFIG_TOOL
+        // 没下载模型：提示只有几秒、点不了，直接把设置界面的「语音」页打开（那里有下载按钮）。
+        // 一次运行里只开一次，不想用语音的人误按语音键不会被反复打扰；测试里不开
+        if (static bool opened = false;
+            !opened && archtype_voice_model_state(voice_) == ARCHTYPE_VOICE_MODEL_MISSING &&
+            !std::getenv("ARCHTYPE_NO_UPDATE_CHECK")) {
+            opened = true;
+            std::error_code ec;
+            if (std::filesystem::exists(ARCHTYPE_CONFIG_TOOL, ec)) {
+                fcitx::startProcess({ARCHTYPE_CONFIG_TOOL, "--page", "voice"});
+            }
+        }
+#endif
         // 没下载模型的提示要去设置里操作，多留一会儿让人看清
         voiceErrorUntil_ = fcitx::now(CLOCK_MONOTONIC) +
                            (archtype_voice_model_state(voice_) == ARCHTYPE_VOICE_MODEL_MISSING
@@ -2373,61 +2668,6 @@ void ArchtypeEngine::clearTranslation(ArchtypeState *state) {
     }
 }
 
-void ArchtypeEngine::recordStats(const std::string &text, const ArchtypeFrame *frame) {
-    if (!stats_ || text.empty()) {
-        return;
-    }
-    const std::string src = typingSource();
-    const std::string scheme = shuangpin_ ? typingScheme() : std::string();
-    unsigned candidate = frame ? static_cast<unsigned>(frame->choice_index) : 0;
-    if (src == "translate") {
-        candidate = 0; // 互译上屏的不是候选
-    }
-    archtype_stats_commit(stats_, text.c_str(), src.c_str(),
-                         scheme.empty() ? nullptr : scheme.c_str(),
-                         static_cast<int>(candidate), statsNowMs());
-}
-
-void ArchtypeEngine::recordKey(fcitx::InputContext *ic, const fcitx::Key &key, bool down) {
-    if (!stats_ || !ic) {
-        return;
-    }
-    if (ic->capabilityFlags().test(fcitx::CapabilityFlag::PasswordOrSensitive)) {
-        return;
-    }
-    archtype_stats_key(stats_, 0, static_cast<unsigned>(key.code()), down ? 1 : 0, statsNowMs());
-}
-
-void ArchtypeEngine::flushStats() {
-    if (!stats_) {
-        return;
-    }
-    if (archtype_stats_flush(stats_, statsNowMs()) != 0) {
-        WLOG_W() << "ArchType: 打字统计写入失败："
-                 << (archtype_last_error() ? archtype_last_error() : "unknown");
-    }
-}
-
-std::string ArchtypeEngine::typingSource() const {
-    if (translateMode_) {
-        return "translate";
-    }
-    if (asciiMode_) {
-        return "english";
-    }
-    return shuangpin_ ? "shuangpin" : "quanpin";
-}
-
-std::string ArchtypeEngine::typingScheme() const {
-    std::string id = shuangpinScheme_;
-    for (char &ch : id) {
-        if (ch >= 'A' && ch <= 'Z') {
-            ch = static_cast<char>(ch - 'A' + 'a');
-        }
-    }
-    return id;
-}
-
 uint64_t ArchtypeEngine::nowMs() {
     return static_cast<uint64_t>(fcitx::now(CLOCK_MONOTONIC) / 1000);
 }
@@ -2470,7 +2710,6 @@ uint32_t ArchtypeEngine::tickTranslate() {
     }
     if (frame->commit) {
         // 按过回车，译好了：上屏译文（正在打的拼音留着，不清编辑区）
-        recordStats(frame->commit, frame);
         ic->commitString(frame->commit);
         translateDrawn_.clear();
         updateInputPanel(ic, state);

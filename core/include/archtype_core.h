@@ -52,9 +52,13 @@ int archtype_engine_set_rare_ext_chars(ArchtypeEngineHandle *engine, int on);
  * 载入后输入已知英文词（hello、github）时英文排在前面。返回累计词条数，失败返回 -1。 */
 int archtype_engine_load_english(ArchtypeEngineHandle *engine, const char *path);
 
-/* 载入微信输入法的字级神经语言模型（nlrgpt2_nnlm.bin，不随 ArchType 分发），
+/* 载入字级神经语言模型（微信输入法的 nlrgpt2_nnlm.bin，或 ArchType 自己的），
  * 用来给整句候选重排。返回字表大小，失败返回 -1。 */
 int archtype_engine_load_nnlm(ArchtypeEngineHandle *engine, const char *path);
+
+/* 只检查 path 是不是读得出来的字级神经语言模型（不载入任何引擎）：返回字表大小，读不出来返回 -1
+ * （原因见 archtype_last_error）。设置界面导入微信输入法的模型前用它试解析，不看版本号。（1.11） */
+int archtype_nnlm_check(const char *path);
 
 /* 混上用户自己训的领域词级模型（archtype-lmbuild 生成，和 words.lm 同格式），path 为 NULL/空串时去掉；
  * 再调一次是换掉上一个，不会叠着混。返回 0 成功，-1 失败（原来的不动）。（1.10） */
@@ -168,6 +172,17 @@ int archtype_engine_load_custom_words(ArchtypeEngineHandle *engine, const char *
  * 参与排序，存成 TSV。save 返回 0 成功；load 返回条数，-1 表示出错。 */
 int archtype_engine_save_history(ArchtypeEngineHandle *engine, const char *path);
 int archtype_engine_load_history(ArchtypeEngineHandle *engine, const char *path);
+
+/* 后台存盘（1.11）：上面两个 save 在调用的线程上写完才返回（先写临时文件、刷到盘上再改名，要等两次 fsync），
+ * 别在按键的线程上用。_async 只在锁里抄一份要写的数据就返回，引擎自己的一个线程去写（写法和同步的一样）；
+ * 同一个文件还没开始写时，后来的那份顶掉前面的（连着的几次合并成一次）。返回 0 交出去了，-1 参数不对。
+ * 同步的 save 会先等后台排着的写完，不会被后写的旧数据盖掉。 */
+int archtype_engine_save_user_dict_async(ArchtypeEngineHandle *engine, const char *path);
+int archtype_engine_save_history_async(ArchtypeEngineHandle *engine, const char *path);
+/* 等后台存盘写完（1.11）：timeout_ms 小于 0 一直等，否则最多等这么久（0 只看一眼）。返回 0 都写完了、
+ * 上次调用以后交的都写成了；1 还没写完；-1 上次调用以后有写失败的（原因在 archtype_last_error，只报一次）。
+ * 进程退出、外壳析构、换词库（新引擎要读这些文件）前调一次 -1；archtype_engine_free 也会先写完再释放。 */
+int archtype_engine_save_wait(ArchtypeEngineHandle *engine, int timeout_ms);
 
 /* 输入拼音串；失败返回 NULL。 */
 ArchtypeCandidates *archtype_engine_input(ArchtypeEngineHandle *engine, const char *input);
@@ -393,6 +408,7 @@ typedef struct {
 #define ARCHTYPE_KEY_HINT_PANEL_OPEN (1u << 1)    /* 外壳开着自己的面板（表情面板、工具栏）：按 Shift 不切中英文 */
 #define ARCHTYPE_KEY_HINT_NO_TRANSLATE (1u << 2)  /* 不能翻译的输入框（密码框）：「译」里也照常上屏 */
 #define ARCHTYPE_KEY_HINT_SURROUNDING (1u << 3)   /* 应用告诉了光标周围的文字：prev_char 为 0 是光标前确实没有字 */
+#define ARCHTYPE_KEY_HINT_NO_LEARN (1u << 4)      /* 确定是密码框：选的词也不学（回车上屏的原始字母串本来就不学）（1.11） */
 
 /* 输入模式（1.10 起）。单按 Shift（Shift_L 0xffe1 / Shift_R 0xffe2 的按下、松开都交给会话）
  * 在中 → 英 →（ArchtypeSessionConfig.translate_mode 时）译 → 中 之间切换，frame->mode_changed 为 1；
@@ -458,6 +474,9 @@ typedef struct {
     int wubi_hint;       /* 1.10 起：五笔逐码提示的候选后面显示还要打的码（ArchtypeCandidateInfo.comment），默认 1 */
     int translate_key;   /* 1.10 起：另设了进出「译」的快捷键（ARCHTYPE_KEY_ACTION_TOGGLE_TRANSLATE），
                           * 单按 Shift 只在中 ↔ 英之间切，默认 0 */
+    int association;     /* 1.11 起：上屏以后的联想（选词、整句上屏以后给出一页常跟在后面的词，
+                          * frame->panel 是 ARCHTYPE_PANEL_ASSOCIATION），默认 0：外壳要会画联想才开，
+                          * 设置里 Association 的默认值是开。五笔、「译」、密码框（KEY_HINT_NO_TRANSLATE）不出 */
 } ArchtypeSessionConfig;
 
 /* 一次调用之后外壳要做的事。归会话所有，和里面的字符串一起在同一个会话的下一次调用前有效。
@@ -473,7 +492,9 @@ typedef struct {
                             * 选了五笔却没有码表），没有为 NULL。可以没有候选只有提示 */
     int panel;             /* ARCHTYPE_PANEL_*：0 普通一页、1 展开面板（横排按下键，6 列，一屏 6 行）、
                             * 2 表情面板（1.10 起，同样的网格，preedit 是搜索词）、
-                            * 3 工具栏（1.10 起，竖排一列，一页 9 个）；面板的提示在 aux */
+                            * 3 工具栏（1.10 起，竖排一列，一页 9 个）；面板的提示在 aux；
+                            * 4 联想（1.11 起，没在打字，preedit 是空的；照普通候选框画，提示在 aux，
+                            * 按 Tab 进了联想行时 cand_cursor 是光标，没进是 -1，这时别画序号：数字不选联想） */
     size_t cand_count;     /* 候选框里显示几个（一页，或展开面板的一屏）；用 archtype_session_candidate 取 */
     int cand_cursor;       /* 光标在显示的这些里的位置；-1 不在这一页上（翻页按钮翻走以后） */
     int has_prev, has_next; /* 前面 / 后面还有一页（展开面板是一屏） */
@@ -491,7 +512,6 @@ typedef struct {
     const char *translate_title;  /* 候选框上方：方向标签 +「互译：」 */
     const char *translate_status; /* 候选框下方的一行：出错原因、「翻译中…」、怎么上屏，没有是空串 */
     int translate_done;     /* translate_text 是译完的最终结果 */
-    size_t choice_index;    /* 1.11 起：这次上屏的候选在列表里的位置（1 起）；不是选候选为 0 */
 } ArchtypeFrame;
 
 /* 建会话。engine 可以传 NULL（词库没载入好时也能打字，载入好了用 set_engine 补上）；
@@ -507,8 +527,8 @@ const ArchtypeFrame *archtype_session_frame(ArchtypeSession *session);
 /* 处理一次按键（按下和松开都给）。session 或 key 为 NULL 时返回 NULL。 */
 const ArchtypeFrame *archtype_session_key(ArchtypeSession *session, const ArchtypeKey *key);
 /* 清空编辑区；commit_pending 非 0 时，已选的词 + 原始输入放进 frame->commit（切换输入法、
- * 打字途中切英文时，和回车一样），原始输入也记一次选词。commit_pending 为 0 是放弃（失去焦点、
- * 应用重置了输入框）：打到一半的丢掉，会话记的上文也作废（1.10 起）。 */
+ * 打字途中切英文时，和回车一样），原始字母串不记选词。commit_pending 为 0 是放弃（失去焦点、
+ * 应用重置了输入框）：打到一半的丢掉，会话记的上文也作废（1.10 起），开着的工具栏、表情面板也收起来。 */
 const ArchtypeFrame *archtype_session_reset(ArchtypeSession *session, int commit_pending);
 /* 切换输入模式（1.10 起，ARCHTYPE_MODE_*）：外部命令、设置里的默认模式、外壳全局的模式用。
  * 切到英文时打到一半的（已选的词 + 原始输入）放进 frame->commit。 */
@@ -546,6 +566,7 @@ const ArchtypeFrame *archtype_session_commit_text(ArchtypeSession *session, cons
 #define ARCHTYPE_PANEL_EXPANDED 1
 #define ARCHTYPE_PANEL_EMOJI 2
 #define ARCHTYPE_PANEL_TOOL 3
+#define ARCHTYPE_PANEL_ASSOCIATION 4 /* 1.11 起 */
 #define ARCHTYPE_TOOL_NONE 0
 #define ARCHTYPE_TOOL_MENU 1
 #define ARCHTYPE_TOOL_CLIPBOARD 2
@@ -557,6 +578,10 @@ const ArchtypeFrame *archtype_session_toggle_emoji_panel(ArchtypeSession *sessio
 const ArchtypeFrame *archtype_session_open_tool(ArchtypeSession *session, int tool);
 /* 开着的面板，ARCHTYPE_TOOL_*。 */
 int archtype_session_open_panel(const ArchtypeSession *session);
+/* 联想开着（frame->panel 是 ARCHTYPE_PANEL_ASSOCIATION）返回 1，没有是 0。不改会话，之前拿到的 frame 照样有效：
+ * 外壳没在打字时据此画联想行（候选用 _candidate_total / _candidate_info 或 _candidate 取，鼠标点了用
+ * _choose / _select）。（1.11） */
+int archtype_session_association(const ArchtypeSession *session);
 /* 最近用过的 emoji 存在这个文件（一行一个，进程内所有会话共用，最多 18 个）；NULL 或空串只记在内存里并清空。 */
 void archtype_recent_emoji_path(const char *path);
 /* 最近用过的 emoji，最近的在前；用 archtype_candidates_* 读取并释放。 */
@@ -600,7 +625,6 @@ typedef struct {
     const char *emoji;  /* emoji 本身；不是 emoji 为空串 */
     const char *comment; /* 1.10 起：画在候选后面的小字，不上屏（五笔还要打的码、z 临时拼音反查的五笔码），
                           * 没有为空串 */
-    size_t index;       /* 1.11 起：这个候选在列表里的位置（1 起）；0 表示不知道 */
 } ArchtypeCandidateInfo;
 /* 候选个数。没有引擎、没在打字时为 0。 */
 size_t archtype_session_candidate_total(ArchtypeSession *session);
@@ -621,47 +645,6 @@ typedef struct {
 } ArchtypeSessionView;
 /* 返回 0 成功，-1 参数为 NULL。 */
 int archtype_session_view(ArchtypeSession *session, ArchtypeSessionView *out);
-
-/* ---------------- 打字统计（1.11 起） ----------------
- *
- * 只记本机的聚合计数：每天各类字符数、活跃毫秒、每个键按下的次数、候选位置。
- * 不保存输入内容、按键顺序或上下文。输入法用 archtype_stats_* 记录，设置界面读同一个 JSON 文件。
- *
- * 口径：两次上屏间隔超过 10 秒算休息，不计入活跃时长；速度只算汉字与字母；
- * 长按只算一次；密码框里的按键和上屏不计。统计默认打开，设置界面可以关闭或清空。
- */
-typedef struct ArchtypeStats ArchtypeStats;
-
-/* 创建记录器。path 是统计文件的绝对路径；失败返回 NULL，原因用 archtype_last_error 取。 */
-ArchtypeStats *archtype_stats_new(const char *path);
-void archtype_stats_free(ArchtypeStats *stats);
-
-/* 一次物理按键。platform：0 = X11/fcitx5（code 是 XKB 键码），1 = macOS（NSEvent.keyCode）。
- * down 非 0 表示按下，0 表示松开。返回 0 成功。 */
-int archtype_stats_key(ArchtypeStats *stats, int platform, unsigned int code, int down,
-                      int64_t now_ms);
-
-/* 一次上屏。text 只用来分类（汉字/字母/数字/标点/表情），不落盘。
- * source：quanpin / shuangpin / english / translate；scheme 是双拼方案 id，没有传 NULL/空串。
- * cand_index：候选在列表里的位置（1 起），不是选候选上屏时传 0。返回 0 成功。 */
-int archtype_stats_commit(ArchtypeStats *stats, const char *text, const char *source,
-                         const char *scheme, int cand_index, int64_t now_ms);
-
-/* 把攒着的计数写进文件（失焦、退出时调用）。返回 0 成功，-1 失败。 */
-int archtype_stats_flush(ArchtypeStats *stats, int64_t now_ms);
-
-/* 缓存的开关：1 开，0 关。最多 30 秒重读一次文件。 */
-int archtype_stats_enabled(ArchtypeStats *stats);
-
-/* 设置界面用：清空统计（保留开关，换一个随机代数）。返回 0 成功。 */
-int archtype_stats_clear_file(const char *path, uint64_t generation);
-
-/* 设置界面用：打开或关闭统计。返回 0 成功。 */
-int archtype_stats_set_enabled(const char *path, int enabled);
-
-/* 当前 Unix 毫秒。 */
-int64_t archtype_stats_now_ms(void);
-
 
 #ifdef __cplusplus
 }

@@ -34,6 +34,13 @@ tar --exclude=target --exclude='build*' -cf - \
   tar -xf - -C "$work/source"
 cp "$DATA"/{lexicon.tsv,english.txt,words.lm,LICENSE,SOURCE.txt} "$work/source/dist/data/"
 cp "$DATA"/{wubi86.tsv,WUBI-LICENSE,WUBI-SOURCE.txt,WUBI-AUTHORS} "$work/source/dist/data/"
+if [[ -f "$DATA/DATA-MANIFEST" ]]; then
+  cp "$DATA/DATA-MANIFEST" "$work/source/dist/data/"
+fi
+# 整句增强模型（ArchType 自己训的 nnlm.bin，CC BY-SA 4.0，已在 license 里）：make-data.sh 下载到了才有
+if [[ -f "$DATA/nnlm.bin" ]]; then
+  cp "$DATA/nnlm.bin" "$work/source/dist/data/"
+fi
 if [[ -f "$DATA/VERSION" ]]; then
   cp "$DATA/VERSION" "$work/source/dist/data/"
 fi
@@ -50,10 +57,11 @@ pkgdesc='WeChat-style pinyin input method for fcitx5, with bundled dictionaries 
 arch=('x86_64')
 url='https://github.com/Goway-Hui/ArchType'
 license=('MIT' 'Apache-2.0' 'GPL-3.0-only' 'CC-BY-SA-4.0' 'Unicode-3.0' 'LGPL-3.0-only')
-depends=('fcitx5' 'alsa-lib' 'gcc-libs' 'glibc' 'python')
+# 设置界面（python-gobject、gtk4、libadwaita）和 GTK / Qt 程序里打字要的 fcitx5-gtk、fcitx5-qt 都是硬依赖
+depends=('fcitx5' 'fcitx5-gtk' 'fcitx5-qt' 'alsa-lib' 'gcc-libs' 'glibc' 'python'
+         'python-gobject' 'gtk4' 'libadwaita')
 makedepends=('rust' 'cmake' 'extra-cmake-modules' 'pkgconf')
-optdepends=('python-gobject: settings app' 'gtk4: settings app' 'libadwaita: settings app'
-            'noto-fonts-emoji: color emoji in candidates' 'curl: translate mode')
+optdepends=('noto-fonts-emoji: color emoji in candidates' 'curl: translate mode')
 # makepkg handles ELF stripping and byte-sized .PKGINFO/.MTREE/.BUILDINFO.
 # Avoid a second debug package in the CI release artifacts.
 options=('!debug')
@@ -88,6 +96,14 @@ package() {
     install -Dm755 "target/release/$bin" "$pkgdir/usr/bin/$bin"
   done
   install -m644 dist/data/{lexicon.tsv,english.txt,words.lm,wubi86.tsv} "$pkgdir/usr/share/archtype/"
+  # 数据清单：各数据文件的名字、版本、来源（docs/DATA.md「数据版本标记」）
+  if [[ -f dist/data/DATA-MANIFEST ]]; then
+    install -m644 dist/data/DATA-MANIFEST "$pkgdir/usr/share/archtype/"
+  fi
+  # 整句增强模型：源码包里有才装
+  if [[ -f dist/data/nnlm.bin ]]; then
+    install -m644 dist/data/nnlm.bin "$pkgdir/usr/share/archtype/"
+  fi
   install -Dm644 README.md "$pkgdir/usr/share/doc/archtype/README.md"
   install -Dm644 dist/data/SOURCE.txt "$pkgdir/usr/share/doc/archtype/DATA-SOURCE.txt"
   install -Dm644 dist/data/WUBI-SOURCE.txt "$pkgdir/usr/share/doc/archtype/WUBI-SOURCE.txt"
@@ -104,14 +120,15 @@ cat > "$work/archtype.install" <<'INSTALL'
 post_install() {
   cat <<'EOF'
 ==> ArchType 已安装。
-  把 ArchType 加进 fcitx5 的输入法列表：archtype-config --add-to-group
-  （或 fcitx5-configtool → 添加「ArchType 拼音」）
-  设置界面需要 python-gobject、gtk4、libadwaita，在应用菜单「ArchType 设置」。
-  Arch 上没有 im-config，别照 Ubuntu 教程跑它。
+  用普通用户运行 archtype-config --setup（或打开应用菜单的「ArchType 设置」点第一页的「一键设置」），
+  把 ArchType 加进 fcitx5 的输入法列表，必要时重启 fcitx5。
+  Arch 上没有 im-config，别照 Ubuntu 教程跑它；fcitx5 还没在跑的话，在桌面设置里让它自启动。
 EOF
 }
 post_upgrade() {
-  post_install
+  cat <<'EOF'
+==> ArchType 已更新：重启 fcitx5（或注销重新登录）后生效，ArchType 也会发通知提醒。
+EOF
 }
 INSTALL
 

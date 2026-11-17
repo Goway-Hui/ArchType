@@ -106,6 +106,42 @@ jobs:
           name: pkg-data-wanxiang
           path: dist/pkg
 
+  # 排序评测：用 data 任务的真实数据（rime-ice 词库 + words.lm + english.txt，两个外壳默认设置下的配置，
+  # 不带神经语言模型）跑 tools/eval/ 下的全部用例。回归集 regress.tsv 必须全过；其余各组的 top1
+  # （同音词组还有「通过」）比 tools/eval/baseline.tsv 低超过 0.5 个百分点就失败。汇总表在这次运行的 Summary 页。
+  # 本地跑同一套、改了排序怎么更新基线：tools/eval/README.md。
+  ranking-eval:
+    name: 排序评测（真实词库）
+    needs: data
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - run: rustup toolchain install stable --profile minimal && rustup default stable
+      - uses: Swatinem/rust-cache@v2
+      - uses: actions/download-artifact@v4
+        with:
+          name: data
+          path: dist/data
+      - name: 词库钉在基线记的 rime-ice 提交上
+        # data 任务克隆的是 rime-ice 最新的提交。和基线记的不一样时，用基线那个提交重新生成词库
+        # （words.lm 用 data 任务下载好的，不再下载），免得 rime-ice 一更新、排序没改也比不过基线
+        run: |
+          want=$(awk -F'\t' '$1 == "# 数据" { print $3 }' tools/eval/baseline.tsv)
+          have=$(sed -n 's/^版本：\([0-9a-f]*\).*/\1/p' dist/data/SOURCE.txt)
+          echo "基线的 rime-ice：${want:-没记}，data 任务的：${have:-不知道}"
+          if [ -n "$want" ] && [ "$want" != "$have" ]; then
+            git init -q "$RUNNER_TEMP/rime-ice"
+            git -C "$RUNNER_TEMP/rime-ice" fetch -q --depth 1 https://github.com/iDvel/rime-ice.git "$want"
+            git -C "$RUNNER_TEMP/rime-ice" checkout -q FETCH_HEAD
+            # 评测不载入整句增强模型（eval.sh 只用 lexicon.tsv、words.lm、english.txt），不用再下载 nnlm.bin
+            ARCHTYPE_NO_NNLM=1 ARCHTYPE_LM_FILE=dist/data/words.lm scripts/make-data.sh "$RUNNER_TEMP/rime-ice" dist/eval-data
+            echo "EVAL_DATA=dist/eval-data" >> "$GITHUB_ENV"
+          else
+            echo "EVAL_DATA=dist/data" >> "$GITHUB_ENV"
+          fi
+      - name: 评测（回归集必须全过，其余各组和基线比）
+        run: scripts/eval.sh "$EVAL_DATA"
+
   addon:
     name: 插件 · ${{ matrix.distro }} · ${{ matrix.arch }}
     needs: [data, data-wanxiang]
@@ -184,6 +220,11 @@ jobs:
           test -s /usr/share/archtype/words.lm && test -s /usr/share/archtype/english.txt
           cmp /usr/share/archtype/lexicon.tsv dist/data/lexicon.tsv
           cmp /usr/share/archtype/wubi86.tsv dist/data/wubi86.tsv
+          # 整句增强模型：data 任务下载到了 nnlm.bin 就必须装上、和它一样；微信输入法的模型永远不许带
+          if [ -f dist/data/nnlm.bin ]; then cmp /usr/share/archtype/nnlm.bin dist/data/nnlm.bin; fi
+          if find /usr/share/archtype | grep -Ei 'nlrgpt2|wtlocal|wetype'; then
+            echo "安装包里有不能分发的模型"; exit 1
+          fi
           archtype-check --lexicon /usr/share/archtype/lexicon.tsv --s2t /usr/share/archtype/s2t.tsv
           archtype-show --lexicon /usr/share/archtype/lexicon.tsv nihao | tee /tmp/show.txt
           grep -q '1\.你好' /tmp/show.txt
@@ -213,10 +254,10 @@ jobs:
     steps:
       - name: 系统依赖
         # rust 包自带 cargo；fcitx5 包含 CMake 配置和按键测试用的 testim 插件。
-        # 设置界面也在安装后测试，故装好 GTK / PyGObject（包本身把它们列为可选依赖）。
+        # makepkg 不替我们装依赖：包的 depends（fcitx5-gtk、fcitx5-qt、python-gobject、gtk4、libadwaita）这里都要装上。
         run: |
           pacman -Syu --noconfirm --needed base-devel cmake extra-cmake-modules \
-            fcitx5 alsa-lib rust pkgconf python git ca-certificates util-linux \
+            fcitx5 fcitx5-gtk fcitx5-qt alsa-lib rust pkgconf python git ca-certificates util-linux \
             python-gobject gtk4 libadwaita curl
           useradd --create-home builder
       - uses: actions/checkout@v4
@@ -260,6 +301,11 @@ jobs:
           cmp /usr/share/archtype/words.lm dist/data/words.lm
           cmp /usr/share/archtype/wubi86.tsv dist/data/wubi86.tsv
           test -s /usr/share/licenses/archtype/LICENSE.rime-wubi
+          # 整句增强模型：data 任务下载到了 nnlm.bin 就必须装上、和它一样；微信输入法的模型永远不许带
+          if [ -f dist/data/nnlm.bin ]; then cmp /usr/share/archtype/nnlm.bin dist/data/nnlm.bin; fi
+          if find /usr/share/archtype | grep -Ei 'nlrgpt2|wtlocal|wetype'; then
+            echo "安装包里有不能分发的模型"; exit 1
+          fi
           archtype-check --lexicon /usr/share/archtype/lexicon.tsv --s2t /usr/share/archtype/s2t.tsv
           # 不用 grep -q 直接接在管道后面，避免 pipefail 把上游 SIGPIPE 当成测试失败。
           archtype-show --lexicon /usr/share/archtype/lexicon.tsv nihao | tee dist/show.txt
@@ -337,6 +383,11 @@ jobs:
           cmp /usr/share/archtype/words.lm dist/data/words.lm
           cmp /usr/share/archtype/wubi86.tsv dist/data/wubi86.tsv
           test -s /usr/share/licenses/archtype/LICENSE.rime-wubi
+          # 整句增强模型：data 任务下载到了 nnlm.bin 就必须装上、和它一样；微信输入法的模型永远不许带
+          if [ -f dist/data/nnlm.bin ]; then cmp /usr/share/archtype/nnlm.bin dist/data/nnlm.bin; fi
+          if find /usr/share/archtype | grep -Ei 'nlrgpt2|wtlocal|wetype'; then
+            echo "安装包里有不能分发的模型"; exit 1
+          fi
           archtype-check --lexicon /usr/share/archtype/lexicon.tsv --s2t /usr/share/archtype/s2t.tsv
           # 不用 grep -q 直接接在管道后面，避免 pipefail 把上游 SIGPIPE 当成测试失败。
           archtype-show --lexicon /usr/share/archtype/lexicon.tsv nihao | tee dist/show.txt
@@ -435,6 +486,8 @@ jobs:
       pull-requests: write
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - name: 版本号与 tag 一致
         run: |
           manifest=$(sed -n 's/^version = "\(.*\)"/\1/p' core/Cargo.toml | head -1)
@@ -442,6 +495,18 @@ jobs:
           if [ "$manifest" != "$tag" ]; then
             echo "core/Cargo.toml 的版本是 $manifest，tag 是 $tag；发版前先把 core/Cargo.toml 改成 tag 版本" >&2
             exit 1
+          fi
+      - name: 正式版还是预发布
+        # tag 打在 main 上的提交 → 正式版（成为 Latest，所有人的检查更新和一键安装都会拿到）；
+        # 打在别处（比如 pre-release 分支）→ GitHub 的 pre-release：检查更新和 install.sh 只认 releases/latest，
+        # 不会推给普通用户，要装得写 ARCHTYPE_VERSION。测完转正：合进 main 后
+        # gh release edit <tag> --prerelease=false --latest（release 分支、Nix 词库 PR 这时手动补，见 docs/INSTALL.md）。
+        run: |
+          if git merge-base --is-ancestor "$GITHUB_SHA" origin/main; then
+            echo "PRERELEASE=" >> "$GITHUB_ENV"
+          else
+            echo "PRERELEASE=1" >> "$GITHUB_ENV"
+            echo "::notice title=预发布::$GITHUB_REF_NAME 不在 main 上，发成 pre-release"
           fi
       - uses: actions/download-artifact@v4
         with:
@@ -458,7 +523,10 @@ jobs:
           cat > notes.md <<EOF
           ## 这一版要注意
 
-          - 模糊音：\`yun = yong\` 从「un = ong」挪到了新的「un = iong」一组（默认关）。以前开着「un = ong」、打 \`yong\` 要出「云」的，到设置里再打开「un = iong」。
+          - 升级以后要重启一次输入法才用上新版：设置界面会提醒，点「重启」就行（一键安装脚本也会问）。
+          - 安装包自带整句增强模型 nnlm.bin（8.6 MB，打长句、带上文时首选更准）；以前导入过微信输入法模型的照旧优先用它。
+          - 新功能「联想」默认关：选词上屏以后给出常跟在后面的词，在「ArchType 设置 → 输入」里打开。
+          - 想先试新功能的，在 ArchType 设置的「更新」里打开「Beta 计划」，会收到预发布版的更新。
 
           ## 安装（Ubuntu / Debian、deepin、Arch Linux、Fedora、NixOS）
 
@@ -476,18 +544,29 @@ jobs:
           NixOS（x86_64、aarch64）：flake 输入写 \`github:${GITHUB_REPOSITORY}/release\`（跟正式版）或 \`github:${GITHUB_REPOSITORY}/${GITHUB_REF_NAME}\`（锁这一版），把 \`inputs.archtype.packages.<system>.default\` 加进 \`i18n.inputMethod.fcitx5.addons\`，见[安装说明](https://github.com/${GITHUB_REPOSITORY}/blob/main/docs/INSTALL.md#nixos--nix)。
           完整步骤见 [README](https://github.com/${GITHUB_REPOSITORY}#安装)。
 
+          安装包里的词库来自 [rime-ice](https://github.com/iDvel/rime-ice)（GPL-3.0），词频另用了 [Tatoeba](https://tatoeba.org) 的中文句子（CC BY 2.0 FR）统计，词级语言模型 words.lm 和整句增强模型 nnlm.bin 是 CC BY-SA 4.0；详见安装包里的 DATA-SOURCE.txt。
+          五笔 86 码表 wubi86.tsv 来自 [rime-wubi](https://github.com/rime/rime-wubi)（LGPL-3.0），作者和钉死的提交见随包的 WUBI-AUTHORS、WUBI-SOURCE.txt。
+
           可选词库：\`archtype-data-wanxiang-*.tar.gz\` 是从[万象拼音](https://github.com/amzxyz/rime_wanxiang)（CC BY 4.0）转换的词库，不在安装包里。
           想用的话在「ArchType 设置 → 输入 → 词库」里选「万象拼音」并下载，或运行 \`archtype-config --install-lexicon wanxiang\`；随时可以切回默认的雾凇。
 
           EOF
+          extra=()
+          if [ -n "$PRERELEASE" ]; then
+            extra=(--prerelease --latest=false)
+            { printf '> **预发布，测试用。** 检查更新和一键安装不会装它；要装就在一键命令前加 `ARCHTYPE_VERSION=%s`：\n>\n' "$GITHUB_REF_NAME"
+              printf '> ```bash\n> curl -fsSL https://raw.githubusercontent.com/%s/%s/install.sh | ARCHTYPE_VERSION=%s bash\n> ```\n\n' \
+                "$GITHUB_REPOSITORY" "$GITHUB_SHA" "$GITHUB_REF_NAME"
+              cat notes.md; } > notes.pre && mv notes.pre notes.md
+          fi
           gh release create "$GITHUB_REF_NAME" dist/* \
             --repo "$GITHUB_REPOSITORY" --verify-tag \
             --title "ArchType $GITHUB_REF_NAME" \
-            --notes-file notes.md --generate-notes
+            --notes-file notes.md --generate-notes "${extra[@]}"
       - name: 通知 Telegram 群
         # GITHUB_TOKEN 发的 release 不会触发 telegram-notify.yml，所以在这里直接发。
         # 没配置 TELEGRAM_CHAT_ID 就跳过；发送失败也不算发版失败。
-        if: vars.TELEGRAM_CHAT_ID != ''
+        if: vars.TELEGRAM_CHAT_ID != '' && env.PRERELEASE == ''
         continue-on-error: true
         env:
           TG_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
@@ -522,6 +601,7 @@ jobs:
           echo "release 分支 → $GITHUB_REF_NAME（$sha）"
       - name: Nix 词库跟上这一版
         # 这一版换了词库，就把 nix/package.nix 改好开 PR 到 main（开不了 PR 时退回开 issue），见脚本开头
+        if: env.PRERELEASE == ''
         continue-on-error: true
         env:
           GH_TOKEN: ${{ github.token }}

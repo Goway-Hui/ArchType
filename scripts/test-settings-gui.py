@@ -213,6 +213,21 @@ def run(app):
     dialog("导入自定义词（取消）", win.on_import_words)
     dialog("从文件装词库（取消）", lambda: win.on_lexicon_from_file(None))
 
+    def setup_button():
+        # 测试的会话总线上没有 fcitx5：第一页给「一键设置」；没有插件，也就不提示重启输入法
+        check(pump_until(lambda: win.status_button.get_visible()), "第一页没出「一键设置」按钮")
+        check(win.status_button.get_label() == "一键设置", f"按钮是「{win.status_button.get_label()}」")
+        check(not win.restart_hint_row.get_visible(), "没有插件时不该提示重启输入法")
+    step("第一页：fcitx5 没在跑时给「一键设置」", setup_button)
+    # 要问一句的几步：只打开、点「取消」/「稍后」，不真的重启、不跑 im-config
+    dialog("一键设置：重启并添加（取消）",
+           lambda: (setattr(win, "setup_state", ("restart", None)), win.on_add_to_group(None)), answer=0)
+    dialog("一键设置：切到 fcitx5（取消）",
+           lambda: (setattr(win, "setup_state", ("im-config", "ibus")), win.on_add_to_group(None)), answer=0)
+    dialog("提示重启输入法（取消）", lambda: win.on_restart_hint(None), answer=0)
+    dialog("更新装好后问要不要重启（稍后）",
+           lambda: (setattr(win, "release", {"version": "9.9.9"}), win.ask_restart_after_update()), answer=0)
+
     def export_words():
         # 替身（GTK 4.10 以前）的文件对话框：选好文件点「保存」以后，自定义词写到那个文件里。
         # GTK 自己的选文件窗口换目录、回应「保存」都是异步的，在 CI 上时灵时不灵；这里要测的是

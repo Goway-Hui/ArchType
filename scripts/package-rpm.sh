@@ -42,6 +42,13 @@ cp "$DATA"/{wubi86.tsv,WUBI-LICENSE,WUBI-SOURCE.txt,WUBI-AUTHORS} "$src/dist/dat
 if [[ -f "$DATA/VERSION" ]]; then
   cp "$DATA/VERSION" "$src/dist/data/"
 fi
+if [[ -f "$DATA/DATA-MANIFEST" ]]; then
+  cp "$DATA/DATA-MANIFEST" "$src/dist/data/"
+fi
+# 整句增强模型（ArchType 自己训的 nnlm.bin，CC BY-SA 4.0）：make-data.sh 下载到了才有，没有就不带
+if [[ -f "$DATA/nnlm.bin" ]]; then
+  cp "$DATA/nnlm.bin" "$src/dist/data/"
+fi
 
 # 各部分的许可证（和 deb 包的 copyright 内容一致）
 cat > "$src/packaging/COPYRIGHT" <<'EOF'
@@ -74,6 +81,17 @@ ArchType — https://github.com/Goway-Hui/ArchType
   全文见同目录 LICENSE.rime-wubi（LGPL-3.0 是 GPL-3.0 的附加许可，GPL-3.0 全文见 LICENSE.rime-ice），
   作者见 /usr/share/doc/archtype/WUBI-AUTHORS，来源和钉死的提交见 /usr/share/doc/archtype/WUBI-SOURCE.txt。
 EOF
+if [[ -f "$DATA/nnlm.bin" ]]; then
+  cat >> "$src/packaging/COPYRIGHT" <<'EOF'
+
+/usr/share/archtype/nnlm.bin：
+  ArchType 的整句增强模型（字级神经语言模型，WTNN 格式），由 ArchType 的 tools/nnlm/train.py
+  从 LCCC 语料（thu-coai，MIT，https://huggingface.co/datasets/thu-coai/lccc）和中文维基百科
+  （Wikipedia contributors，CC BY-SA 4.0，https://zh.wikipedia.org/）训练得到。
+  按知识共享 署名-相同方式共享 4.0 国际许可协议授权：
+  https://creativecommons.org/licenses/by-sa/4.0/legalcode
+EOF
+fi
 
 tar -czf "$work/SOURCES/archtype-src.tar.gz" -C "$src" .
 rm -rf "$src"
@@ -101,12 +119,13 @@ BuildRequires:  gcc-c++
 BuildRequires:  fcitx5-devel
 BuildRequires:  alsa-lib-devel
 Requires:       fcitx5
-# 设置界面要 PyGObject + GTK 4 + libadwaita；不装也不影响打字
-Recommends:     python3-gobject
-Recommends:     gtk4
-Recommends:     libadwaita
+# 设置界面要 PyGObject + GTK 4 + libadwaita：缺了的话应用菜单里点「ArchType 设置」没反应，
+# 插件在后台叫的 archtype-config --startup（检查更新、默认主题、提醒重启输入法）也跑不了
+Requires:       python3-gobject
+Requires:       gtk4
+Requires:       libadwaita
 # PyGObject 载入 Gtk 时要 cairo-1.0.typelib，在这个包里
-Recommends:     gobject-introspection
+Requires:       gobject-introspection
 # emoji 候选要彩色 emoji 字体才画得出来
 Recommends:     google-noto-color-emoji-fonts
 # 互译用 curl 发请求
@@ -114,9 +133,9 @@ Recommends:     curl
 
 %description
 拼音输入法：长句、半成品输入、按错键纠错、按用户习惯学习。
-自带雾凇拼音（rime-ice）词库、词级语言模型和五笔 86 码表（rime-wubi）。
-装完运行 archtype-config --add-to-group（或在 fcitx5 配置里添加「ArchType 拼音」），
-设置在应用菜单「ArchType 设置」里。
+自带雾凇拼音（rime-ice）词库、词级语言模型、整句增强模型和五笔 86 码表（rime-wubi）。
+装完运行 archtype-config --setup（或打开应用菜单的「ArchType 设置」点「一键设置」），
+把 ArchType 加进 fcitx5 的输入法列表。
 
 %prep
 %setup -q -c -n archtype-src
@@ -136,6 +155,14 @@ for bin in archtype-check archtype-show; do
 done
 install -m644 dist/data/lexicon.tsv dist/data/english.txt dist/data/words.lm dist/data/wubi86.tsv \
   %{buildroot}%{_datadir}/archtype/
+# 数据清单：各数据文件的名字、版本、来源（docs/DATA.md「数据版本标记」）
+if [ -f dist/data/DATA-MANIFEST ]; then
+  install -m644 dist/data/DATA-MANIFEST %{buildroot}%{_datadir}/archtype/
+fi
+# 整句增强模型：源码包里有才装
+if [ -f dist/data/nnlm.bin ]; then
+  install -m644 dist/data/nnlm.bin %{buildroot}%{_datadir}/archtype/
+fi
 doc=%{buildroot}%{_docdir}/archtype
 install -Dm644 README.md $doc/README.md
 install -Dm644 dist/data/SOURCE.txt $doc/DATA-SOURCE.txt
@@ -166,13 +193,12 @@ install -Dm644 dist/data/WUBI-LICENSE $lic/LICENSE.rime-wubi
 %{_datadir}/gnome-shell/extensions/archtype-theme@goway-hui.github.io/
 %{_datadir}/applications/io.github.GowayHui.ArchType.Config.desktop
 %{_datadir}/icons/hicolor/*/apps/archtype.*
-%{_datadir}/icons/hicolor/*/status/archtype-stats-symbolic.svg
 %{_datadir}/archtype/
 
 %post
 if [ "$1" -eq 1 ]; then
-  echo "ArchType 已安装。把它加进 fcitx5 的输入法列表：archtype-config --add-to-group"
-  echo "（或 fcitx5-configtool → 添加「ArchType 拼音」），然后重启 fcitx5。"
+  echo "ArchType 已安装。用普通用户运行 archtype-config --setup（或打开「ArchType 设置」点第一页的「一键设置」），"
+  echo "它会把 ArchType 加进 fcitx5 的输入法列表，必要时重启 fcitx5。"
 fi
 
 %changelog

@@ -585,8 +585,8 @@ fn traditional_learns_the_lexicon_form() {
         texts(&mut session)
     };
     assert_eq!(shown(&engine)[0], "晚理");
-    {
-        // 一个字一个字选出来（萬、裏），拼成的词马上收进用户词库
+    for _ in 0..2 {
+        // 一个字一个字选出来（萬、裏），第二次这样拼出来就收进用户词库
         let mut session = with_engine_ref(&engine);
         type_keys(&mut session, "wanli");
         choose_text(&mut session, "萬");
@@ -1261,9 +1261,10 @@ fn shuangpin_semicolon_is_a_key_on_odd_count() {
     assert!(!session.composing());
 }
 
-/// 分几次选出来的词，用一次就记住（https://x.com/so1v3/status/2120415675969896729）。
+/// 分几次选出来的词，第二次这样拼出来就记住（https://x.com/so1v3/status/2120415675969896729）。
+/// 以前用一次就收，挑错一个字拼出来的（你好事竣）也成了用户词，所以第一次只记成候选新词。
 #[test]
-fn composed_word_is_learned_after_one_use() {
+fn composed_word_is_learned_on_second_use() {
     let lexicon: Arc<dyn Lexicon> = Arc::new(
         MemoryLexicon::from_tsv_str(concat!(
             "shuang\t双\t9000\n",
@@ -1284,16 +1285,28 @@ fn composed_word_is_learned_after_one_use() {
     let engine: &'static Engine =
         Box::leak(Box::new(Engine::new(lexicon, Arc::new(BigramLm::default()))));
 
+    let compose = |engine: &'static Engine| {
+        let mut session = with(engine);
+        type_keys(&mut session, "shuangpinge");
+        choose_text(&mut session, "霜");
+        choose_text(&mut session, "频");
+        let frame = choose_text(&mut session, "阁");
+        assert_eq!(frame.commit.as_deref(), Some("霜频阁"));
+    };
     let mut session = with(engine);
     type_keys(&mut session, "shuangpinge");
     assert_ne!(texts(&mut session).first().map(String::as_str), Some("霜频阁"));
-    choose_text(&mut session, "霜");
-    choose_text(&mut session, "频");
-    let frame = choose_text(&mut session, "阁");
-    assert_eq!(frame.commit.as_deref(), Some("霜频阁"));
+    compose(engine);
+    assert!(
+        !engine.user_words().iter().any(|(_, w, _)| w == "霜频阁"),
+        "第一次只是候选新词：{:?}",
+        engine.user_words()
+    );
+    assert!(engine.is_new_word("霜频阁"));
+    compose(engine);
     assert!(
         engine.user_words().iter().any(|(_, w, _)| w == "霜频阁"),
-        "选一次就进用户词库：{:?}",
+        "第二次进用户词库：{:?}",
         engine.user_words()
     );
 
@@ -1347,11 +1360,13 @@ fn ctrl(keysym: u32) -> Key {
 #[test]
 fn ctrl_delete_forgets_learned_word() {
     let engine = forget_engine();
-    let mut session = with(engine);
-    type_keys(&mut session, "shuangpinge");
-    choose_text(&mut session, "霜");
-    choose_text(&mut session, "频");
-    choose_text(&mut session, "阁");
+    for _ in 0..2 {
+        let mut session = with(engine);
+        type_keys(&mut session, "shuangpinge");
+        choose_text(&mut session, "霜");
+        choose_text(&mut session, "频");
+        choose_text(&mut session, "阁");
+    }
     assert!(engine.user_words().iter().any(|(_, w, _)| w == "霜频阁"));
 
     let mut again = with(engine);
@@ -2879,4 +2894,533 @@ fn abandoning_never_commits() {
     session.clear_translation();
     assert_eq!(session.translate_source(), "");
     assert_eq!(session.reset(false).commit, None);
+}
+
+/// 失去焦点（`reset(false)`）时工具栏面板跟着收起来：面板已经看不见了，
+/// 回来打的字母不该再进面板。
+#[test]
+fn reset_closes_tool_panel() {
+    use archtype_core::session::Tool;
+    let mut session = with(forget_engine());
+    let frame = session.open_tool(Tool::Menu);
+    assert_eq!(frame.panel, Panel::Tool);
+    let frame = session.reset(false);
+    assert_eq!(frame.panel, Panel::Normal, "失去焦点后面板还开着");
+    let frame = type_keys(&mut session, "shuang");
+    assert_eq!(frame.panel, Panel::Normal);
+    assert_eq!(session.input(), "shuang", "字母进了编辑区，不是面板");
+}
+
+/// 密码框（外壳给 NO_LEARN）里什么都不学：回车上屏的字母串、选的词都不进输入习惯。
+/// 只有 NO_TRANSLATE（macOS 的全局安全输入）时照常学。
+#[test]
+fn password_fields_learn_nothing() {
+    use archtype_core::session::key_hints;
+    let engine = forget_engine();
+    let secret = |key: Key| Key {
+        hints: key_hints::NO_TRANSLATE | key_hints::NO_LEARN,
+        ..key
+    };
+    let secure_input = |key: Key| Key {
+        hints: key_hints::NO_TRANSLATE,
+        ..key
+    };
+    {
+        let mut session = with(engine);
+        for c in "shuang".chars() {
+            session.key(&secure_input(Key::char(c)));
+        }
+        let frame = session.key(&secure_input(Key::press(keysym::SPACE)));
+        assert!(frame.learned, "只有 NO_TRANSLATE 时照常学");
+        engine.forget_word(&frame.commit.expect("空格上屏"));
+    }
+    let mut session = with(engine);
+    for c in "shuang".chars() {
+        session.key(&secret(Key::char(c)));
+    }
+    let frame = session.key(&secret(Key::press(keysym::RETURN)));
+    assert_eq!(frame.commit.as_deref(), Some("shuang"));
+    assert!(!frame.learned);
+    assert_eq!(engine.history_count("shuang"), 0, "密码框里回车上屏的字母串被记下来了");
+    for c in "shuang".chars() {
+        session.key(&secret(Key::char(c)));
+    }
+    let frame = session.key(&secret(Key::press(keysym::SPACE)));
+    let word = frame.commit.expect("空格上屏第一个候选");
+    assert!(!frame.learned);
+    assert_eq!(engine.history_count(&word), 0, "密码框里选的词被记下来了");
+    // 普通输入框照常学选的词
+    let mut session = with(engine);
+    let frame = type_keys(&mut session, "shuang<sp>");
+    assert!(frame.learned);
+    assert_eq!(engine.history_count(&frame.commit.expect("空格上屏")), 1);
+}
+
+/// 回车上屏的原始字母串哪里都不记（终端里的密码提示没有密码框标记）；
+/// 已选的词照常上屏，选它的时候已经记过了。
+#[test]
+fn raw_letters_committed_with_enter_are_not_learned() {
+    let engine = forget_engine();
+    let mut session = with(engine);
+    let frame = type_keys(&mut session, "pinge<cr>");
+    assert_eq!(frame.commit.as_deref(), Some("pinge"));
+    assert!(!frame.learned);
+    assert_eq!(engine.history_count("pinge"), 0);
+    // 先选一个句首词再回车：词照常上屏，剩下的字母不记
+    let mut session = with(engine);
+    type_keys(&mut session, "pinge");
+    let frame = choose_text(&mut session, "拼");
+    assert!(frame.commit.is_none());
+    assert!(frame.learned, "选句首词进已选栈时学了，要告诉外壳有东西要存");
+    let frame = type_keys(&mut session, "<cr>");
+    assert_eq!(frame.commit.as_deref(), Some("拼ge"));
+    assert_eq!(engine.history_count("ge"), 0);
+    assert!(engine.history_count("拼") >= 1);
+}
+
+/// 还没选词的部分有长度上限：超出的键吃掉，不进编辑区，也不漏给应用。
+#[test]
+fn pending_input_is_capped() {
+    use archtype_core::session::MAX_PENDING_BYTES;
+    let mut session = with(forget_engine());
+    for _ in 0..MAX_PENDING_BYTES {
+        assert!(session.key(&Key::char('a')).handled);
+    }
+    assert_eq!(session.input().len(), MAX_PENDING_BYTES);
+    let frame = session.key(&Key::char('a'));
+    assert!(frame.handled, "超出上限的键也是会话的，不交给应用");
+    assert_eq!(session.input().len(), MAX_PENDING_BYTES);
+    // 退格以后还能接着打
+    type_keys(&mut session, "<bs>b");
+    assert!(session.input().ends_with('b'));
+    assert_eq!(session.input().len(), MAX_PENDING_BYTES);
+}
+
+// ---- 撤销学习 ----
+
+/// 选句首词就记了一次选词；以前退格把它退回编辑区、Esc 放弃都不回退，选三次再撤销也成了用户词。
+#[test]
+fn undoing_a_head_word_unlearns_it() {
+    let engine = engine();
+    for round in 0..3 {
+        let mut session = with(engine);
+        type_keys(&mut session, "nihaozhongguo");
+        choose_text(&mut session, "你好");
+        assert_eq!(engine.history_count("你好"), 1, "第 {round} 次：选了先记着");
+        let frame = type_keys(&mut session, "<bs>");
+        assert_eq!(frame.preedit, "ni'hao'zhong'guo");
+        assert_eq!(engine.history_count("你好"), 0, "第 {round} 次：退回编辑区就不算");
+    }
+    assert!(engine.user_words().is_empty(), "{:?}", engine.user_words());
+
+    // Esc 放弃、失去焦点（reset(false)）、删光拼音：选过的句首词都退回去
+    let mut session = with(engine);
+    type_keys(&mut session, "nihaozhongguo");
+    choose_text(&mut session, "你好");
+    type_keys(&mut session, "<esc>");
+    assert_eq!(engine.history_count("你好"), 0, "Esc");
+    type_keys(&mut session, "nihaozhongguo");
+    choose_text(&mut session, "你好");
+    session.reset(false);
+    assert_eq!(engine.history_count("你好"), 0, "失去焦点");
+    // 退回来再选：退掉的那次不算，重选的、上屏的算
+    let many = many_engine();
+    let mut other = with(many);
+    type_keys(&mut other, "nihao");
+    choose_text(&mut other, "你");
+    type_keys(&mut other, "<bs>");
+    choose_text(&mut other, "你");
+    assert_eq!(choose_text(&mut other, "好").commit.as_deref(), Some("你好"));
+    assert_eq!(many.history_count("你"), 1);
+
+    // 上屏了就算数：已选的词、整句都记
+    type_keys(&mut session, "nihaozhongguo");
+    choose_text(&mut session, "你好");
+    assert_eq!(choose_text(&mut session, "中国").commit.as_deref(), Some("你好中国"));
+    assert_eq!(engine.history_count("你好"), 1);
+    assert_eq!(engine.history_count("中国"), 1);
+}
+
+/// 上屏后紧接着按退格（编辑区空着，退格交给应用删字）：刚才那次上屏学到的退回去，
+/// 句首词、整句、拼成的词一起。只退最近一次，按过别的键、又上屏了别的就不退。
+#[test]
+fn backspace_right_after_commit_unlearns_it() {
+    let engine = engine();
+    let mut session = with(engine);
+    type_keys(&mut session, "nihaozhongguo");
+    choose_text(&mut session, "你好");
+    let frame = choose_text(&mut session, "中国");
+    assert_eq!(frame.commit.as_deref(), Some("你好中国"));
+    assert!(frame.learned);
+    assert_eq!(engine.history_count("你好中国"), 1);
+    let frame = type_keys(&mut session, "<bs>");
+    assert!(!frame.handled, "退格照样交给应用删字");
+    assert_eq!(engine.history_count("你好"), 0);
+    assert_eq!(engine.history_count("中国"), 0);
+    assert_eq!(engine.history_count("你好中国"), 0);
+    // 只退最近一次，之前的不动
+    type_keys(&mut session, "kaixin<sp>");
+    type_keys(&mut session, "kaixin<sp>");
+    assert_eq!(engine.history_count("开心"), 2);
+    type_keys(&mut session, "<bs><bs>");
+    assert_eq!(engine.history_count("开心"), 1, "只退最后那一次");
+
+    // 上屏以后按了别的键：不退
+    type_keys(&mut session, "kaixin<sp>");
+    assert_eq!(engine.history_count("开心"), 2);
+    session.key(&Key::press(keysym::LEFT));
+    type_keys(&mut session, "<bs>");
+    assert_eq!(engine.history_count("开心"), 2, "方向键以后的退格不算");
+    // 单按修饰键不算别的键（松开也不算，type_keys 每个键都松开）
+    type_keys(&mut session, "kaixin<sp>");
+    assert_eq!(engine.history_count("开心"), 3);
+    session.key(&Key::press(0xffe3)); // Control_L 按下
+    type_keys(&mut session, "<bs>");
+    assert_eq!(engine.history_count("开心"), 2);
+
+    // 后面又上屏了标点：退格删的是标点
+    type_keys(&mut session, "kaixin,");
+    assert_eq!(engine.history_count("开心"), 3);
+    type_keys(&mut session, "<bs>");
+    assert_eq!(engine.history_count("开心"), 3);
+
+    // Ctrl+退格（删一个词）不算
+    type_keys(&mut session, "kaixin<sp>");
+    session.key(&Key {
+        modifiers: modifier::CTRL,
+        ..Key::press(keysym::BACKSPACE)
+    });
+    assert_eq!(engine.history_count("开心"), 4);
+
+    // 回车原样上屏的字母本来就不学；紧接着退格也不会退掉别的（前面那次「开心」还在）
+    type_keys(&mut session, "kaixin<cr>");
+    assert_eq!(engine.history_count("kaixin"), 0);
+    type_keys(&mut session, "<bs>");
+    assert_eq!(engine.history_count("开心"), 4);
+}
+
+/// 分几次拼出来的词第二次本来要收进用户词库：紧接着退格，收的词、候选新词都回到之前。
+#[test]
+fn backspace_after_composing_twice_unlearns_the_new_word() {
+    let engine = forget_engine();
+    let compose = |session: &mut Session<'static>| {
+        type_keys(session, "shuangpinge");
+        choose_text(session, "霜");
+        choose_text(session, "频");
+        choose_text(session, "阁").commit
+    };
+    let mut session = with(engine);
+    assert_eq!(compose(&mut session).as_deref(), Some("霜频阁"));
+    assert!(engine.is_new_word("霜频阁"));
+    type_keys(&mut session, "<bs>");
+    assert!(!engine.is_new_word("霜频阁"), "第一次也退掉");
+    compose(&mut session);
+    compose(&mut session);
+    assert!(engine.user_words().iter().any(|(_, w, _)| w == "霜频阁"));
+    type_keys(&mut session, "<bs>");
+    assert!(engine.user_words().is_empty(), "{:?}", engine.user_words());
+    assert!(engine.is_new_word("霜频阁"), "回到第一次以后的样子");
+}
+
+// ---- 上屏以后的联想 ----
+
+/// 词级模型里「你好」后面常跟「世界」「吗」，还有标点、单个字母、「你好」本身（这些不该出来）。
+fn association_engine() -> &'static Engine {
+    let mut lm = BigramLm::new().with_backoff(0.001);
+    for word in ["你好", "世界", "吗", "和平", "中国"] {
+        lm.add_unigram(word, 10.0);
+    }
+    lm.add_bigram("你好", "世界", 5.0);
+    lm.add_bigram("你好", "，", 4.0);
+    lm.add_bigram("你好", "a", 3.0);
+    lm.add_bigram("你好", "你好", 2.0);
+    lm.add_bigram("你好", "吗", 1.0);
+    lm.add_bigram("世界", "和平", 3.0);
+    let lexicon: Arc<dyn Lexicon> = Arc::new(
+        MemoryLexicon::from_tsv_str(
+            "ni hao\t你好\t9000\nshi jie\t世界\t9000\nma\t吗\t9000\nhe ping\t和平\t9000\nzhong guo\t中国\t9000\n",
+        )
+        .unwrap(),
+    );
+    Box::leak(Box::new(Engine::new(lexicon, Arc::new(lm))))
+}
+
+fn associating(engine: &'static Engine) -> Session<'static> {
+    let mut session = with(engine);
+    session.configure(Config {
+        association: true,
+        ..Config::default()
+    });
+    session
+}
+
+fn shown_texts_of(session: &mut Session) -> Vec<String> {
+    session.shown().iter().map(|c| c.text.clone()).collect()
+}
+
+#[test]
+fn association_after_choosing_a_word() {
+    let engine = association_engine();
+    let mut session = associating(engine);
+    let frame = type_keys(&mut session, "nihao<sp>");
+    assert_eq!(frame.commit.as_deref(), Some("你好"));
+    assert_eq!(frame.panel, Panel::Association);
+    assert_eq!(frame.aux, "联想：Tab 选词");
+    assert_eq!(frame.cand_cursor, None, "没进联想行：不画光标");
+    assert!(frame.preedit.is_empty());
+    assert!(!session.composing());
+    assert!(session.association_open());
+    assert_eq!(shown_texts_of(&mut session), ["世界", "吗"], "标点、单个字母、刚上屏的不要");
+
+    // 设置关着（默认）不出
+    let mut session = with(engine);
+    let frame = type_keys(&mut session, "nihao<sp>");
+    assert_eq!(frame.panel, Panel::Normal);
+    assert_eq!(frame.cand_count, 0);
+}
+
+/// 联想出来以后接着打拼音、数字、标点，按空格、回车、退格、方向键：全照原来的规则，联想关掉。
+#[test]
+fn association_never_takes_ordinary_keys() {
+    let engine = association_engine();
+    let fresh_assoc = || {
+        let mut session = associating(engine);
+        type_keys(&mut session, "nihao<sp>");
+        assert!(session.association_open());
+        session
+    };
+    // 字母：开始新的输入
+    let mut session = fresh_assoc();
+    let frame = type_keys(&mut session, "shijie");
+    assert_eq!(frame.preedit, "shi'jie");
+    assert_eq!(frame.panel, Panel::Normal);
+    assert!(!session.association_open());
+    assert_eq!(type_keys(&mut session, "<sp>").commit.as_deref(), Some("世界"));
+
+    // 数字不选联想：交给应用（中文后面接着打数字）
+    let mut session = fresh_assoc();
+    let frame = type_keys(&mut session, "1");
+    assert!(!frame.handled);
+    assert_eq!(frame.commit, None);
+    assert!(!session.association_open());
+    // 汉字后面补空格时会话自己连空格上屏（AutoSpaceDigits），也不选联想
+    let mut session = associating(engine);
+    session.configure(Config {
+        association: true,
+        auto_space: archtype_core::autospace::DIGITS,
+        ..Config::default()
+    });
+    type_keys(&mut session, "nihao<sp>");
+    let frame = session.key(&Key {
+        prev_char: Some('好'),
+        ..Key::char('2')
+    });
+    assert_eq!(frame.commit.as_deref(), Some(" 2"));
+
+    // 空格、回车、方向键：交给应用
+    for key in [keysym::SPACE, keysym::RETURN, keysym::LEFT, keysym::DOWN] {
+        let mut session = fresh_assoc();
+        let frame = session.key(&Key::press(key));
+        assert!(!frame.handled, "{key:#x}");
+        assert_eq!(frame.commit, None);
+        assert_eq!(frame.panel, Panel::Normal);
+        assert!(!session.association_open());
+    }
+
+    // 标点：照常换成中文标点上屏
+    let mut session = fresh_assoc();
+    let frame = type_keys(&mut session, ",");
+    assert_eq!(frame.commit.as_deref(), Some("，"));
+    assert!(!session.association_open());
+
+    // 退格：交给应用，刚才那次上屏学到的也退回去
+    let mut session = fresh_assoc();
+    let before = engine.history_count("你好");
+    let frame = type_keys(&mut session, "<bs>");
+    assert!(!frame.handled);
+    assert!(!session.association_open());
+    assert_eq!(engine.history_count("你好"), before - 1);
+
+    // Ctrl+C 这类快捷键：交给应用
+    let mut session = fresh_assoc();
+    let frame = session.key(&Key {
+        modifiers: modifier::CTRL,
+        ..Key::char('c')
+    });
+    assert!(!frame.handled);
+    assert!(!session.association_open());
+
+    // 单按修饰键、松开不关联想；大写字母（Shift+字母）照常开始输入
+    let mut session = fresh_assoc();
+    session.key(&Key::press(keysym::SHIFT_L));
+    assert!(session.association_open());
+    let frame = type_keys(&mut session, "A");
+    assert_eq!(frame.preedit, "A");
+    assert!(!session.association_open());
+
+    // Esc：关掉联想（吃掉）
+    let mut session = fresh_assoc();
+    let frame = type_keys(&mut session, "<esc>");
+    assert!(frame.handled);
+    assert!(!session.association_open());
+    assert_eq!(frame.panel, Panel::Normal);
+}
+
+/// Tab 进联想行：空格、回车、数字选，方向键、Tab 移光标，Esc 退出；选了上屏、学习，接着联想。
+#[test]
+fn tab_enters_the_association_row() {
+    let engine = association_engine();
+    let mut session = associating(engine);
+    type_keys(&mut session, "nihao<sp>");
+    let frame = type_keys(&mut session, "<tab>");
+    assert!(frame.handled);
+    assert_eq!(frame.panel, Panel::Association);
+    assert_eq!(frame.cand_cursor, Some(0));
+    assert_eq!(frame.aux, "联想：空格或数字上屏，Esc 退出");
+    assert_eq!(type_keys(&mut session, "<right>").cand_cursor, Some(1));
+    assert_eq!(type_keys(&mut session, "<right>").cand_cursor, Some(1), "到头停住");
+    assert_eq!(type_keys(&mut session, "<left>").cand_cursor, Some(0));
+    assert_eq!(type_keys(&mut session, "<tab>").cand_cursor, Some(1), "Tab 往后走");
+    assert_eq!(type_keys(&mut session, "<left>").cand_cursor, Some(0));
+    let frame = type_keys(&mut session, "<sp>");
+    assert_eq!(frame.commit.as_deref(), Some("世界"));
+    assert!(frame.learned);
+    assert_eq!(engine.history_count("世界"), 1, "和普通选词一样记一次");
+    // 接着联想（世界 -> 和平），回到没进联想行的样子
+    assert_eq!(frame.panel, Panel::Association);
+    assert_eq!(frame.cand_cursor, None);
+    assert_eq!(shown_texts_of(&mut session), ["和平"]);
+    // 退格：只退刚才选的联想
+    type_keys(&mut session, "<bs>");
+    assert_eq!(engine.history_count("世界"), 0);
+    assert_eq!(engine.history_count("你好"), 1);
+
+    // 数字选第几个（这一页没这么多也吃掉）；回车也选。选过的搭配以后排在前面
+    let engine = association_engine();
+    let mut session = associating(engine);
+    type_keys(&mut session, "nihao<sp><tab>");
+    let frame = type_keys(&mut session, "5");
+    assert!(frame.handled && frame.commit.is_none());
+    assert_eq!(type_keys(&mut session, "2").commit.as_deref(), Some("吗"));
+    let mut session = associating(engine);
+    type_keys(&mut session, "nihao<sp><tab>");
+    assert_eq!(shown_texts_of(&mut session), ["吗", "世界"], "学到的搭配在前");
+    assert_eq!(type_keys(&mut session, "<cr>").commit.as_deref(), Some("吗"));
+
+    // Esc 退出联想；字母退出联想、开始新的输入；退格退出联想、交给应用
+    let mut session = associating(engine);
+    type_keys(&mut session, "nihao<sp><tab>");
+    let frame = type_keys(&mut session, "<esc>");
+    assert!(frame.handled && !session.association_open());
+    let mut session = associating(engine);
+    type_keys(&mut session, "nihao<sp><tab>");
+    assert_eq!(type_keys(&mut session, "ma").preedit, "ma");
+    let mut session = associating(engine);
+    type_keys(&mut session, "nihao<sp><tab>");
+    let before = engine.history_count("你好");
+    assert!(!type_keys(&mut session, "<bs>").handled);
+    assert!(!session.association_open());
+    assert_eq!(engine.history_count("你好"), before, "按过 Tab 再退格不算紧接着，不退");
+}
+
+/// 鼠标点联想（没进联想行也能点）。
+#[test]
+fn clicking_an_association() {
+    let engine = association_engine();
+    let mut session = associating(engine);
+    type_keys(&mut session, "nihao<sp>");
+    let frame = session.select(1);
+    assert!(frame.handled);
+    assert_eq!(frame.commit.as_deref(), Some("吗"));
+    let mut session = associating(association_engine());
+    type_keys(&mut session, "nihao<sp>");
+    assert_eq!(session.choose(0).commit.as_deref(), Some("世界"));
+    assert!(session.association_open(), "接着联想");
+    assert!(!session.choose(5).handled, "序号不对");
+    assert!(session.association_open(), "序号不对时联想留着");
+}
+
+/// 学到的搭配也拿来联想（没有词级模型时只有它）。
+#[test]
+fn association_uses_learned_pairs() {
+    let engine = engine();
+    let mut session = with(engine);
+    session.configure(Config {
+        association: true,
+        ..Config::default()
+    });
+    let frame = type_keys(&mut session, "nihao<sp>");
+    assert_eq!(frame.panel, Panel::Normal, "没学过、没有模型：没有联想");
+    type_keys(&mut session, "zhongguo<sp>");
+    let frame = type_keys(&mut session, "nihao<sp>");
+    assert_eq!(frame.panel, Panel::Association);
+    assert_eq!(shown_texts_of(&mut session), ["中国"]);
+}
+
+/// 不出联想的时候：原样上屏的字母、emoji、计算结果；五笔、「译」、密码框、英文；失去焦点、切模式、开面板时关掉。
+#[test]
+fn when_there_is_no_association() {
+    use archtype_core::session::{key_hints, Mode};
+    let engine = association_engine();
+    // 回车上屏的字母
+    let mut session = associating(engine);
+    assert_eq!(type_keys(&mut session, "nihao<cr>").panel, Panel::Normal);
+    // 打字途中按标点：先上屏候选再上屏标点，后面接的是标点，不联想
+    let mut session = associating(engine);
+    let frame = type_keys(&mut session, "nihao,");
+    assert_eq!(frame.commit.as_deref(), Some("你好，"));
+    assert!(!session.association_open());
+    // 密码框
+    let mut session = associating(engine);
+    type_keys(&mut session, "nihao");
+    let frame = session.key(&Key {
+        hints: key_hints::NO_TRANSLATE,
+        ..Key::press(keysym::SPACE)
+    });
+    assert_eq!(frame.commit.as_deref(), Some("你好"));
+    assert!(!session.association_open());
+    // 五笔
+    let mut session = wubi_with(
+        association_engine_with_wubi(),
+        Config {
+            association: true,
+            ..wubi_config()
+        },
+    );
+    type_keys(&mut session, "wq<sp>");
+    assert!(!session.association_open());
+    // 「译」
+    let t: &'static FakeTranslator = Box::leak(Box::default());
+    let mut session = associating(engine);
+    session.set_translator(Some(t));
+    session.set_mode(Mode::Translate);
+    type_keys(&mut session, "nihao<sp>");
+    assert!(!session.association_open());
+    // 失去焦点、切英文、开工具栏 / 表情面板时关掉
+    let mut session = associating(engine);
+    type_keys(&mut session, "nihao<sp>");
+    assert_eq!(session.reset(false).panel, Panel::Normal);
+    assert!(!session.association_open());
+    type_keys(&mut session, "nihao<sp>");
+    let frame = session.set_mode(Mode::English);
+    assert_eq!(frame.panel, Panel::Normal);
+    type_keys(&mut session, "<esc>");
+    session.set_mode(Mode::Chinese);
+    type_keys(&mut session, "nihao<sp>");
+    assert!(session.association_open());
+    let frame = session.toggle_emoji_panel();
+    assert_eq!(frame.panel, Panel::Emoji);
+    assert!(!session.association_open());
+    // 设置关掉
+    let mut session = associating(engine);
+    type_keys(&mut session, "nihao<sp>");
+    session.configure(Config::default());
+    assert!(!session.association_open());
+}
+
+/// 五笔码表 + 联想用的词级模型（五笔下不该出联想）。
+fn association_engine_with_wubi() -> &'static Engine {
+    let engine = association_engine();
+    engine.set_wubi(wubi_table());
+    engine
 }

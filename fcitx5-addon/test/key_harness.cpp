@@ -22,6 +22,7 @@
 #include <iterator>
 
 #include "clipboard_copy.h"
+#include "data_files.h"
 #include <fcitx/addonmanager.h>
 #include <fcitx/candidatelist.h>
 #include <fcitx/inputmethodentry.h>
@@ -323,6 +324,10 @@ void runCases(Instance &instance) {
         check(took && preedit(ic.get()) == "ka" && ic->committed.empty() && ic->passed.empty() &&
                   !after.empty(),
               "Ctrl+Delete 吃掉，编辑区不动：" + preedit(ic.get()) + " / " + join(after));
+        // 存盘在核心的后台线程上（按键的线程不等磁盘）：等它写出来，最多 3 秒
+        for (int i = 0; dictPath && i < 300 && !std::filesystem::exists(dictPath, ec); ++i) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(10));
+        }
         std::ifstream in(dictPath ? dictPath : "");
         const std::string dict((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
         check(dictPath && in.is_open() && dict.find("\t" + word + "\t") == std::string::npos,
@@ -332,6 +337,188 @@ void runCases(Instance &instance) {
     }
     fresh(ic.get());
     check(!send(ic.get(), Key(FcitxKey_Delete, KeyState::Ctrl)), "没在打字时 Ctrl+Delete 交给应用");
+
+    // 打字途中会话不管的键（小键盘的 + - * / .、F 键、Insert、不是 ASCII 的键……）都吃掉：
+    // 交给应用的话，小键盘的 + 先到应用、上屏后成了「+你好」，F5 把网页刷新掉
+    fresh(ic.get());
+    type(ic.get(), "nihao");
+    {
+        const std::string before = preedit(ic.get());
+        const auto candidates = page(ic.get());
+        std::string leaked;
+        for (const KeySym sym :
+             {FcitxKey_KP_Add, FcitxKey_KP_Subtract, FcitxKey_KP_Multiply, FcitxKey_KP_Divide,
+              FcitxKey_KP_Decimal, FcitxKey_F1, FcitxKey_F5, FcitxKey_F12, FcitxKey_Insert,
+              FcitxKey_Menu, FcitxKey_Pause, FcitxKey_Home, FcitxKey_Delete, FcitxKey_eacute,
+              FcitxKey_Cyrillic_a, FcitxKey_dead_acute}) {
+            if (!send(ic.get(), Key(sym))) {
+                leaked += Key(sym).toString() + " ";
+            }
+        }
+        // Shift 加上这些键也一样（Shift+F10 是右键菜单、Shift+Insert 是粘贴）
+        for (const KeySym sym : {FcitxKey_F10, FcitxKey_Insert, FcitxKey_KP_Add}) {
+            if (!send(ic.get(), Key(sym, KeyState::Shift))) {
+                leaked += Key(sym, KeyState::Shift).toString() + " ";
+            }
+        }
+        check(leaked.empty(), "打字途中会话不管的键都吃掉，漏给应用的：" + leaked);
+        check(preedit(ic.get()) == before && page(ic.get()) == candidates && ic->committed.empty() &&
+                  ic->passed.empty(),
+              "吃掉以后编辑区和候选不动：" + preedit(ic.get()) + " 上屏「" + ic->committed + "」");
+        // 修饰键、锁定键本身，松开的键，带 Ctrl / Alt / Super 的组合键照常交给应用
+        std::string eaten;
+        for (const KeySym sym : {FcitxKey_Control_L, FcitxKey_Alt_L, FcitxKey_Super_L,
+                                 FcitxKey_Caps_Lock, FcitxKey_Num_Lock, FcitxKey_ISO_Level3_Shift}) {
+            KeyEvent press(ic.get(), Key(sym), false);
+            if (ic->keyEvent(press)) {
+                eaten += Key(sym).toString() + " ";
+            }
+        }
+        for (const KeySym sym : {FcitxKey_F5, FcitxKey_KP_Add, FcitxKey_Control_L}) {
+            KeyEvent release(ic.get(), Key(sym), true);
+            if (ic->keyEvent(release)) {
+                eaten += Key(sym).toString() + "(松开) ";
+            }
+        }
+        for (const Key &key : {Key(FcitxKey_c, KeyState::Ctrl), Key(FcitxKey_F4, KeyState::Alt),
+                               Key(FcitxKey_F5, KeyState::Ctrl), Key(FcitxKey_KP_Add, KeyState::Super)}) {
+            if (send(ic.get(), key)) {
+                eaten += key.toString() + " ";
+            }
+        }
+        check(eaten.empty(), "打字途中修饰键本身、松开的键、带 Ctrl / Alt / Super 的组合键照常交给应用，吃掉的：" +
+                                 eaten);
+        check(preedit(ic.get()) == before, "交给应用以后编辑区还在：" + preedit(ic.get()));
+        type(ic.get(), "<sp>");
+        check(ic->committed == "你好", "接着空格照常上屏，前面没有多出来的字，实际 " + ic->committed);
+    }
+    fresh(ic.get());
+    check(!send(ic.get(), Key(FcitxKey_F5)) && !send(ic.get(), Key(FcitxKey_KP_Add)) &&
+              !send(ic.get(), Key(FcitxKey_Insert)),
+          "没在打字时这些键照常交给应用");
+    // 上屏后紧接着按退格：刚才那次上屏学到的退回去（选了第二个又删掉，下次还是原来的第一个）；
+    // 不删的话选过的就排到前面
+    {
+        // 挑第一页里第二个以后的第一个多字词（单字选过只放到第二，看不出来）；词库不同第一页不同
+        // （新词库里 xian 第一页全是单字），挨个试，用第一个有的
+        std::string input;
+        std::vector<std::string> before;
+        std::size_t pick = 1;
+        bool found = false;
+        for (const char *candidate : {"xian", "shiyan", "gongshi", "jiaoyu"}) {
+            fresh(ic.get());
+            type(ic.get(), candidate);
+            before = page(ic.get());
+            pick = 1;
+            while (pick < before.size() && fcitx::utf8::length(before[pick]) < 2) {
+                ++pick;
+            }
+            found = pick < before.size() && pick < 9;
+            if (found) {
+                input = candidate;
+                break;
+            }
+        }
+        const std::string word = found ? before[pick] : "";
+        const std::string digit = std::to_string(pick + 1);
+        bool ok = found;
+        for (int i = 0; i < 3 && ok; ++i) {
+            fresh(ic.get());
+            type(ic.get(), input + digit + "<bs>");
+            ok = ic->committed == word;
+        }
+        fresh(ic.get());
+        type(ic.get(), input);
+        const auto after = page(ic.get());
+        check(ok && !after.empty() && after[0] == before[0],
+              "选了 " + word + " 又马上退格（三次）：" + input + " 的第一个还是 " + (before.empty() ? "" : before[0]) +
+                  "，实际 " + join(after));
+        fresh(ic.get());
+        type(ic.get(), input + digit);
+        fresh(ic.get());
+        type(ic.get(), input);
+        const auto kept = page(ic.get());
+        check(found && !kept.empty() && kept[0] == word,
+              "不退格就记着：" + input + " 选过的 " + word + " 排第一，实际 " + join(kept));
+        // 收拾：忘掉（后面的用例不受影响）
+        send(ic.get(), Key(FcitxKey_Delete, KeyState::Ctrl));
+    }
+
+    // 上屏以后的联想（Association，默认关）：没有词级模型时只有学到的搭配。你好 -> 中国 上屏一次，
+    // 再打你好：候选框是联想（中国），上方提示「联想」，不画序号；数字、字母、空格照常，Tab 进联想行再选
+    fresh(ic.get());
+    type(ic.get(), "nihao<sp>zhongguo<sp>");
+    {
+        const auto associations = [&]() {
+            std::vector<std::string> out = page(ic.get());
+            const std::string aux = ic->inputPanel().auxUp().toString();
+            return aux.find("联想") != std::string::npos ? out : std::vector<std::string>{};
+        };
+        auto *associationAddon = instance.addonManager().addon("archtype");
+        fresh(ic.get());
+        type(ic.get(), "nihao<sp>");
+        check(associations().empty() && page(ic.get()).empty(), "联想默认关：上屏你好以后什么都不出");
+        setenv("ARCHTYPE_ASSOCIATION", "1", 1);
+        associationAddon->reloadConfig();
+        const auto hasZhongguo = [](const std::vector<std::string> &items) {
+            return std::find(items.begin(), items.end(), "中国") != items.end();
+        };
+        fresh(ic.get());
+        type(ic.get(), "nihao<sp>");
+        const auto shown = associations();
+        auto list = ic->inputPanel().candidateList();
+        check(ic->committed == "你好" && preedit(ic.get()).empty() && hasZhongguo(shown),
+              "上屏以后出联想（学到的 你好 -> 中国）：" + join(page(ic.get())) + " / " +
+                  ic->inputPanel().auxUp().toString());
+        check(list && list->size() > 0 && list->label(0).toString().empty() && list->cursorIndex() < 0,
+              "没进联想行：不画序号、不画光标");
+        type(ic.get(), "1");
+        check(ic->committed == "你好" && ic->passed == "1" && page(ic.get()).empty() &&
+                  ic->inputPanel().auxUp().toString().empty(),
+              "联想开着按数字：不选联想、交给应用，联想收起。上屏「" + ic->committed + "」交给应用「" + ic->passed +
+                  "」候选 " + join(page(ic.get())));
+
+        fresh(ic.get());
+        type(ic.get(), "nihao<sp>");
+        type(ic.get(), "<sp>");
+        check(ic->committed == "你好" && ic->passed == " " && page(ic.get()).empty(),
+              "联想开着按空格：交给应用，实际上屏「" + ic->committed + "」交给应用「" + ic->passed + "」");
+        fresh(ic.get());
+        type(ic.get(), "nihao<sp>shijie<sp>");
+        check(ic->committed == "你好世界", "联想开着接着打拼音：照常，实际 " + ic->committed);
+        fresh(ic.get());
+        type(ic.get(), "nihao<sp>,");
+        check(ic->committed == "你好，", "联想开着打标点：照常，实际 " + ic->committed);
+
+        fresh(ic.get());
+        type(ic.get(), "nihao<sp><tab>");
+        auto *focused = dynamic_cast<CommonCandidateList *>(ic->inputPanel().candidateList().get());
+        check(focused && focused->cursorIndex() == 0 && !focused->label(0).toString().empty() && ic->passed.empty(),
+              "Tab 进联想行：光标在第一个、画序号，Tab 不交给应用");
+        const auto row = associations();
+        const auto at = std::find(row.begin(), row.end(), "中国");
+        for (auto i = row.begin(); i != at && at != row.end(); ++i) {
+            type(ic.get(), "<right>");
+        }
+        type(ic.get(), "<sp>");
+        check(ic->committed == "你好中国", "进了联想行按空格上屏联想，实际 " + ic->committed);
+        fresh(ic.get());
+        type(ic.get(), "nihao<sp><tab><esc>");
+        check(ic->committed == "你好" && page(ic.get()).empty(), "联想行里 Esc 退出");
+
+        // 鼠标点联想（没按 Tab 也能点）
+        fresh(ic.get());
+        type(ic.get(), "nihao<sp>");
+        const auto items = associations();
+        const auto hit = std::find(items.begin(), items.end(), "中国");
+        if (auto clicked = ic->inputPanel().candidateList(); clicked && hit != items.end()) {
+            clicked->candidate(static_cast<int>(hit - items.begin())).select(ic.get());
+        }
+        check(ic->committed == "你好中国", "鼠标点联想上屏，实际 " + ic->committed);
+        unsetenv("ARCHTYPE_ASSOCIATION");
+        associationAddon->reloadConfig();
+    }
+    fresh(ic.get());
     // 单音节不出拆开音节的句首词（dan -> 大）
     fresh(ic.get());
     type(ic.get(), "dan");
@@ -574,6 +761,74 @@ void runCases(Instance &instance) {
         const auto p1 = page(ic.get());
         type(ic.get(), "2");
         check(p1.size() > 1 && ic->committed == p1[1], "收起后数字按当前页选，实际 " + ic->committed);
+    }
+    // 展开面板上点翻页按钮、滚滚轮（直接调列表的 next / prev）：会话的光标跟着到那一屏，
+    // 看到的这一屏上框着的词就是空格选的，数字选的是光标那一行的
+    /// 一行里〔〕框着的词；没有框是空的
+    auto framedIn = [](const std::vector<std::string> &rows) {
+        for (const auto &row : rows) {
+            const auto open = row.find("\u3014");
+            const auto close = row.find("\u3015");
+            if (open != std::string::npos && close != std::string::npos && close > open) {
+                return row.substr(open + 3, close - open - 3);
+            }
+        }
+        return std::string();
+    };
+    /// 有光标的那一行里标着 label（１–６）的词
+    auto labelledIn = [](const std::vector<std::string> &rows, const std::string &label) {
+        for (const auto &row : rows) {
+            auto at = row.find(label + "\u3000");
+            if (row.find("\u3014") == std::string::npos || at == std::string::npos) {
+                continue;
+            }
+            at += label.size() + 3;
+            std::string text = row.substr(at, row.find("\u3000", at) - at);
+            if (const auto pad = text.find("\u2002"); pad != std::string::npos) {
+                text.resize(pad); // 补宽度的半角空格
+            }
+            return text;
+        }
+        return std::string();
+    };
+    fresh(ic.get());
+    type(ic.get(), "shi<down>");
+    if (auto *list = common(); list && list->hasNext()) {
+        const auto screen1 = page(ic.get());
+        list->next();
+        list = common();
+        const auto screen2 = page(ic.get());
+        const std::string framed = framedIn(screen2);
+        check(list && list->currentPage() == 1 && list->cursorIndex() == 0 && screen2 != screen1 &&
+                  !framed.empty(),
+              "展开面板点下一屏：光标跟到第二屏第一个：" + join(screen2));
+        type(ic.get(), "<sp>");
+        check(!framed.empty() && ic->committed == framed,
+              "展开面板点下一屏后空格选这一屏框着的（" + framed + "），实际 " + ic->committed);
+        fresh(ic.get());
+        type(ic.get(), "shi<down>");
+        if ((list = common())) {
+            list->next();
+        }
+        const std::string second = labelledIn(page(ic.get()), "\uFF12");
+        type(ic.get(), "2");
+        check(!second.empty() && ic->committed == second,
+              "展开面板点下一屏后数字选这一屏的（" + second + "），实际 " + ic->committed);
+        fresh(ic.get());
+        type(ic.get(), "shi<down>");
+        if ((list = common())) {
+            list->next();
+        }
+        if ((list = common())) {
+            list->prev();
+        }
+        list = common();
+        const std::string back = framedIn(page(ic.get()));
+        check(list && list->currentPage() == 0 && !back.empty(), "展开面板点上一屏：回到第一屏：" + back);
+        type(ic.get(), "<sp>");
+        check(!back.empty() && ic->committed == back, "回到第一屏后空格选框着的，实际 " + ic->committed);
+    } else {
+        std::printf("skip 展开面板点翻页按钮（这个词库里 shi 的候选不到两屏）\n");
     }
     fresh(ic.get());
     type(ic.get(), "shi");
@@ -1181,6 +1436,145 @@ void runCases(Instance &instance) {
     check(ic->committed == "壹佰元伍角", "v 后面只打一个数：空格上屏大写金额：" + ic->committed);
     fresh(ic.get());
 
+    // 符号面板（和表情面板、展开面板一样是 6 列的网格）点翻页按钮、滚滚轮：光标跟着到那一屏，
+    // 屏幕上框着的就是空格选的、标着 ２ 的就是按 2 选的（以前只是 fcitx5 自己换了一屏，选的还是第一屏的）
+    fresh(ic.get());
+    type(ic.get(), "v<sp>3");
+    {
+        auto *list = common();
+        check(list && list->hasNext() && list->totalPages() == 2, "符号面板有两屏");
+        const auto screen1 = page(ic.get());
+        if (list) {
+            list->next(); // 候选框上的翻页按钮、滚轮直接调列表
+        }
+        list = common();
+        const auto screen2 = page(ic.get());
+        const std::string framed = framedIn(screen2);
+        check(list && list->currentPage() == 1 && list->cursorIndex() == 0 && !list->hasNext() &&
+                  screen2 != screen1 && !framed.empty(),
+              "符号面板点下一屏：光标跟到第二屏：" + join(screen2));
+        type(ic.get(), "<sp>");
+        check(!framed.empty() && ic->committed == framed,
+              "符号面板点下一屏后空格选这一屏框着的（" + framed + "），实际 " + ic->committed);
+    }
+    // 表情面板（不止三屏）：连着翻、翻回来、滚轮移光标、直接跳到某一屏
+    fresh(ic.get());
+    type(ic.get(), "v<sp>4");
+    {
+        if (auto *list = common()) {
+            list->next();
+        }
+        if (auto *list = common()) {
+            list->next();
+        }
+        auto *list = common();
+        const std::string third = labelledIn(page(ic.get()), "\uFF13");
+        check(list && list->currentPage() == 2 && !third.empty(), "表情面板连点两次下一屏：到第三屏");
+        type(ic.get(), "3");
+        check(!third.empty() && ic->committed == third,
+              "表情面板第三屏按 3 选这一屏标着 ３ 的（" + third + "），实际 " + ic->committed);
+    }
+    fresh(ic.get());
+    type(ic.get(), "v<sp>4");
+    {
+        if (auto *list = common()) {
+            list->next();
+        }
+        if (auto *list = common()) {
+            list->next();
+        }
+        if (auto *list = common()) {
+            list->prev();
+        }
+        auto *list = common();
+        const std::string framed = framedIn(page(ic.get()));
+        check(list && list->currentPage() == 1 && !framed.empty(), "表情面板点上一屏：回到第二屏");
+        if (list) {
+            list->nextCandidate(); // 滚轮移到下一行
+        }
+        list = common();
+        const std::string below = framedIn(page(ic.get()));
+        check(list && list->cursorIndex() == 1 && !below.empty() && below != framed,
+              "表情面板列表 nextCandidate：光标到下一行：" + below);
+        type(ic.get(), "<cr>");
+        check(!below.empty() && ic->committed == below, "接着回车选框着的，实际 " + ic->committed);
+    }
+    fresh(ic.get());
+    type(ic.get(), "v<sp>4");
+    {
+        if (auto *list = common()) {
+            list->setPage(2); // 直接跳到第三屏也是一屏一屏翻会话
+        }
+        auto *list = common();
+        const std::string framed = framedIn(page(ic.get()));
+        check(list && list->currentPage() == 2 && !framed.empty(), "表情面板 setPage(2)：到第三屏");
+        type(ic.get(), "<sp>");
+        check(!framed.empty() && ic->committed == framed, "setPage 后空格选框着的，实际 " + ic->committed);
+    }
+    // 工具栏的列表（常用语 11 条，一页 9 个）也一样：点下一页后数字、空格选的是第二页的
+    {
+        std::ofstream(customFile) << "ce jia\t测甲\nce yi\t测乙\nce bing\t测丙\nce ding\t测丁\nce wu\t测戊\n"
+                                     "ce ji\t测己\nce geng\t测庚\nce xin\t测辛\nce ren\t测壬\nce gui\t测癸\n"
+                                     "ce zi\t测子\n";
+    }
+    addon->reloadConfig();
+    fresh(ic.get());
+    type(ic.get(), "v<sp>2");
+    {
+        auto *list = common();
+        check(list && list->totalSize() == 11 && list->size() == 9 && list->hasNext(),
+              "常用语 11 条分两页：" + join(page(ic.get())));
+        if (list) {
+            list->next();
+        }
+        list = common();
+        const auto p2 = page(ic.get());
+        check(list && list->currentPage() == 1 && list->cursorIndex() == 0 && p2.size() == 2 &&
+                  p2[0] == "ce gui\u3000测癸" && p2[1] == "ce zi\u3000测子",
+              "常用语点下一页：第二页、光标在第一个：" + join(p2));
+        type(ic.get(), "2");
+        check(ic->committed == "测子", "常用语点下一页后按 2 选第二页第二个，实际 " + ic->committed);
+    }
+    fresh(ic.get());
+    type(ic.get(), "v<sp>2");
+    {
+        if (auto *list = common()) {
+            list->next();
+        }
+        type(ic.get(), "<sp>");
+        check(ic->committed == "测癸", "常用语点下一页后空格选第二页第一个，实际 " + ic->committed);
+    }
+    fresh(ic.get());
+    type(ic.get(), "v<sp>2");
+    {
+        if (auto *list = common()) {
+            list->next();
+        }
+        if (auto *list = common()) {
+            list->prev();
+        }
+        auto *list = common();
+        check(list && list->currentPage() == 0 && list->cursorIndex() == 0 && page(ic.get()).size() == 9,
+              "常用语点上一页：回到第一页");
+        if (list) {
+            list->nextCandidate();
+        }
+        type(ic.get(), "<sp>");
+        check(ic->committed == "测乙", "常用语列表 nextCandidate 后空格选第二个，实际 " + ic->committed);
+    }
+    fresh(ic.get());
+    type(ic.get(), "v<sp>2");
+    {
+        if (auto *list = common()) {
+            list->next();
+        }
+        if (auto list = ic->inputPanel().candidateList(); list && list->size() > 1) {
+            list->candidate(1).select(ic.get()); // 鼠标点第二页第二个
+        }
+        check(ic->committed == "测子", "常用语点下一页后点第二个，实际 " + ic->committed);
+    }
+    fresh(ic.get());
+
     // 删掉文件再 reload：回到默认
     std::filesystem::remove(configDir + "/archtype.conf");
     std::filesystem::remove(customFile);
@@ -1724,6 +2118,36 @@ void runCases(Instance &instance) {
     tapKey(ic.get(), FcitxKey_Shift_R);  // 回中文
     check(ic->committed == " L" && ic->passed == "i",
           "英文模式汉字后第一个字母补空格，后面的照常交给应用：[" + ic->committed + "] " + ic->passed);
+    // 按下 Shift 还没松开，输入框就被重置（Shift+点鼠标选字）或者失去焦点又回来：再松开不算单按 Shift，
+    // 还是中文；之后单按 Shift 照常切换
+    for (const bool blur : {false, true}) {
+        fresh(ic.get());
+        surround("");
+        KeyEvent press(ic.get(), Key(FcitxKey_Shift_L), false);
+        ic->keyEvent(press);
+        if (blur) {
+            ic->focusOut();
+            ic->focusIn();
+        } else {
+            ic->reset();
+        }
+        KeyEvent release(ic.get(), Key(FcitxKey_Shift_L, KeyState::Shift), true);
+        const bool took = ic->keyEvent(release);
+        type(ic.get(), "nihao<sp>");
+        const bool chinese = ic->committed == "你好";
+        check(!took && chinese,
+              std::string(blur ? "按下 Shift 后失去焦点又回来" : "按下 Shift 后输入框被重置") +
+                  "：再松开不切中英文，实际上屏「" + ic->committed + "」交给应用「" + ic->passed + "」");
+        if (!chinese) {
+            tapKey(ic.get(), FcitxKey_Shift_L); // 切走了就切回来，别带坏后面的用例
+        }
+    }
+    fresh(ic.get());
+    tapKey(ic.get(), FcitxKey_Shift_L);
+    type(ic.get(), "ni");
+    tapKey(ic.get(), FcitxKey_Shift_L);
+    check(ic->committed.empty() && ic->passed == "ni", "之后单按 Shift 照常切到英文再切回来，实际交给应用「" +
+                                                          ic->passed + "」上屏「" + ic->committed + "」");
     fresh(ic.get());
     surround("第 ");
     type(ic.get(), "5");
@@ -1809,12 +2233,87 @@ void runCases(Instance &instance) {
         fresh(ic.get());
         type(ic.get(), "ceshiciku<sp>");
         check(ic->committed == "测试词库", "只改别的设置时词库不动，实际 " + ic->committed);
+        // 用户词库、输入习惯的文件在、却读不出来：下面重新载入以后，第一次存之前先把原来的改名留成
+        // <原名>.bad-<时间戳>，不拿只有这次运行里学到的内容把它盖掉。
+        // 夹着坏字节的文件核心现在只跳过坏行、照常读得出来（核心有测试），这里用同名的目录造一个
+        // 真读不出来的（root 跑也读不出来，不靠权限位），目录里放个文件，留底以后核对它还在
+        const std::filesystem::path userDict = std::getenv("ARCHTYPE_USER_DICT");
+        const std::filesystem::path historyFile = userDict.parent_path() / "history.tsv";
+        const std::string garbage = "ni hao\t你好\t1\n";
+        const auto slurp = [](const std::filesystem::path &file) {
+            std::ifstream in(file, std::ios::binary);
+            return std::string((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+        };
+        const auto unreadable = [&](const std::filesystem::path &path) {
+            // 存盘在后台线程上：上面失去焦点时排的那次可能正好在这时写完，又把文件放回来了。
+            // 不抛异常，没换成目录就等一下再来（以前偶尔 create_directories 抛「Not a directory」，整个测试中止）
+            for (int i = 0; i < 300; ++i) {
+                std::error_code ec;
+                std::filesystem::remove_all(path, ec);
+                std::filesystem::create_directories(path, ec);
+                if (std::filesystem::is_directory(path, ec)) {
+                    break;
+                }
+                std::this_thread::sleep_for(std::chrono::milliseconds(10));
+            }
+            std::ofstream(path / "kept", std::ios::binary) << garbage;
+        };
+        const auto keptInside = [&](const std::filesystem::path &dir) {
+            return std::filesystem::is_directory(dir) && slurp(dir / "kept") == garbage;
+        };
+        const auto backups = [](const std::filesystem::path &file) {
+            std::vector<std::filesystem::path> found;
+            const std::string prefix = file.filename().string() + ".bad-";
+            std::error_code ec;
+            for (const auto &entry : std::filesystem::directory_iterator(file.parent_path(), ec)) {
+                if (entry.path().filename().string().rfind(prefix, 0) == 0) {
+                    found.push_back(entry.path());
+                }
+            }
+            return found;
+        };
+        // 攒着的先存掉（失去焦点就存）：重新载入之前就不会再存一次、把下面写的坏文件换掉
+        ic->focusOut();
+        ic->focusIn();
+        unreadable(userDict);
+        unreadable(historyFile);
         // 词库文件被换掉（更新了词库包），路径没变：reloadConfig 时也重新载入
         std::ofstream(dictFile) << "ping guo\t平锅\t1000000\nce shi ci ku\t测试词库\t100\n"
                                    "geng xin le\t更新了\t100\n";
         addon->reloadConfig();
         const bool reloaded = waitFor("gengxinle", "更新了");
         check(reloaded, "词库文件更新后重新载入：" + join(page(ic.get())));
+        check(keptInside(userDict) && keptInside(historyFile) && backups(userDict).empty() &&
+                  backups(historyFile).empty(),
+              "读不出来的用户词库、输入习惯：还没到存的时候原样留着");
+        for (int round = 1; round <= 2; ++round) {
+            // 学到一个词，失去焦点时存。第一次存之前改名留底，第二次不再留
+            fresh(ic.get());
+            type(ic.get(), "gengxinle<sp>");
+            ic->focusOut();
+            ic->focusIn();
+            const auto dictKept = backups(userDict);
+            const auto historyKept = backups(historyFile);
+            // 存盘在核心的后台线程上：等新文件写出来，最多 3 秒
+            for (int i = 0; i < 300 && !(std::filesystem::is_regular_file(userDict) &&
+                                         std::filesystem::is_regular_file(historyFile) &&
+                                         slurp(historyFile).find("更新了") != std::string::npos);
+                 ++i) {
+                std::this_thread::sleep_for(std::chrono::milliseconds(10));
+            }
+            const std::string dictNow = slurp(userDict);
+            const std::string historyNow = slurp(historyFile);
+            check(dictKept.size() == 1 && keptInside(dictKept[0]) && historyKept.size() == 1 &&
+                      keptInside(historyKept[0]),
+                  "读不出来的用户词库、输入习惯存之前改名留成 .bad-<时间戳>，只留一次（第 " +
+                      std::to_string(round) + " 次存）：" + std::to_string(dictKept.size()) + " / " +
+                      std::to_string(historyKept.size()) + " 份");
+            check(!dictNow.empty() && std::filesystem::is_regular_file(userDict) &&
+                      historyNow.find("更新了") != std::string::npos &&
+                      std::filesystem::is_regular_file(historyFile),
+                  "新学到的另存成好的文件（第 " + std::to_string(round) + " 次存）");
+        }
+        fresh(ic.get());
         // 换回来
         std::filesystem::remove(configDir + "/archtype.conf");
         if (!savedLexicon.empty()) {
@@ -1963,6 +2462,31 @@ void runTranslateCase(Instance &instance, std::function<void()> done) {
                  [](HarnessInputContext *ic) {
                      return ic->committed.empty() && preedit(ic).empty() && inlineText(ic).empty() &&
                             page(ic).empty();
+                 }});
+    // 「译」里选的词进了原文、没有上屏，引擎也学到了：失去焦点时照样存用户词库和输入习惯
+    // （以前只在上屏时数，只在「译」里打字的话一条都不存）
+    s.push_back({"只在「译」里选了词：失去焦点时也存用户词库",
+                 [reset](HarnessInputContext *ic) {
+                     reset(ic);
+                     // 前面上屏攒着的先存掉（失去焦点就存），再把文件删了：下面只在「译」里选一次词
+                     ic->focusOut();
+                     ic->focusIn();
+                     const std::filesystem::path dict = std::getenv("ARCHTYPE_USER_DICT");
+                     std::error_code ec;
+                     std::filesystem::remove(dict, ec);
+                     std::filesystem::remove(dict.parent_path() / "history.tsv", ec);
+                     type(ic, "nihao<sp>");
+                     check(ic->committed.empty() && preedit(ic) == "你好", "互译：选的词进了原文，没上屏");
+                     ic->focusOut();
+                     ic->focusIn();
+                 },
+                 [](HarnessInputContext *ic) {
+                     const std::filesystem::path dict = std::getenv("ARCHTYPE_USER_DICT");
+                     std::ifstream in(dict.parent_path() / "history.tsv");
+                     const std::string history((std::istreambuf_iterator<char>(in)),
+                                               std::istreambuf_iterator<char>());
+                     return ic->committed.empty() && std::filesystem::exists(dict) &&
+                            history.find("你好") != std::string::npos;
                  }});
     s.push_back({"数字进原文；打拼音时原文框里带着前面的原文",
                  [reset](HarnessInputContext *ic) {
@@ -2225,9 +2749,10 @@ void runTranslateCase(Instance &instance, std::function<void()> done) {
 /// 外部命令切模式（#98）：经会话总线调 org.archtype.Input1。addon-test.sh 起了私有总线才跑。
 /// 插件的总线和这里的总线挂在同一个事件循环上，所以只能异步调。
 struct ModeCall {
-    std::string arg; // SetMode 的参数；空表示调 Mode
+    std::string arg; // SetMode 的参数；空表示调 Mode（或下面的 method）
     std::function<void(HarnessInputContext *)> before;
     std::function<void(HarnessInputContext *, const std::string &reply, bool error)> after;
+    std::string method = {}; // 不带参数的别的方法（Version）
 };
 
 struct ModeCase {
@@ -2251,8 +2776,9 @@ void nextModeCall(ModeCase *c) {
     if (call.before) {
         call.before(c->ic.get());
     }
+    const std::string method = !call.method.empty() ? call.method : call.arg.empty() ? "Mode" : "SetMode";
     auto msg = c->bus->createMethodCall("org.archtype.Input", "/org/archtype/Input", "org.archtype.Input1",
-                                        call.arg.empty() ? "Mode" : "SetMode");
+                                        method.c_str());
     if (!call.arg.empty()) {
         msg << call.arg;
     }
@@ -2320,6 +2846,8 @@ void runModeCase(Instance &instance, std::function<void()> done) {
                          check(error, "外部命令：没配翻译服务时切不到 translate：" + reply);
                      }});
     calls.push_back({"", [](HarnessInputContext *ic) { fresh(ic); }, expect("报错以后模式不变", "zh")});
+    // 设置界面拿它和装好的版本比，判断升级后要不要重启输入法
+    calls.push_back({"", nullptr, expect("Version 是插件的版本", ARCHTYPE_ADDON_VERSION), "Version"});
     nextModeCall(c);
 }
 
@@ -2492,6 +3020,25 @@ void runVoiceNoModelCase(Instance &instance, std::function<void()> done) {
              type(s.ic.get(), "<esc>");
              std::printf("语音·没有模型：只提示去设置里下载，没有下载\n");
          }},
+        {54,
+         [](VoiceScript &s) {
+             // 按住语音键时焦点切走：松开的那一下到不了输入法。回来后第一次按语音键照样有反应
+             // （以前被当成还按着时的自动重复吃掉）
+             KeyEvent down(s.ic.get(), Key(FcitxKey_Alt_R), false);
+             s.ic->keyEvent(down);
+             s.ic->focusOut();
+             s.ic->focusIn();
+             check(s.ic->inputPanel().auxUp().empty(),
+                   s.name + "：按住语音键时失去焦点，提示收起，实际 " + s.ic->inputPanel().auxUp().toString());
+             KeyEvent again(s.ic.get(), Key(FcitxKey_Alt_R), false);
+             const bool took = s.ic->keyEvent(again);
+             const std::string aux = s.ic->inputPanel().auxUp().toString();
+             check(took && aux.find("设置") != std::string::npos,
+                   s.name + "：按住语音键时切走焦点，回来后第一次按照样有反应，实际 " + aux);
+             KeyEvent up(s.ic.get(), Key(FcitxKey_Alt_R, KeyState::Alt), true);
+             check(s.ic->keyEvent(up), s.name + "：这次松开也被接住");
+             type(s.ic.get(), "ni<esc>");
+         }},
     };
     runVoiceScript(instance, "语音·没有模型", steps, done);
 }
@@ -2644,6 +3191,160 @@ void runVoiceCancelCases(Instance &instance, std::function<void()> done) {
 }
 
 /// 语音结果复制到剪贴板：用假的 wl-copy（把标准输入写进文件）代替真的剪贴板。
+/// 用户目录里老版本拷进来的自带词库让给安装包带的新版；用户自己的照旧优先。
+void runDataFileCase() {
+    namespace fs = std::filesystem;
+    const fs::path root = fs::temp_directory_path() / ("archtype-data-" + std::to_string(::getpid()));
+    fs::remove_all(root);
+    fs::create_directories(root / "user");
+    fs::create_directories(root / "system");
+    const auto write = [](const fs::path &path, const std::string &text, int daysAgo) {
+        std::ofstream(path, std::ios::binary) << text;
+        fs::last_write_time(path, fs::file_time_type::clock::now() - std::chrono::hours(24 * daysAgo));
+    };
+    const std::string stock = "# 由 tools/rime2tsv.py 生成，来源：rime_ice.dict.yaml\nni hao\t你好\t1\n";
+    const fs::path user = root / "user" / "lexicon.tsv";
+    const fs::path system = root / "system" / "lexicon.tsv";
+    write(system, stock, 2);
+    write(user, stock, 7);
+    check(archtype::isStaleBundledCopy(user, system, "lexicon.tsv"),
+          "用户目录里比安装包旧的自带词库是旧副本，让给安装包的");
+    write(user, stock, 0);
+    check(!archtype::isStaleBundledCopy(user, system, "lexicon.tsv"),
+          "自己重新生成、比安装包新的自带词库照旧优先");
+    write(user, "ni hao\t你好\t1\n", 7);
+    check(!archtype::isStaleBundledCopy(user, system, "lexicon.tsv"), "自己做的词库（没有生成标记）照旧优先");
+    write(user, stock, 7);
+    fs::remove(system);
+    check(!archtype::isStaleBundledCopy(user, system, "lexicon.tsv"), "系统目录没有时用用户目录的");
+    write(system, stock, 2);
+    // 可复现构建把系统目录的时间戳设成 1970 年：看不出新旧，也让给安装包
+    write(user, stock, 0);
+    fs::last_write_time(system, fs::file_time_type::clock::now() - std::chrono::hours(24 * 365 * 40));
+    check(archtype::isStaleBundledCopy(user, system, "lexicon.tsv"), "系统目录时间戳是 1970 年时也算旧副本");
+    write(root / "user" / "english.txt", "# Rime dictionary\nhello\n", 7);
+    write(root / "system" / "english.txt", "# Rime dictionary\nhello\nworld\n", 2);
+    check(archtype::isStaleBundledCopy(root / "user" / "english.txt", root / "system" / "english.txt",
+                                      "english.txt"),
+          "英文词表同样处理");
+    write(root / "user" / "words.lm", "lm", 7);
+    write(root / "system" / "words.lm", "lm2", 2);
+    check(!archtype::isStaleBundledCopy(root / "user" / "words.lm", root / "system" / "words.lm", "words.lm"),
+          "words.lm 可能是自己训的，不动");
+    // 字节数和官方发布的一样的 words.lm 是拷进来的官方模型（稀疏文件，不占盘）
+    std::filesystem::resize_file(root / "user" / "words.lm", archtype::kOfficialLmSizes[0]);
+    check(archtype::isStaleBundledCopy(root / "user" / "words.lm", root / "system" / "words.lm", "words.lm"),
+          "拷进来的官方 words.lm 让给安装包的");
+    write(root / "user" / "wubi86.tsv", "a\t工\t99454797\naa\t式\t1\n", 7);
+    write(root / "system" / "wubi86.tsv", "a\t工\t99454797\naa\t式\t2\n", 2);
+    check(archtype::isStaleBundledCopy(root / "user" / "wubi86.tsv", root / "system" / "wubi86.tsv",
+                                      "wubi86.tsv"),
+          "拷进来的五笔码表同样处理");
+    write(root / "user" / "wubi86.tsv", "a\t工\t5\n", 7);
+    check(!archtype::isStaleBundledCopy(root / "user" / "wubi86.tsv", root / "system" / "wubi86.tsv",
+                                       "wubi86.tsv"),
+          "自己做的五笔码表照旧优先");
+
+    // 版本标记（docs/DATA.md「数据版本标记」）
+    check(archtype::compareDataVersions("2026.11.9", "2026.11.10") < 0 &&
+              archtype::compareDataVersions("2026.11.14", "2026.11.14.0") == 0 &&
+              archtype::compareDataVersions("2026.11.09", "2026.11.9") == 0 &&
+              archtype::compareDataVersions("2026.11.14.1", "2026.11.14") > 0,
+          "数据版本逐段按数字比，缺的段算 0");
+    {
+        const auto m = archtype::parseDataMarker("# archtype-data: lexicon.tsv 2026.11.14.5 rime-ice abc (2026-11-14)\n");
+        check(m && m->name == "lexicon.tsv" && m->version == "2026.11.14.5" &&
+                  m->source == "rime-ice abc (2026-11-14)",
+              "读出标记的名字、版本、来源");
+        check(!archtype::parseDataMarker("# archtype-data: lexicon.tsv 2026-11-14.5") &&
+                  !archtype::parseDataMarker("# archtype-data: lexicon.tsv") &&
+                  !archtype::parseDataMarker("# archtype-data:lexicon.tsv 1"),
+              "版本不是点分隔的数字、缺版本的标记不算");
+        std::string far(archtype::kDataMarkerScanBytes, 'x');
+        far += "\n# archtype-data: lexicon.tsv 1\n";
+        check(!archtype::scanDataMarker(far), "4096 字节以后的标记不算");
+    }
+    const auto marked = [](const std::string &name, const std::string &version, const std::string &rest) {
+        return "# 由 tools/rime2tsv.py 生成，来源：rime_ice.dict.yaml\n# archtype-data: " + name + " " + version +
+               " rime-ice\n" + rest;
+    };
+    const auto stale = [&root](const char *name) {
+        return archtype::isStaleBundledCopy(root / "user" / name, root / "system" / name, name);
+    };
+    write(system, marked("lexicon.tsv", "2026.11.20.0", "ni hao\t你好\t2\n"), 2);
+    write(user, marked("lexicon.tsv", "2026.11.14.5", "ni hao\t你好\t1\n"), 0);
+    check(stale("lexicon.tsv"), "带标记、版本比安装包旧的是旧副本（不看修改时间）");
+    write(user, marked("lexicon.tsv", "2026.11.20.0", "ni hao\t你好\t1\n"), 0);
+    check(stale("lexicon.tsv"), "带标记、版本和安装包一样的也是旧副本");
+    write(user, marked("lexicon.tsv", "2026.11.20.1", "ni hao\t你好\t1\n"), 30);
+    check(!stale("lexicon.tsv"), "带标记、版本比安装包新的是自己更新的，照旧优先（不看修改时间）");
+    write(user, marked("lexicon-wanxiang", "2026.12.01.0", "ni hao\t你好\t1\n"), 30);
+    check(!stale("lexicon.tsv"), "标记名字和文件名不一样（别的词库）照旧优先");
+    write(user, stock, 7);
+    check(stale("lexicon.tsv"), "没有标记的老自带词库，安装包带标记时照老办法认出旧副本");
+    write(system, stock, 2);
+    write(user, marked("lexicon.tsv", "2026.11.14.5", "ni hao\t你好\t1\n"), 7);
+    check(!stale("lexicon.tsv"), "带标记、安装包那份没有标记（老安装包）时用用户目录的");
+    check(archtype::dataFileVersion(user, "lexicon.tsv") == "2026.11.14.5" &&
+              archtype::dataFileVersion(system, "lexicon.tsv").empty(),
+          "数据文件的版本：带标记的读标记，没有的是空");
+    write(root / "system" / "wubi86.tsv", "# archtype-data: wubi86.tsv 2023.10.25.1 rime-wubi\na\t工\t99454797\n", 2);
+    write(root / "user" / "wubi86.tsv", "# archtype-data: wubi86.tsv 2023.10.25.0 rime-wubi\na\t工\t99454797\n", 0);
+    check(stale("wubi86.tsv"), "五笔码表按版本认旧副本");
+    write(root / "system" / "english.txt", "# Rime dictionary\n# archtype-data: english.txt 2026.11.20.0 x\nhello\n", 2);
+    write(root / "user" / "english.txt", "# Rime dictionary\nhello\n", 0);
+    check(!stale("english.txt"), "没有标记的英文词表比安装包新：照老办法，用户目录的优先");
+
+    // words.lm：词表 1 号词是标记（WTLM 版本 1，<s> 和标记两个词，没有搭配）
+    const auto wtlm = [](const std::string &marker) {
+        std::string out = "WTLM";
+        const auto u32 = [&out](std::uint32_t v) {
+            for (int i = 0; i < 4; ++i) {
+                out.push_back(static_cast<char>((v >> (8 * i)) & 0xff));
+            }
+        };
+        u32(1);
+        u32(2);
+        u32(0);
+        out += "\x03<s>";
+        out.push_back(static_cast<char>(marker.size()));
+        out += marker;
+        for (int i = 0; i < 2 + 3; ++i) {
+            u32(0); // 两个回退分 + 三个起点
+        }
+        return out;
+    };
+    write(root / "system" / "words.lm", wtlm("archtype-data: words.lm 2026.11.20.0 lm-2026.11.20"), 2);
+    write(root / "user" / "words.lm", wtlm("archtype-data: words.lm 2026.11.20.0 lm-2026.11.20"), 0);
+    check(archtype::dataFileVersion(root / "user" / "words.lm", "words.lm") == "2026.11.20.0",
+          "words.lm 词表里的标记读得出来");
+    check(stale("words.lm"), "和安装包同一版的 words.lm 是旧副本");
+    write(root / "user" / "words.lm", wtlm("archtype-data: words.lm 2026.12.01.0 自己训的"), 7);
+    check(!stale("words.lm"), "版本比安装包新的 words.lm 照旧优先");
+    write(root / "user" / "words.lm", "lm", 7);
+    std::filesystem::resize_file(root / "user" / "words.lm", archtype::kOfficialLmSizes[0]);
+    check(archtype::dataFileVersion(root / "user" / "words.lm", "words.lm") == "2026.11.09",
+          "没有标记的 lm-2026.11.09 按字节数认出版本");
+    check(stale("words.lm"), "拷进来的老官方 words.lm 让给带标记的新版");
+    write(root / "system" / "words.lm", "lm2", 2);
+    std::filesystem::resize_file(root / "system" / "words.lm", archtype::kOfficialLmSizes[0]);
+    write(root / "user" / "words.lm", wtlm("archtype-data: words.lm 2026.11.20.0 lm-2026.11.20"), 7);
+    check(!stale("words.lm"), "自己下的新版 words.lm 比安装包带的 lm-2026.11.09 新，照旧优先");
+    write(root / "user" / "words.lm", wtlm("archtype-data: words.lm 2026.11.01.0 更早的"), 7);
+    check(stale("words.lm"), "带标记但比安装包的 lm-2026.11.09 旧的 words.lm 是旧副本");
+
+    // nnlm.bin（ArchType 自己的字级神经语言模型，WTNN）：前 4096 字节里一串以 \0 结束的标记
+    const auto wtnn = [](const std::string &marker) {
+        return std::string("WTNN\x01\0\0\0", 8) + marker + std::string(1, '\0') + std::string(64, '\xff');
+    };
+    write(root / "system" / "nnlm.bin", wtnn("archtype-data: nnlm.bin 2026.11.20.0 nnlm-2026.11.20"), 2);
+    write(root / "user" / "nnlm.bin", wtnn("archtype-data: nnlm.bin 2026.11.19.0 nnlm-2026.11.19"), 0);
+    check(stale("nnlm.bin"), "nnlm.bin 同样按版本认旧副本");
+    write(root / "user" / "nnlm.bin", std::string("WTNN\x01\0\0\0", 8) + std::string(64, '\xff'), 7);
+    check(!stale("nnlm.bin"), "没有标记的 nnlm.bin（自己训的）照旧优先");
+    fs::remove_all(root);
+}
+
 void runClipboardCase() {
     const auto dir = std::filesystem::temp_directory_path() /
                      ("archtype-clip-" + std::to_string(::getpid()));
@@ -2701,6 +3402,7 @@ int main(int argc, char **argv) {
     dispatcher = &mainDispatcher;
     mainDispatcher.schedule([&instance]() {
         runCases(instance);
+        runDataFileCase();
         runClipboardCase();
         runModeCase(instance, [&instance]() {
         runTranslateCase(instance, [&instance]() {

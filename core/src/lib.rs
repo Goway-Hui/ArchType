@@ -9,6 +9,7 @@ pub mod beam;
 pub mod calc;
 pub mod clipboard;
 pub mod convert;
+pub mod datamark;
 pub mod datetime;
 pub mod emoji;
 pub mod ffi;
@@ -22,6 +23,7 @@ pub mod nnlm;
 pub mod preedit;
 pub mod rank;
 pub mod recent_emoji;
+pub mod saver;
 pub mod session;
 pub mod session_ffi;
 pub mod shuangpin;
@@ -41,7 +43,7 @@ pub mod wubi;
 
 use std::collections::hash_map::Entry;
 use std::collections::HashMap;
-use std::sync::{Arc, RwLock};
+use std::sync::{Arc, Mutex, RwLock};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use anyhow::Result;
@@ -128,8 +130,27 @@ pub struct EngineConfig {
 /// （自然对数，和语言模型的分数同一个尺度）。见 [`Engine::word_lm_context_score`]。
 pub const MERGED_PAIR_SCORE: f64 = 1.5;
 
-/// 分几次选出来的词，多长以内用一次就学（人名、术语、成语大多在四个字以内）。
+/// 分几次选出来的词，多长以内当成用户造的词（人名、术语、成语大多在四个字以内）。
 pub const COMPOSED_WORD_MAX_CHARS: usize = 4;
+
+/// 能拿来联想的词：都是字母、数字、汉字（没有标点、符号、`</s>` 这类记号），不是单个英文字母。
+/// 有字级神经语言模型时，联想先从词级模型取这么多个后续词（差不多是前一个词的全部后续词），
+/// 按字级模型给第一个字的概率留下 [`ASSOCIATE_RESCORE`] 个，再算整词的概率排出一页。
+const ASSOCIATE_POOL: usize = 2000;
+/// 见 [`ASSOCIATE_POOL`]：整词的概率每个要算一两步前向（约 1 ms 一步），留得太多上屏时会卡。
+const ASSOCIATE_RESCORE: usize = 12;
+/// 字级模型认为「下一个字是这个词的第一个字」的 log 概率低于这个（约 1/400）就不拿来联想（学到的搭配不受限）。
+const ASSOCIATE_MIN_LOGPROB: f64 = -6.0;
+
+fn associable(word: &str) -> bool {
+    let n = word.chars().count();
+    n > 0 && word.chars().all(char::is_alphanumeric) && !(n == 1 && word.is_ascii())
+}
+
+/// 热度够不够收词：一会儿工夫连着选三次，热度会因为这几毫秒的衰减差一点点到 3，不能因此不收。
+fn reached(heat: f64, threshold: f64) -> bool {
+    heat + 0.01 >= threshold
+}
 
 impl Default for EngineConfig {
     fn default() -> Self {
@@ -156,9 +177,10 @@ impl Default for EngineConfig {
 }
 
 /// 用户历史里的一条记录。
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub struct HistoryEntry {
-    pub count: u32,
+    /// 热度：上次使用时的次数，已经按半衰期衰减过，可以带小数。到某个时刻的热度用 [`learn::decayed`] 算。
+    pub count: f64,
     /// 上次使用时间（epoch 毫秒）。
     pub last_used_ms: u64,
 }
@@ -202,6 +224,12 @@ pub struct Engine {
     nnlm: RwLock<Option<Arc<nnlm::Nnlm>>>,
     /// 五笔码表（选了五笔才载入，见 [`Engine::load_wubi`]）。
     wubi: RwLock<Option<Arc<wubi::WubiTable>>>,
+    /// 候选新词：分几次选出来拼成、第一次出现的词，第二次再拼出来才收进用户词库。
+    new_words: RwLock<HashMap<String, learn::NewWord>>,
+    /// 最近的学习改动（[`Engine::undo_learning`] 用）。
+    journal: Mutex<learn::Journal>,
+    /// 后台存盘（[`Engine::save_user_dict_async`]）。引擎释放时先写完。
+    saver: saver::Saver,
 }
 
 impl Engine {
@@ -223,6 +251,9 @@ impl Engine {
             english: RwLock::new(Arc::new(HashMap::new())),
             nnlm: RwLock::new(None),
             wubi: RwLock::new(None),
+            new_words: RwLock::new(HashMap::new()),
+            journal: Mutex::new(learn::Journal::default()),
+            saver: saver::Saver::default(),
         }
     }
 
@@ -279,24 +310,32 @@ impl Engine {
     ///
     /// pinyin 是这次上屏时输入的拼音（用于生成用户词条）。词库里已有的词也会被
     /// 加成用户词——这等价于「记住用户的偏好」，不会覆盖原词条。
+    /// 「选够次数」看的是衰减后的热度（[`learn::decayed`]），很久以前零零散散选过几次的不算。
+    /// 是候选新词（[`Engine::record_composed_word`] 第一次拼出来的）时，这是第二次用，也收进去。
     pub fn record_selection_with_pinyin(&self, word: &str, pinyin: Option<&str>) {
+        self.record_selection_with_pinyin_at(word, pinyin, now_ms());
+    }
+
+    /// 带时间戳的 [`Engine::record_selection_with_pinyin`]。
+    pub fn record_selection_with_pinyin_at(&self, word: &str, pinyin: Option<&str>, at_ms: u64) {
         let word = &self.lexicon_form(word);
-        self.record_selection(word);
+        let heat = self.record_selection_at(word, at_ms);
         if !self.config.auto_learn || word.is_empty() {
             return;
         }
         let Some(pinyin) = pinyin.filter(|p| !p.trim().is_empty()) else {
             return;
         };
-        let count = self.history_count(word);
-        if count < self.config.auto_learn_threshold.max(1) {
-            return;
+        let threshold = f64::from(self.config.auto_learn_threshold.max(1));
+        if reached(heat, threshold) {
+            self.add_learned_word(word, pinyin, heat);
+        } else if self.take_new_word(word, at_ms) {
+            self.add_learned_word(word, pinyin, heat.max(threshold));
         }
-        self.add_learned_word(word, pinyin, count);
     }
 
-    /// 学到的词收进用户词库。count 是选用次数，决定频次。
-    fn add_learned_word(&self, word: &str, pinyin: &str, count: u32) {
+    /// 学到的词收进用户词库。heat 是选用热度，决定频次。
+    fn add_learned_word(&self, word: &str, pinyin: &str, heat: f64) {
         // 候选带的拼音已经是全拼（双拼也翻好了）；以前的前端会传双拼键位串（如 "vsgo"），
         // 那样的要先展开，否则用户词会带着一串无效音节存进去，永远也打不出来。
         let pinyin = if self.config.shuangpin && !pinyin.trim().contains(' ') {
@@ -308,51 +347,113 @@ impl Engine {
             return;
         }
         // 频次随选用次数增长但有上限，避免用户词压过通用高频词
-        let freq = (1000.0 * f64::from(count)).min(50_000.0);
-        let _ = self.lexicon.add(&pinyin, word, freq);
+        let freq = (1000.0 * heat.round().max(1.0)).min(50_000.0);
+        let before = self.lexicon.entry(word);
+        if self.lexicon.add(&pinyin, word, freq).is_ok() {
+            self.journal(vec![learn::Change::UserWord {
+                word: word.to_string(),
+                before,
+                after: self.lexicon.entry(word),
+            }]);
+        }
     }
 
-    /// 用户分几次选出来、拼成的一个词（最多 [`COMPOSED_WORD_MAX_CHARS`] 个字）（「霜」「频」「阁」→ 霜频阁）：记一次选词，
-    /// 并且马上收进用户词库，不用等选够 [`EngineConfig::auto_learn_threshold`] 次。
+    /// 用户分几次选出来、拼成的一个词（最多 [`COMPOSED_WORD_MAX_CHARS`] 个字）（「霜」「频」「阁」→ 霜频阁）：
+    /// 记一次选词；第一次只记成「候选新词」，[`learn::NEW_WORD_TTL_MS`]（30 天）里再用一次（再这样拼出来，
+    /// 或者直接选了它）才收进用户词库，不用等选够 [`EngineConfig::auto_learn_threshold`] 次。
     ///
-    /// 用户特意一段一段挑出来的，就是想要这个词；主流输入法造词也是选一次就记住。
-    /// 一次就打出来的整句不走这里，还是按次数学，免得随手打的句子都进词库。
+    /// 用户特意一段一段挑出来的，多半就是想要这个词；可一次就收的话，挑错一个字（「你好事竣」）
+    /// 也成了用户词，所以要第二次确认。一次就打出来的整句不走这里，还是按次数学。
     /// 反馈见 https://x.com/so1v3/status/2120415675969896729
     pub fn record_composed_word(&self, word: &str, pinyin: &str) {
+        self.record_composed_word_at(word, pinyin, now_ms());
+    }
+
+    /// 带时间戳的 [`Engine::record_composed_word`]。
+    pub fn record_composed_word_at(&self, word: &str, pinyin: &str, at_ms: u64) {
         let word = &self.lexicon_form(word);
         // 超过四个字的多半是先选句首词、再选剩下的长句，不是要造的词：照常按次数学
         if word.chars().count() > COMPOSED_WORD_MAX_CHARS {
-            self.record_selection_with_pinyin(word, Some(pinyin));
+            self.record_selection_with_pinyin_at(word, Some(pinyin), at_ms);
             return;
         }
-        self.record_selection(word);
+        let heat = self.record_selection_at(word, at_ms);
         if !self.config.auto_learn || word.is_empty() || pinyin.trim().is_empty() {
             return;
         }
-        // 至少给到「选够次数」那一档的频次，下次一打就排前面
-        let count = self
-            .history_count(word)
-            .max(self.config.auto_learn_threshold.max(1));
-        self.add_learned_word(word, pinyin, count);
-    }
-
-    /// 带时间戳的选词记录（方便测试）。
-    ///
-    /// 记两样：这个词的热度，和它跟前后词的搭配（见 [`learn`]）。
-    pub fn record_selection_at(&self, word: &str, at_ms: u64) {
-        if word.is_empty() {
+        // 收的时候至少给到「选够次数」那一档的频次，下次一打就排前面
+        let threshold = f64::from(self.config.auto_learn_threshold.max(1));
+        if self.lexicon.entry(word).is_some()
+            || reached(heat, threshold)
+            || self.take_new_word(word, at_ms)
+        {
+            self.add_learned_word(word, pinyin, heat.max(threshold));
             return;
         }
+        let Ok(mut new_words) = self.new_words.write() else {
+            return;
+        };
+        let before = new_words.get(word.as_str()).cloned();
+        let after = learn::NewWord {
+            pinyin: pinyin.trim().to_string(),
+            at_ms,
+        };
+        new_words.insert(word.clone(), after.clone());
+        drop(new_words);
+        self.journal(vec![learn::Change::NewWord {
+            word: word.clone(),
+            before,
+            after: Some(after),
+        }]);
+    }
+
+    /// word 是候选新词：从候选新词里拿掉（第二次用了，要么收进用户词库，要么过期了重新算），
+    /// 没过期时返回 true。
+    fn take_new_word(&self, word: &str, at_ms: u64) -> bool {
+        let Ok(mut new_words) = self.new_words.write() else {
+            return false;
+        };
+        let Some(seen) = new_words.remove(word) else {
+            return false;
+        };
+        drop(new_words);
+        let fresh = at_ms.saturating_sub(seen.at_ms) <= learn::NEW_WORD_TTL_MS;
+        self.journal(vec![learn::Change::NewWord {
+            word: word.to_string(),
+            before: Some(seen),
+            after: None,
+        }]);
+        fresh
+    }
+
+    /// 是不是还在等第二次的候选新词。
+    pub fn is_new_word(&self, word: &str) -> bool {
+        let word = self.lexicon_form(word);
+        self.new_words.read().is_ok_and(|n| n.contains_key(&word))
+    }
+
+    /// 带时间戳的选词记录（方便测试），返回这次以后的热度。
+    ///
+    /// 记两样：这个词的热度，和它跟前后词的搭配（见 [`learn`]）。改了什么记进学习日志，
+    /// [`Engine::undo_learning`] 能退回去。
+    pub fn record_selection_at(&self, word: &str, at_ms: u64) -> f64 {
+        if word.is_empty() {
+            return 0.0;
+        }
         let word = &self.lexicon_form(word);
+        let mut changes = Vec::new();
+        let mut heat = 0.0;
         if let Ok(mut history) = self.history.write() {
-            let entry = history.entry(word.to_string()).or_insert(HistoryEntry {
-                count: 0,
-                last_used_ms: at_ms,
-            });
             // 先按时间衰减再加 1：很久以前用得多的词不会一直顶着
-            let kept = crate::learn::decayed(*entry, at_ms).round() as u32;
-            entry.count = kept.saturating_add(1);
-            entry.last_used_ms = at_ms;
+            let before = history.get(word.as_str()).copied();
+            let after = learn::bumped(before, at_ms);
+            heat = after.count;
+            history.insert(word.to_string(), after);
+            changes.push(learn::Change::Word {
+                word: word.to_string(),
+                before,
+                after: Some(after),
+            });
         }
         // 这个候选是哪几个词拼的（整句「我发给你」= 我 | 发给 | 你）
         let words: Vec<String> = self
@@ -365,16 +466,117 @@ impl Engine {
         let start = self.start_word();
         if let Ok(mut pairs) = self.pairs.write() {
             if let Some(prev) = &start {
-                pairs.learn(prev, &words[0], at_ms);
+                changes.extend(pairs.learn(prev, &words[0], at_ms));
             }
             for pair in words.windows(2) {
-                pairs.learn(&pair[0], &pair[1], at_ms);
+                changes.extend(pairs.learn(&pair[0], &pair[1], at_ms));
             }
         }
         if let (Ok(mut last), Some(tail)) = (self.last_word.write(), words.last()) {
-            last.clear();
-            last.push_str(tail);
+            if *last != *tail {
+                changes.push(learn::Change::LastWord {
+                    before: std::mem::replace(&mut *last, tail.clone()),
+                    after: tail.clone(),
+                });
+            }
         }
+        self.journal(changes);
+        heat
+    }
+
+    fn journal(&self, changes: Vec<learn::Change>) {
+        if let Ok(mut journal) = self.journal.lock() {
+            for change in changes {
+                journal.push(change);
+            }
+        }
+    }
+
+    /// 学习日志的位置：学习前后各取一次，[`Engine::undo_learning`] 拿这两个数退回中间学到的。
+    pub fn learn_mark(&self) -> u64 {
+        self.journal.lock().map(|j| j.mark()).unwrap_or(0)
+    }
+
+    /// 撤销 [start, end)（[`Engine::learn_mark`] 取的）之间学到的东西：选词热度、搭配、自动收进用户词库的词、
+    /// 候选新词都回到学之前。只改回后来没再被改过的（别的输入框接着学了同一个词，那份不动）。
+    /// 不重算：学的时候记下了改之前的值。start 已经挤出日志（隔了上千条改动）时什么也不做。
+    /// 返回是不是真的退了什么。
+    pub fn undo_learning(&self, start: u64, end: u64) -> bool {
+        let Some(changes) = self.journal.lock().ok().and_then(|mut j| j.take(start, end)) else {
+            return false;
+        };
+        let mut undone = false;
+        for change in changes {
+            undone |= self.revert(change);
+        }
+        undone
+    }
+
+    /// 把一条改动改回去（现在的值还是那次改成的才改）。
+    fn revert(&self, change: learn::Change) -> bool {
+        match change {
+            learn::Change::Word { word, before, after } => {
+                let Ok(mut history) = self.history.write() else {
+                    return false;
+                };
+                if history.get(&word).copied() != after {
+                    return false;
+                }
+                match before {
+                    Some(entry) => history.insert(word, entry),
+                    None => history.remove(&word),
+                };
+            }
+            learn::Change::Pair {
+                prev,
+                cur,
+                before,
+                after,
+            } => {
+                let Ok(mut pairs) = self.pairs.write() else {
+                    return false;
+                };
+                if pairs.get(&prev, &cur) != after {
+                    return false;
+                }
+                pairs.set(&prev, &cur, before);
+            }
+            learn::Change::LastWord { before, after } => {
+                let Ok(mut last) = self.last_word.write() else {
+                    return false;
+                };
+                if *last != after {
+                    return false;
+                }
+                *last = before;
+            }
+            learn::Change::UserWord { word, before, after } => {
+                if self.lexicon.entry(&word) != after {
+                    return false;
+                }
+                match before {
+                    Some((pinyin, freq)) => {
+                        let _ = self.lexicon.add(&pinyin, &word, freq);
+                    }
+                    None => {
+                        self.lexicon.remove(&word);
+                    }
+                }
+            }
+            learn::Change::NewWord { word, before, after } => {
+                let Ok(mut new_words) = self.new_words.write() else {
+                    return false;
+                };
+                if new_words.get(&word) != after.as_ref() {
+                    return false;
+                }
+                match before {
+                    Some(seen) => new_words.insert(word, seen),
+                    None => new_words.remove(&word),
+                };
+            }
+        }
+        true
     }
 
     /// 光标前的最后一个词：上一次选的词，而且光标前的文本正好以它结尾
@@ -417,17 +619,65 @@ impl Engine {
         self.pairs.read().map(|p| p.len()).unwrap_or(0)
     }
 
-    /// 把用户输入习惯（词的热度、词搭配）存到 TSV。
+    /// 把用户输入习惯（词的热度、词搭配、候选新词）存到 TSV。热度已经衰减得几乎没有的不写。
+    /// 在调用的线程上写完才返回（要等 fsync）；按键的线程上用 [`Engine::save_history_async`]。
     pub fn save_history<P: AsRef<std::path::Path>>(&self, path: P) -> Result<()> {
+        // 后台还排着、正在写的旧数据先写完，别等这次写好以后再盖上去
+        self.saver.flush();
+        let (history, pairs, new_words) = self.history_snapshot()?;
+        let text = crate::learn::history_text(&history, &pairs, &new_words, now_ms());
+        crate::fsutil::write_atomic(path.as_ref(), text.as_bytes())
+    }
+
+    /// 在后台存输入习惯：这里只在锁里抄一份，排成文字、写文件（两次 fsync）在存盘的线程上做。
+    /// 连着几次还没写的合并成一次。[`Engine::save_wait`] 等写完。
+    pub fn save_history_async<P: AsRef<std::path::Path>>(&self, path: P) -> Result<()> {
+        let (history, pairs, new_words) = self.history_snapshot()?;
+        let now = now_ms();
+        self.saver.submit(
+            path.as_ref().to_path_buf(),
+            Box::new(move || Ok(crate::learn::history_text(&history, &pairs, &new_words, now))),
+        );
+        Ok(())
+    }
+
+    /// 在后台存用户词库，见 [`Engine::save_history_async`]。
+    pub fn save_user_dict_async<P: AsRef<std::path::Path>>(&self, path: P) -> Result<()> {
+        let words = self.lexicon.words();
+        self.saver.submit(
+            path.as_ref().to_path_buf(),
+            Box::new(move || Ok(crate::lexicon::user_dict_text(&words))),
+        );
+        Ok(())
+    }
+
+    /// 等后台存盘写完：timeout 是 None 时一直等（进程退出、换词库前），Some(0) 只看一眼。
+    /// 写失败的原因只报一次。引擎释放时也会等写完。
+    pub fn save_wait(&self, timeout: Option<std::time::Duration>) -> saver::SaveStatus {
+        self.saver.wait(timeout)
+    }
+
+    /// 输入习惯的一份拷贝（在锁里抄，存盘用）。
+    #[allow(clippy::type_complexity)]
+    fn history_snapshot(
+        &self,
+    ) -> Result<(HashMap<String, HistoryEntry>, UserPairs, HashMap<String, learn::NewWord>)> {
         let history = self
             .history
             .read()
-            .map_err(|_| anyhow::anyhow!("history lock poisoned"))?;
+            .map_err(|_| anyhow::anyhow!("history lock poisoned"))?
+            .clone();
         let pairs = self
             .pairs
             .read()
-            .map_err(|_| anyhow::anyhow!("pairs lock poisoned"))?;
-        crate::learn::save_history(path, &history, &pairs)
+            .map_err(|_| anyhow::anyhow!("pairs lock poisoned"))?
+            .clone();
+        let new_words = self
+            .new_words
+            .read()
+            .map_err(|_| anyhow::anyhow!("new words lock poisoned"))?
+            .clone();
+        Ok((history, pairs, new_words))
     }
 
     /// 读回 [`Engine::save_history`] 存的输入习惯，返回条数。
@@ -440,15 +690,29 @@ impl Engine {
             .pairs
             .write()
             .map_err(|_| anyhow::anyhow!("pairs lock poisoned"))?;
-        crate::learn::load_history(path, &mut history, &mut pairs)
+        let mut new_words = self
+            .new_words
+            .write()
+            .map_err(|_| anyhow::anyhow!("new words lock poisoned"))?;
+        crate::learn::load_history(path, &mut history, &mut pairs, &mut new_words)
     }
 
+    /// 上次选这个词时的次数（衰减过、四舍五入），没选过是 0。
     pub fn history_count(&self, word: &str) -> u32 {
         self.history
             .read()
             .ok()
-            .and_then(|h| h.get(word).map(|e| e.count))
+            .and_then(|h| h.get(word).map(|e| e.count.round() as u32))
             .unwrap_or(0)
+    }
+
+    /// 这个词 at_ms 时的选词热度（衰减到那时），没选过是 0。
+    pub fn history_heat(&self, word: &str, at_ms: u64) -> f64 {
+        self.history
+            .read()
+            .ok()
+            .and_then(|h| h.get(word).map(|e| learn::decayed(*e, at_ms)))
+            .unwrap_or(0.0)
     }
 
     pub fn with_config(mut self, config: EngineConfig) -> Self {
@@ -678,6 +942,9 @@ impl Engine {
         if let Ok(mut history) = self.history.write() {
             forgot |= history.remove(word).is_some();
         }
+        if let Ok(mut new_words) = self.new_words.write() {
+            forgot |= new_words.remove(word).is_some();
+        }
         if let Ok(mut pairs) = self.pairs.write() {
             forgot |= pairs.remove_word(word) > 0;
         }
@@ -694,7 +961,9 @@ impl Engine {
         self.lexicon.words()
     }
 
+    /// 存用户词库（在调用的线程上写完才返回）；按键的线程上用 [`Engine::save_user_dict_async`]。
     pub fn save_user_dict<P: AsRef<std::path::Path>>(&self, path: P) -> Result<()> {
+        self.saver.flush();
         self.lexicon.save_tsv(path)
     }
 
@@ -715,12 +984,107 @@ impl Engine {
         &self.config
     }
 
-    /// 输入拼音串，返回候选；解析失败时返回空列表。
-    /// 基于上一词的候选预测（「预测词库」）。
+    /// 基于上一词的候选预测（「预测词库」）：先是用户学到的搭配（prev 后面选过的，热的在前，
+    /// 热度不到 [`learn::MIN_PICK_HEAT`] 的不算），再是词级语言模型里常跟在 prev 后面的词。
     ///
-    /// 返回 (词, 对数概率)，按概率降序。语言模型没接入预测能力时返回空。
+    /// 返回 (词, 分数)，按分数降序：模型的是对数概率（不大于 0），学到的搭配是 ln(1+热度)（大于 0，排在前面）。
+    /// 都是词库里的写法。语言模型没接入预测能力、也没学过时返回空。
     pub fn predict_next(&self, prev: &str, limit: usize) -> Vec<(String, f64)> {
-        self.lm.top_next(prev, limit)
+        let mut out: Vec<(String, f64)> = self
+            .pairs
+            .read()
+            .map(|pairs| pairs.next_words(prev, now_ms()))
+            .unwrap_or_default()
+            .into_iter()
+            .filter(|(_, heat)| *heat >= learn::MIN_PICK_HEAT)
+            .map(|(word, heat)| (word, heat.ln_1p()))
+            .take(limit)
+            .collect();
+        for (word, score) in self.lm.top_next(prev, limit) {
+            if out.len() >= limit {
+                break;
+            }
+            if !out.iter().any(|(w, _)| *w == word) {
+                out.push((word, score));
+            }
+        }
+        out
+    }
+
+    /// 上屏以后的联想（会话用）：before 是光标前已上屏的字（末尾是刚上屏的 just），返回最多 limit 个
+    /// 常跟在后面的词（词库里的写法）。
+    ///
+    /// 按上文末尾的词查 [`Engine::predict_next`]：先试最近一次选的词（光标前正好以它结尾），再试末尾 4、3、2、1 个字，
+    /// 用第一个查得到的（短的字查出来的多半接不上，不拿来凑数）。去掉标点、符号、单个字母，和刚上屏的一样的。
+    pub fn associate(&self, before: &str, just: &str, limit: usize) -> Vec<String> {
+        let mut keys: Vec<String> = Vec::new();
+        if let Ok(last) = self.last_word.read() {
+            if !last.is_empty() && before.ends_with(&self.shown_text(&last)) {
+                keys.push(last.clone());
+            }
+        }
+        let chars: Vec<char> = before.chars().collect();
+        for n in (1..=chars.len().min(4)).rev() {
+            let tail: String = chars[chars.len() - n..].iter().collect();
+            if !keys.contains(&tail) {
+                keys.push(tail);
+            }
+        }
+        let just_plain = self.lexicon_form(just);
+        let nnlm = self.nnlm.read().ok().and_then(|m| m.clone());
+        let learned: Vec<String> = self
+            .pairs
+            .read()
+            .map(|p| p.next_words(keys.first().map_or("", String::as_str), now_ms()))
+            .unwrap_or_default()
+            .into_iter()
+            .filter(|(_, heat)| *heat >= learn::MIN_PICK_HEAT)
+            .map(|(w, _)| w)
+            .collect();
+        for key in &keys {
+            // 有字级模型时多取一些再按它重排（见 ASSOCIATE_POOL）
+            let pool = if nnlm.is_some() { ASSOCIATE_POOL.max(limit) } else { limit.saturating_mul(2) };
+            let mut out: Vec<(String, f64)> = Vec::new();
+            for (word, score) in self.predict_next(key, pool) {
+                if !associable(&word) || word == *key || word == just || word == just_plain {
+                    continue;
+                }
+                if out.iter().any(|(w, _)| *w == word) {
+                    continue;
+                }
+                out.push((word, score));
+            }
+            if let Some(model) = &nnlm {
+                // 词级模型给的是 ln(P(词|前词) / P(词))，按它排偏向罕见的固定搭配（你好 -> 久放、谢谢 -> 抬爱）；
+                // 字级模型给的是真正的条件概率：按「光标前的字接这个词的第一个字」重排，学到的搭配照旧在前
+                // 先按第一个字的概率粗筛（一次前向，之后每个词只是一次点积），再给留下的算整词的概率
+                let context = model.context_tokens(before);
+                let mut scored: Vec<(String, f64, bool)> = out
+                    .into_iter()
+                    .map(|(w, _)| {
+                        let first = w.chars().next().unwrap_or(' ');
+                        let r = f64::from(model.next_char_logprob(&context, first));
+                        let mine = learned.contains(&w);
+                        (w, r, mine)
+                    })
+                    .filter(|(_, r, mine)| *mine || *r >= ASSOCIATE_MIN_LOGPROB)
+                    .collect();
+                scored.sort_by(|a, b| b.2.cmp(&a.2).then(b.1.total_cmp(&a.1)));
+                scored.truncate(ASSOCIATE_RESCORE);
+                // 整词的 log 概率按字数的平方根折算：不全按总和（总偏向单字）也不全按平均（总偏向长词）
+                for (w, r, _) in scored.iter_mut() {
+                    let n = w.chars().count().max(1) as f64;
+                    *r = model.score(&context, w) / n.sqrt();
+                }
+                scored.sort_by(|a, b| b.2.cmp(&a.2).then(b.1.total_cmp(&a.1)));
+                out = scored.into_iter().map(|(w, r, _)| (w, r)).collect();
+            }
+            out.truncate(limit);
+            if !out.is_empty() {
+                return out.into_iter().map(|(w, _)| w).collect();
+            }
+        }
+        Vec::new()
     }
 
     pub fn input(&self, raw: &str) -> Vec<Candidate> {
@@ -972,8 +1336,13 @@ impl Engine {
 
     /// 翻页用的长尾：前面几页之后，把输入能对上的词全补上，直到 `max_candidates`。
     ///
-    /// 照着微信输入法：先是整个输入的同音词（按词频），再是句首词（长的在前），
-    /// 最后是第一个音节的单字。前面已经有的不重复；排第一的结果没纠错时不补纠错出来的词。
+    /// 顺序：整个输入的同音词（按词频）→ 句首词（长的在前）→ 第一个音节的常用单字 →
+    /// 换一种切法才对得上的词（houxuanci 的「后续」）→ 第一个音节的生僻字 →
+    /// 换一种切法才对得上的单字。前面已经有的不重复；排第一的结果没纠错时不补纠错出来的词。
+    ///
+    /// 输入框里显示的切法（ling'lian'jie）是用户看着打的那一种：整句不对时接下来多半是
+    /// 按这个切法一个字一个字选，所以它的常用字排在换切法的词（ling li | an jie 的「凌厉」）
+    /// 前面，换切法的单字放到最后。
     fn append_more_candidates(
         &self,
         raw: &str,
@@ -982,9 +1351,6 @@ impl Engine {
         result: &mut Vec<Candidate>,
     ) -> Result<()> {
         let max = self.config.max_candidates.max(1);
-        if result.len() >= max {
-            return Ok(());
-        }
         let Ok(parsed) = parse(normalized) else {
             return Ok(());
         };
@@ -1046,19 +1412,35 @@ impl Engine {
             }],
         };
         let mut whole = Vec::new();
+        let mut homophones = Vec::new();
         let mut heads = Vec::new();
         for (word, cost) in words {
             if exact_top && word.typos > 0 {
                 continue;
             }
             if word.end >= total {
-                whole.push(to_candidate(word, cost));
+                // 打全了、整个输入正好是词库里的一个词（两个音节以上）：同音词
+                let exact = word.typos == 0
+                    && word.completion == 0
+                    && word.abbrev == 0
+                    && !word.jianpin
+                    && word.syllable_count >= 2;
+                if exact && exact_top {
+                    homophones.push(to_candidate(word, cost));
+                } else {
+                    whole.push(to_candidate(word, cost));
+                }
             } else if word.completion == 0 {
                 heads.push(to_candidate(word, cost));
             }
         }
         // 句首词只留在音节边界上的（不把一个音节拆开）
-        let other_splits = prefix_on_syllable_boundaries(result, normalized, &mut heads);
+        let mut other_splits = prefix_on_syllable_boundaries(result, normalized, &mut heads);
+        if self.config.shuangpin {
+            // 双拼的音节边界由键对定死（ie | il 就是 che | chuang），不能换一种切法：
+            // 换切法的「撤出」[che chu] 只用掉 ie 两个键，选了它会多上屏一个字
+            other_splits.clear();
+        }
         let leading = raw.len() - raw.trim_start().len();
         let mut seen: HashMap<String, ()> = result.iter().map(|c| (c.text.clone(), ())).collect();
         let converter = if self.config.traditional {
@@ -1066,15 +1448,94 @@ impl Engine {
         } else {
             None
         };
-        // 词在前、单字在后；换一种切法才对得上的句首词（houxuanci 的「后续」）夹在中间
-        let (chars, words): (Vec<_>, Vec<_>) =
-            heads.into_iter().partition(|c| c.text.chars().count() == 1);
-        for mut candidate in whole
+        // 同音词全部排在句首词和单字前面，接在束搜索给出的整词后面。束搜索只留分数最高的
+        // 十来条，名额常被纠错、补全出来的高频词占掉（tongde 的「用的、听得、功德」），
+        // 词库里打全了就对得上的词（通的、大创、超梦）反而掉到单字后面，只能一个字一个字选。
+        // 两个音节的同音词最多三十来个（按使用频率算 90% 的输入不超过 8 个），不会把单字挤得太远。
+        // 原始串/英文候选先拿出来，插完再放回原来的位置（英文词排第 6 的还排第 6）
+        let mut raws: Vec<(usize, Candidate)> = Vec::new();
+        let mut i = 0;
+        while i < result.len() {
+            if is_raw_candidate(&result[i]) {
+                raws.push((i + raws.len(), result.remove(i)));
+            } else {
+                i += 1;
+            }
+        }
+        let mut at = result
+            .iter()
+            .rposition(|c| c.consumed >= raw.len() && c.features.typo_count == 0.0)
+            .map_or(0, |i| i + 1);
+        // 三个音节以上的同音词还要排在读音一样、几个词拼出来的整句前面（qidongqi：启动器 在 启动 | 其
+        // 前面），和 protect_exact_input 对束搜索结果做的一样；用户选过的整句不动。
+        // 有音节更少、够常用的整词时（jieran 的「截然」），换切法才对得上的长词（己二胺）不往前提
+        let fewest = fewest_exact_syllables(result)
             .into_iter()
-            .chain(words)
-            .chain(other_splits)
-            .chain(chars)
-        {
+            .chain(
+                homophones
+                    .iter()
+                    .filter(|c| c.words[0].freq >= EXACT_PROTECT_MIN_FREQ)
+                    .map(|c| c.pinyin.split_whitespace().count()),
+            )
+            .min();
+        for mut candidate in homophones {
+            let syllables = candidate.pinyin.split_whitespace().count();
+            let long = syllables >= EXACT_LONG_SYLLABLES
+                && candidate.words[0].freq >= EXACT_LONG_MIN_FREQ
+                && fewest.is_none_or(|n| syllables <= n);
+            if let Some(conv) = converter.as_ref().filter(|c| !c.is_empty()) {
+                candidate.text = conv.convert(&candidate.text);
+            }
+            if seen.insert(candidate.text.clone(), ()).is_some() {
+                continue;
+            }
+            candidate.consumed = raw.len();
+            let stitched = result[..at].iter().position(|c| {
+                long && c.consumed >= raw.len()
+                    && c.words.len() >= 2
+                    && c.features.history_use_count == 0.0
+                    && same_syllables(c, &candidate)
+            });
+            result.insert(stitched.unwrap_or(at), candidate);
+            at += 1;
+        }
+        for (i, c) in raws {
+            let i = i.min(result.len());
+            result.insert(i, c);
+        }
+        // 超出上限时从后面去掉（原始串/英文候选不动）
+        while result.len() > max {
+            match result.iter().rposition(|c| !is_raw_candidate(c)) {
+                Some(i) if result.len() > 1 => {
+                    result.remove(i);
+                }
+                _ => break,
+            }
+        }
+        // 长尾按 TailTier 分层排：层与层之间按层，同一层里保持束搜索给的顺序
+        let single = |c: &Candidate| c.text.chars().count() == 1;
+        let mut tail: Vec<(TailTier, Candidate)> = whole
+            .into_iter()
+            .map(|c| (TailTier::Whole, c))
+            .collect();
+        for c in heads {
+            let tier = match (single(&c), is_rare_char(&c)) {
+                (false, _) => TailTier::HeadWord,
+                (true, false) => TailTier::HeadChar,
+                (true, true) => TailTier::RareChar,
+            };
+            tail.push((tier, c));
+        }
+        for c in other_splits {
+            let tier = if single(&c) {
+                TailTier::OtherSplitChar
+            } else {
+                TailTier::OtherSplitWord
+            };
+            tail.push((tier, c));
+        }
+        tail.sort_by_key(|(tier, _)| *tier); // 稳定排序：同一层里的先后不变
+        for (_, mut candidate) in tail {
             if result.len() >= max {
                 break;
             }
@@ -1464,6 +1925,16 @@ impl Engine {
         };
         let mut order: Vec<usize> = (0..paths.len()).collect();
         order.sort_by(|&a, &b| paths[b].score.total_cmp(&paths[a].score));
+        // 没有上文时只给长输入重排：单独一个词（kexue、jieran）时字级模型只会比较「哪串字常见」，
+        // 盖过词库对整词的判断；几个词连起来顺不顺才是它擅长的。见 NNLM_MIN_SYLLABLES
+        let syllables: usize = paths[order[0]]
+            .words
+            .iter()
+            .map(|w| w.pinyin.split_whitespace().count())
+            .sum();
+        if syllables < NNLM_MIN_SYLLABLES && self.context().trim().is_empty() {
+            return out;
+        }
         let context = model.context_tokens(&self.context());
         let scored: Vec<(usize, f64)> = order
             .iter()
@@ -1584,7 +2055,7 @@ impl Engine {
                     (Some(a), _) => a,
                     (None, Some(b)) => b,
                     (None, None) => HistoryEntry {
-                        count: 0,
+                        count: 0.0,
                         last_used_ms: at_ms,
                     },
                 };
@@ -1731,6 +2202,17 @@ fn letters_to_bytes(raw: &str, letters: usize) -> usize {
 /// （长句）第二名往后的整句只是小改动，价值不如句首词，所以句首词紧跟第一名。
 /// 词频低于这个数的词不受「精确优先」保护（rime-ice 里约排在 20 万名以后，多是生僻或凑出来的条目）。
 const EXACT_PROTECT_MIN_FREQ: f64 = 1000.0;
+/// 整个输入是一个词、音节数到这个数时，「精确优先」不看词频，几个词拼出来的候选也排它后面。
+const EXACT_LONG_SYLLABLES: usize = 3;
+/// 上面这条规则要的最低词频：只有个位数词频的条目（赤锦腕 1、大李窑 3）多是人名地名，
+/// 撞上常用词拼出来的整句（吃 | 今晚、搭理 | 要）时不该抢第一；它们照样在第一页的同音词里。
+/// 占位词频是 100，手工补的冷门词（发一版 65）也在这条线以上。
+const EXACT_LONG_MIN_FREQ: f64 = 10.0;
+/// 没有上文时，输入至少这么多个音节才用字级神经语言模型重排（有上文时都用）。
+/// scripts/eval.sh 实测（ArchType 自己的 nnlm.bin，权重 0.5）：门槛 0 时日常整句 +2.2、上文 +4.9，
+/// 但常用词 -3.5、简拼 -6.7、截断 -8.7；门槛 4 时冷门词还掉 1.6；门槛 5 时单独打词的各组和不带模型时一样，
+/// 日常整句 90.6% -> 94.2%、上文 89.1% -> 94.0%。
+const NNLM_MIN_SYLLABLES: usize = 5;
 /// 神经语言模型特征最低到多少（自然对数），免得一条特别离谱的把分数拉得太开。
 const NNLM_FLOOR: f64 = 20.0;
 
@@ -1757,12 +2239,46 @@ fn protect_exact_input(candidates: &mut Vec<Candidate>) {
             && !c.words.is_empty()
             && c.words.iter().all(|w| w.known)
     };
+    // 三个音节以上、整个输入正好是词库里的一个词：读音这么长还能对上，同音的词库词平均不到两个，
+    // 不看词频也算实在的词（前后端、启动器、候选词在 rime-ice 里都只有占位的词频）
+    // 切法得是最自然的那种：有个音节更少、够常用的精确整词时（jieran 的「截然」jie ran），
+    // 换一种切法才对得上的长词（己二胺 ji er an）不算
+    let fewest = fewest_exact_syllables(candidates);
+    let long_word = |c: &Candidate| {
+        let syllables = c.pinyin.split_whitespace().count();
+        c.words.len() == 1
+            && c.words[0].freq >= EXACT_LONG_MIN_FREQ
+            && syllables >= EXACT_LONG_SYLLABLES
+            && fewest.is_none_or(|n| syllables <= n)
+    };
     let solid = |c: &Candidate| {
         is_exact(c)
             && (c.words.len() == 1 || c.words.last().map(multi).unwrap_or(false))
             && (c.features.history_count > 0.0
+                || long_word(c)
                 || c.words.iter().all(|w| w.freq >= EXACT_PROTECT_MIN_FREQ))
     };
+    // 长的整词先提到拼出来的整句前面：fayiban 里 法 | 一般 本身也算「实在的」（最后一个词两个字），
+    // 下面按第一个实在的候选当锚点时轮不到「发一版」。用户选过的整句不动
+    // 只压过读音完全一样的拼凑（启动 | 其 = qi dong qi）；分数只抬到刚好高过它，后面的不动
+    // （整段压成等差会让 compose_candidates 按分差去掉硬凑整句的判断失效）
+    if let Some(word_at) = candidates.iter().position(|c| is_exact(c) && long_word(c)) {
+        let stitched = candidates[..word_at].iter().position(|c| {
+            c.words.len() >= 2
+                && c.features.history_use_count == 0.0
+                && same_syllables(c, &candidates[word_at])
+        });
+        if let Some(at) = stitched {
+            let mut word = candidates.remove(word_at);
+            word.score = word.score.max(candidates[at].score + 1e-3);
+            candidates.insert(at, word);
+            for i in 1..candidates.len() {
+                if candidates[i].score > candidates[i - 1].score {
+                    candidates[i].score = candidates[i - 1].score - 1e-3;
+                }
+            }
+        }
+    }
     let Some(anchor) = candidates.iter().position(solid) else {
         return;
     };
@@ -1770,6 +2286,8 @@ fn protect_exact_input(candidates: &mut Vec<Candidate>) {
         return;
     }
     let whole_word = candidates[anchor].words.len() == 1;
+    let long_anchor = long_word(&candidates[anchor]);
+    let anchor_pinyin = candidates[anchor].pinyin.clone();
     // 精确结果是几个词拼的（我在 | 种地）时，只管开头一样、只是后面换了词的拼凑结果
     // （我 | 在重点）；一个整词盖住全部输入的（从善如流 vs 从善 | 入理）是更强的证据，不动
     let head_text: String = {
@@ -1783,8 +2301,12 @@ fn protect_exact_input(candidates: &mut Vec<Candidate>) {
         |c: &Candidate| whole_word || (c.words.len() >= 2 && c.text.starts_with(&head_text));
     let yields = |c: &Candidate| {
         let corrected = c.features.typo_count > 0.0 || c.features.prefix_completion > 0.0;
+        // 长的整词前面，几个词拼出来的都让位（启动 | 其、前后 | 断）；短的整词只压过全是单字拼的
         (corrected && same_head(c))
-            || (whole_word && c.words.len() >= 2 && !c.words.iter().any(multi))
+            || (whole_word
+                && c.words.len() >= 2
+                && ((long_anchor && c.pinyin.split_whitespace().eq(anchor_pinyin.split_whitespace()))
+                    || !c.words.iter().any(multi)))
     };
     if !candidates[..anchor].iter().any(yields) {
         return;
@@ -1811,6 +2333,27 @@ fn protect_exact_input(candidates: &mut Vec<Candidate>) {
         }
     }
     *candidates = keep;
+}
+
+/// 两个候选的音节一样（整词和拼凑出来的整句：启动器 / 启动 | 其）。
+fn same_syllables(a: &Candidate, b: &Candidate) -> bool {
+    a.pinyin.split_whitespace().eq(b.pinyin.split_whitespace())
+}
+
+/// 不靠纠错、补全、整个输入是一个够常用（[`EXACT_PROTECT_MIN_FREQ`]）的词库词的候选里，最少几个音节。
+fn fewest_exact_syllables(candidates: &[Candidate]) -> Option<usize> {
+    candidates
+        .iter()
+        .filter(|c| {
+            c.words.len() == 1
+                && c.words[0].known
+                && c.words[0].freq >= EXACT_PROTECT_MIN_FREQ
+                && c.features.typo_count == 0.0
+                && c.features.prefix_completion == 0.0
+                && c.features.coverage_score >= 1.0
+        })
+        .map(|c| c.pinyin.split_whitespace().count())
+        .min()
 }
 
 /// 用户上次给这串输入选过的候选往前放（微信输入法的 FirstUserCandidateRanker /
@@ -1890,9 +2433,11 @@ fn pin_single_initial(input: &str, candidates: &mut Vec<Candidate>) {
     }
 }
 
+/// 同一串输入上次选过的候选提前（词和整句放第一，单字放第二）。热度（`history_use_count`，
+/// 衰减过的）不到 [`learn::MIN_PICK_HEAT`] 的不算：误选一次的词一个月以后就不再一直顶在前面。
 fn promote_picked(candidates: &mut Vec<Candidate>) {
     let picked = |c: &Candidate| {
-        c.features.history_use_count > 0.0
+        f64::from(c.features.history_use_count) >= learn::MIN_PICK_HEAT
             && c.features.typo_count == 0.0
             && c.features.prefix_completion == 0.0
             && c.features.full_jianpin == 0.0
@@ -1941,7 +2486,8 @@ fn promote_picked(candidates: &mut Vec<Candidate>) {
 /// 是简拼或纠错结果时没法对齐字母，只要求它至少两个音节。
 ///
 /// 返回被筛掉、但换一种切法也说得通的词：词本身是完整全拼，剩下的字母也能整个切成
-/// 音节（houxuanci 里的「后续」= hou xu | an ci）。它们不该挤进前几页，长尾最后补上。
+/// 音节（houxuanci 里的「后续」= hou xu | an ci）。它们不该挤进前几页，长尾里补上
+/// （位置见 [`Engine::append_more_candidates`]）。
 fn prefix_on_syllable_boundaries(
     result: &[Candidate],
     normalized: &str,
@@ -1951,7 +2497,15 @@ fn prefix_on_syllable_boundaries(
         prefix.clear();
         return Vec::new();
     };
-    let syllables: Vec<&str> = top.pinyin.split_whitespace().collect();
+    // 儿化的音节（wanr）按「音节 + r」两段算：第一名是「玩儿」时，wan 的单字（玩、万）照样是句首词
+    let syllables: Vec<&str> = top
+        .pinyin
+        .split_whitespace()
+        .flat_map(|s| match s.strip_suffix('r') {
+            Some(base) if !base.is_empty() && s != "er" => vec![base, "r"],
+            _ => vec![s],
+        })
+        .collect();
     if syllables.len() < 2 {
         prefix.clear();
         return Vec::new();
@@ -1976,13 +2530,9 @@ fn prefix_on_syllable_boundaries(
     }
     let exact = top.features.typo_count == 0.0;
     let mut other_splits = Vec::new();
-    // consumed 此时还是字母数（隔音符也算一个字符）
+    // consumed 此时是字母数（音节图里的位置，不含隔音符）
     prefix.retain(|p| {
-        let used = normalized
-            .chars()
-            .take(p.consumed)
-            .filter(|c| c.is_ascii_alphabetic())
-            .count();
+        let used = p.consumed;
         if exact && p.features.typo_count > 0.0 {
             return false;
         }
@@ -2007,12 +2557,17 @@ fn prefix_on_syllable_boundaries(
 }
 
 /// 这串字母能不能整个切成合法的全拼音节（an ci、ci）。
+///
+/// 没有元音的音节（ng、hm、hng，「嗯」「噷」「哼」）不算：linglianjie 切成 li | ng lian jie
+/// 没人会这么打，算进去的话 li 的几百个单字都成了「换一种切法」的候选。
 fn splits_into_syllables(letters: &str) -> bool {
+    let voiced = |s: &str| s.bytes().any(|b| b"aeiouv".contains(&b));
     let mut ok = vec![false; letters.len() + 1];
     ok[0] = true;
     for end in 1..=letters.len() {
         for len in 1..=6.min(end) {
-            if ok[end - len] && is_valid(&letters[end - len..end]) {
+            let syllable = &letters[end - len..end];
+            if ok[end - len] && voiced(syllable) && is_valid(syllable) {
                 ok[end] = true;
                 break;
             }
@@ -2052,6 +2607,33 @@ fn abbrev_graph(
         },
     );
     graph.has_complete_path().then_some(graph)
+}
+
+/// 翻页长尾（[`Engine::append_more_candidates`] 补在前几页后面的）分几层，按这里的先后排。
+///
+/// 整套候选的层次（从前往后）：束搜索的整句 / 整词（[`protect_exact_input`]、[`compose_candidates`] 定先后，
+/// 用户选过的提前），整个输入对得上的词库同音词（插在束搜索的整词后面），句首候选，然后是这里的长尾。
+/// 输入框里显示的切法是用户看着打的那一种：整句不对时接下来多半是按它一个字一个字选，所以它的常用字排在
+/// 换一种切法才对得上的词（ling li | an jie 的「凌厉」）前面。
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+enum TailTier {
+    /// 用完整个输入、束搜索没留下的（纠错、补全出来的整词等）
+    Whole,
+    /// 按显示的切法、从开头起的多字词
+    HeadWord,
+    /// 按显示的切法、第一个音节的常用字
+    HeadChar,
+    /// 换一种切法才对得上的多字词（houxuanci 的「后续」= hou xu | an ci）
+    OtherSplitWord,
+    /// 第一个音节的生僻字（频次小于 1，见 [`crate::lexicon::LexEntry::is_rare`]）
+    RareChar,
+    /// 换一种切法才对得上的单字
+    OtherSplitChar,
+}
+
+/// 长尾里的生僻字（[`crate::lexicon::LexEntry::is_rare`]：频次不到 1 的单字）。
+fn is_rare_char(c: &Candidate) -> bool {
+    c.words.len() == 1 && crate::lexicon::is_rare_char(&c.words[0].text, c.words[0].freq)
 }
 
 /// 全拼和只打声母的音节混着的候选（k yi -> 可以，yong z wen -> 用中文）。
@@ -2112,7 +2694,7 @@ fn sentence_cap(syllables: usize) -> usize {
 ///
 /// 整句只是最后一个词错了时，选它再选最后一个词，比翻页找整句快。
 /// 只给精确全拼的整句，开头至少两个音节（一个音节的开头本来就在句首词里）。
-/// consumed 先存「用掉的字符数」（隔音符算一个），由调用方换算成字节。
+/// consumed 先存「用掉的字母数」（不含隔音符），由调用方换算成字节。
 fn sentence_head(result: &[Candidate], normalized: &str) -> Option<Candidate> {
     let top = result.iter().find(|c| !is_raw_candidate(c))?;
     if !is_sentence(top)
@@ -2139,17 +2721,6 @@ fn sentence_head(result: &[Candidate], normalized: &str) -> Option<Candidate> {
     if !letters.starts_with(&joined) {
         return None;
     }
-    let mut seen = 0usize;
-    let mut consumed = 0usize;
-    for (i, ch) in normalized.chars().enumerate() {
-        if ch.is_ascii_alphabetic() {
-            seen += 1;
-        }
-        if seen == joined.len() {
-            consumed = i + 1;
-            break;
-        }
-    }
     // 用分词（词库里的写法）拼出前半截，不按字数切整句：繁体词组转换可能改变字数
     // （计算机 -> 電腦）。开着繁体时由调用方再转一次
     Some(Candidate {
@@ -2158,7 +2729,10 @@ fn sentence_head(result: &[Candidate], normalized: &str) -> Option<Candidate> {
         score: top.score,
         features: Feature::default(),
         words: head_words.to_vec(),
-        consumed,
+        // 字母数，不含隔音符：调用方用 letters_to_bytes 换算，那边只数字母。
+        // 以前这里存的是带隔音符的字符数，换算时每个隔音符多吃掉后面一个字母
+        // （xi'an'shi'ji'chang 选「西安市」后只剩 chang；双拼解码后音节间都有隔音符，长句都会中）
+        consumed: joined.len(),
     })
 }
 
@@ -2586,7 +3160,7 @@ mod tests {
 
     #[test]
     fn other_split_heads_come_before_chars() {
-        // houxuanci 也能切成 hou xu | an ci：「后续」排在单字前面
+        // houxuanci 也能切成 hou xu | an ci：「后续」排在生僻字前面（常用字之后）
         let mut e = engine(concat!(
             "hou xuan ci\t候选词\t3000\nhou xuan\t候选\t4000\n",
             "hou xu\t后续\t3000\nan\t按\t5000\n",
@@ -2600,6 +3174,49 @@ mod tests {
         assert!(at("后续").is_some(), "{texts:?}");
         assert!(at("后续") < at("㕈"), "{texts:?}");
         assert!(at("候选") < at("后续"), "正常切分的词在前：{texts:?}");
+    }
+
+    #[test]
+    fn first_syllable_chars_come_before_other_splits() {
+        // linglianjie：输入框里切的是 ling'lian'jie。第一页放不下的 ling 的常用字（零）要排在
+        // 换一种切法的词（ling li | an jie 的「凌厉」）前面；li | ng lian jie 不算一种切法
+        let mut e = engine(concat!(
+            "ling\t令\t9000\nling\t灵\t8000\nling\t领\t7000\nling\t另\t6000\n",
+            "ling\t凌\t5000\nling\t玲\t4000\nling\t零\t3000\nling\t龄\t2000\n",
+            "ling\t㖫\t0.8\n",
+            "ling li\t凌厉\t3000\nling li\t伶俐\t2000\n",
+            "li\t里\t90000\nli\t力\t80000\nng\t嗯\t5000\n",
+            "lian jie\t连接\t5000\nlian\t连\t5000\njie\t接\t5000\nan\t按\t5000\n",
+        ));
+        e.set_max_candidates(1000);
+        let list = e.input("linglianjie");
+        let texts: Vec<&str> = list.iter().map(|c| c.text.as_str()).collect();
+        let at = |t: &str| texts.iter().position(|x| *x == t);
+        for common in ["零", "龄"] {
+            assert!(at(common).is_some(), "{texts:?}");
+            assert!(at(common) < at("凌厉"), "{common} 应在换切法的词前面：{texts:?}");
+        }
+        assert!(at("凌厉").is_some() && at("伶俐").is_some(), "{texts:?}");
+        assert!(at("凌厉") < at("㖫"), "换切法的词在生僻字前面：{texts:?}");
+        assert!(at("里").is_none() && at("力").is_none(), "li | ng… 不是一种切法：{texts:?}");
+    }
+
+    #[test]
+    fn other_split_chars_come_last() {
+        // fangan 也能切成 fan | gan：「反」排在 fang 的所有单字（包括生僻字）后面
+        let mut e = engine(concat!(
+            "fang an\t方案\t9000\n",
+            "fang\t放\t9000\nfang\t方\t8000\nfang\t房\t7000\nfang\t防\t6000\n",
+            "fang\t访\t5000\nfang\t仿\t4000\nfang\t纺\t3000\nfang\t㑂\t0.8\n",
+            "fan\t反\t90000\ngan\t干\t9000\nan\t按\t5000\n",
+        ));
+        e.set_max_candidates(1000);
+        let list = e.input("fangan");
+        let texts: Vec<&str> = list.iter().map(|c| c.text.as_str()).collect();
+        let at = |t: &str| texts.iter().position(|x| *x == t);
+        assert!(at("反").is_some(), "换切法的单字还在：{texts:?}");
+        assert!(at("纺") < at("反"), "{texts:?}");
+        assert!(at("㑂") < at("反"), "{texts:?}");
     }
 
     #[test]
@@ -2890,6 +3507,42 @@ mod tests {
         e.record_selection("妮好");
         assert!(!e.forget_word("妮好"));
         assert_eq!(e.history_count("妮好"), 1);
+    }
+
+    #[test]
+    fn async_save_writes_in_background() {
+        let e = engine("ni hao\t你好\t10\n");
+        e.add_user_word("wo te", "我特", 5000.0).unwrap();
+        e.record_selection("我特");
+        let dir = std::env::temp_dir().join(format!("archtype-async-save-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let (dict, history) = (dir.join("user.tsv"), dir.join("history.tsv"));
+        e.save_user_dict_async(&dict).unwrap();
+        e.save_history_async(&history).unwrap();
+        assert_eq!(e.save_wait(None), saver::SaveStatus::Done);
+        let again = engine("ni hao\t你好\t10\n");
+        assert_eq!(again.load_user_dict(&dict).unwrap(), 1);
+        assert!(again.load_history(&history).unwrap() >= 1);
+        assert_eq!(again.history_count("我特"), 1);
+
+        // 后台排着旧的、接着同步存新的：同步的先等旧的写完，文件里是新的
+        e.remove_user_word("我特");
+        e.save_user_dict_async(&dict).unwrap();
+        e.add_user_word("wo te", "沃特", 5000.0).unwrap();
+        e.save_user_dict(&dict).unwrap();
+        let text = std::fs::read_to_string(&dict).unwrap();
+        assert!(text.contains("沃特") && !text.contains("我特"), "{text}");
+
+        // 写不了的报一次错
+        e.save_history_async(dir.join("没有这个目录/history.tsv")).unwrap();
+        assert!(matches!(e.save_wait(None), saver::SaveStatus::Failed(_)));
+        assert_eq!(e.save_wait(Some(std::time::Duration::ZERO)), saver::SaveStatus::Done);
+
+        // 引擎释放时先写完
+        e.save_history_async(&history).unwrap();
+        drop(e);
+        assert!(std::fs::read_to_string(&history).unwrap().contains("我特"));
+        std::fs::remove_dir_all(&dir).ok();
     }
 
     #[test]
@@ -3451,6 +4104,150 @@ mod tests {
         assert!(long.len() <= e.config.max_candidates.max(1));
     }
 
+    /// 句首候选用掉的输入必须正好是它自己的拼音：带隔音符、双拼都一样。
+    #[test]
+    fn head_candidates_consume_exactly_their_own_pinyin() {
+        let tsv = concat!(
+            "xi an\t西安\t500000\n",
+            "shi\t市\t900000\n",
+            "ji chang\t机场\t500000\n",
+            "xi\t西\t400\n",
+            "an\t安\t300\n",
+            "ji\t机\t300\n",
+            "chang\t场\t300\n",
+            "wo men\t我们\t900000\n",
+            "de\t的\t900000\n",
+            "wo\t我\t900000\n",
+            "xi huan\t喜欢\t500000\n",
+        );
+        let mut e = engine(tsv);
+        e.set_max_candidates(60);
+        for input in ["xianshijichang", "xi'an'shi'ji'chang", "xi'anshi'jichang"] {
+            let list = e.input(input);
+            let heads: Vec<&Candidate> = list.iter().filter(|c| c.consumed < input.len()).collect();
+            assert!(heads.iter().any(|c| c.text == "西安市"), "{input}: 缺句首候选 西安市");
+            assert!(heads.iter().any(|c| c.text == "西安"), "{input}: 缺句首词 西安");
+            for c in heads {
+                let used = input[..c.consumed].replace('\'', "");
+                assert_eq!(used, c.pinyin.replace(' ', ""), "{input}: {} 用掉了 {used}", c.text);
+            }
+        }
+        // 小鹤双拼：每个音节两个键，解码出来的全拼音节之间都有隔音符
+        e.set_shuangpin(true);
+        e.set_shuangpin_scheme(crate::shuangpin::Scheme::Xiaohe);
+        let input = "womfdewoxihr";
+        let list = e.input(input);
+        assert_eq!(list[0].text, "我们的我喜欢");
+        let heads: Vec<&Candidate> = list.iter().filter(|c| c.consumed < input.len()).collect();
+        assert!(heads.iter().any(|c| c.text == "我们"), "缺句首词 我们");
+        for c in heads {
+            assert_eq!(
+                c.consumed,
+                2 * c.pinyin.split_whitespace().count(),
+                "{} 用掉了 {:?}",
+                c.text,
+                &input[..c.consumed]
+            );
+        }
+    }
+
+    /// 换一种切法才对得上的长词（jieran 切成 ji er an 的「己二胺」）不能压过自然切法的常用词（截然）。
+    #[test]
+    fn long_word_from_another_split_does_not_beat_common_word() {
+        let mut e = engine(concat!(
+            "jie ran\t截然\t52375\n",
+            "jie\t介\t90000\n",
+            "ran\t然\t900000\n",
+            "ji er an\t己二胺\t760\n",
+            "ji\t几\t900000\n",
+            "er\t二\t900000\n",
+            "an\t安\t900000\n",
+        ));
+        e.set_max_candidates(100);
+        let list: Vec<String> = e.input("jieran").into_iter().map(|c| c.text).collect();
+        assert_eq!(list[0], "截然", "{list:?}");
+        let at = |w: &str| list.iter().position(|t| t == w);
+        assert!(at("己二胺") > at("截然"), "{list:?}");
+    }
+
+    /// 双拼的音节边界由键对定死：句首词用掉的键数必须是音节数的两倍，不出换切法的词
+    /// （ie il ce = che chuang ce，「撤出」che chu 只用掉 ie 两个键，选了会多上屏一个字）。
+    #[test]
+    fn shuangpin_heads_never_resplit_syllables() {
+        let mut e = engine(concat!(
+            "che\t车\t900000\n",
+            "che\t撤\t90000\n",
+            "chuang\t窗\t900000\n",
+            "ce\t测\t900000\n",
+            "che chu\t撤出\t50000\n",
+            "chu\t出\t900000\n",
+            "chuang ce\t窗测\t10\n",
+        ));
+        e.set_max_candidates(200);
+        e.set_shuangpin(true);
+        e.set_shuangpin_scheme(crate::shuangpin::Scheme::Xiaohe);
+        let input = "ieilce";
+        for c in e.input(input).iter().filter(|c| c.consumed < input.len()) {
+            assert_eq!(
+                c.consumed,
+                2 * c.pinyin.split_whitespace().count(),
+                "{} [{}] 用掉了 {:?}",
+                c.text,
+                c.pinyin,
+                &input[..c.consumed]
+            );
+        }
+    }
+
+    /// 整个输入对得上的词库词（同音词）全部排在句首词和单字前面，不受束搜索名额限制。
+    #[test]
+    fn exact_homophones_come_before_head_candidates() {
+        let mut tsv = String::from("tong\t同\t900000\ntong\t通\t800000\nde\t的\t9000000\n");
+        for i in 0..60 {
+            tsv.push_str(&format!("tong de\t同音{i}\t{}\n", 5000 - i));
+        }
+        // 纠错能凑出来的高频词（t 和 y 相邻）：以前它们占掉名额，把上面的词挤到单字后面
+        for i in 0..40 {
+            tsv.push_str(&format!("yong de\t用的{i}\t{}\n", 900000 - i));
+        }
+        let mut e = engine(&tsv);
+        e.set_max_candidates(300);
+        let input = "tongde";
+        let list = e.input(input);
+        let first_head = list
+            .iter()
+            .position(|c| c.consumed < input.len())
+            .expect("应当有句首的单字");
+        for i in 0..60 {
+            let word = format!("同音{i}");
+            let at = list.iter().position(|c| c.text == word);
+            assert!(
+                at.is_some_and(|at| at < first_head),
+                "{word} 在第 {at:?} 位，第一个单字在第 {first_head} 位"
+            );
+        }
+        // 上限小的时候同音词也优先留下，不是先留单字
+        e.set_max_candidates(20);
+        let list = e.input(input);
+        assert!(list.len() <= 20);
+        assert!(list.iter().filter(|c| c.text.starts_with("同音")).count() >= 15, "{list:?}");
+    }
+
+    /// 三个音节以上、整个输入正好是一个词库词：排在几个词拼出来的候选前面，不看词频。
+    #[test]
+    fn long_exact_word_beats_stitched_sentence() {
+        let e = engine(concat!(
+            "qi dong\t启动\t500000\n",
+            "qi\t其\t900000\n",
+            "qi\t器\t5000\n",
+            "dong\t动\t50000\n",
+            "qi dong qi\t启动器\t100\n",
+        ));
+        let list = e.input("qidongqi");
+        assert_eq!(list[0].text, "启动器", "{:?}", list.iter().map(|c| &c.text).collect::<Vec<_>>());
+        assert!(list.iter().any(|c| c.text == "启动其"));
+    }
+
     #[test]
     fn later_pages_list_every_homophone_and_head_word() {
         let mut tsv = String::new();
@@ -3565,23 +4362,103 @@ mod tests {
         );
     }
 
-    #[test]
-    fn composed_word_is_learned_on_first_use() {
-        let lexicon: Arc<dyn Lexicon> = Arc::new(
-            MemoryLexicon::from_tsv_str(
-                "shuang\t双\t10000\nshuang\t霜\t500\npin\t拼\t8000\npin\t频\t500\n\
-                 ge\t个\t20000\nge\t阁\t300\nshuang pin\t双拼\t3000\n",
-            )
-            .unwrap(),
-        );
-        let lm: Arc<dyn LanguageModel> = Arc::new(BigramLm::default());
-        let e = Engine::new(lexicon, lm);
-        assert!(!e.input("shuangpinge").iter().any(|c| c.text == "霜频阁"));
+    fn shuangpinge_engine() -> Engine {
+        engine(
+            "shuang\t双\t10000\nshuang\t霜\t500\npin\t拼\t8000\npin\t频\t500\n\
+             ge\t个\t20000\nge\t阁\t300\nshuang pin\t双拼\t3000\n",
+        )
+    }
 
-        // 分三次选出来的词，用一次就记住、排第一
-        e.record_composed_word("霜频阁", "shuang pin ge");
-        assert_eq!(e.user_words().len(), 1);
+    #[test]
+    fn composed_word_is_learned_on_second_use() {
+        // 以前分几次选出来的词用一次就收进用户词库，挑错一个字（你好事竣）也成了用户词：
+        // 现在第一次只记成候选新词，30 天里第二次这样拼出来才收
+        let e = shuangpinge_engine();
+        assert!(!e.input("shuangpinge").iter().any(|c| c.text == "霜频阁"));
+        let day = 24 * 3600 * 1000;
+        e.record_composed_word_at("霜频阁", "shuang pin ge", day);
+        assert!(e.user_words().is_empty(), "第一次只是候选新词");
+        assert!(e.is_new_word("霜频阁"));
+        e.record_composed_word_at("霜频阁", "shuang pin ge", 20 * day);
+        assert_eq!(e.user_words().len(), 1, "30 天里第二次就收");
+        assert!(!e.is_new_word("霜频阁"));
         assert_eq!(e.input("shuangpinge")[0].text, "霜频阁");
+
+        // 第二次直接选了整个词（学到的搭配让它排上来了）也算
+        let e = shuangpinge_engine();
+        e.record_composed_word_at("霜频阁", "shuang pin ge", day);
+        e.record_selection_with_pinyin_at("霜频阁", Some("shuang pin ge"), 2 * day);
+        assert_eq!(e.user_words().len(), 1);
+
+        // 隔了 30 天以上：重新算第一次
+        let e = shuangpinge_engine();
+        e.record_composed_word_at("霜频阁", "shuang pin ge", day);
+        e.record_composed_word_at("霜频阁", "shuang pin ge", 40 * day);
+        assert!(e.user_words().is_empty());
+        assert!(e.is_new_word("霜频阁"));
+    }
+
+    #[test]
+    fn auto_learn_uses_decayed_heat() {
+        // 很久以前零零散散选过的不算数：每隔 60 天选一次，热度一直到不了 3
+        let e = engine("ni hao\t你好\t10000\n");
+        let day = 24 * 3600 * 1000;
+        for i in 0..5 {
+            e.record_selection_with_pinyin_at("我特", Some("wo te"), i * 60 * day);
+        }
+        assert!(e.user_words().is_empty(), "{:?}", e.user_words());
+        // 一天里选三次就够
+        for i in 0..3 {
+            e.record_selection_with_pinyin_at("沃特", Some("wo te"), 400 * day + i);
+        }
+        assert_eq!(e.user_words().len(), 1);
+    }
+
+    #[test]
+    fn one_old_pick_stops_promoting() {
+        // 误选一次的词以前会一直排第一（热度衰减没有下限）；热度掉到半次以下就不再提前。
+        // 频次差得远，排序特征里的热度本身翻不过来，排第一靠的是「上次选过的放第一」
+        let e = engine("shi jian\t时间\t9000\nshi jian\t事件\t800\n");
+        e.record_selection_at("事件", 0);
+        let day = 24 * 3600 * 1000;
+        assert_eq!(e.input_at("shijian", day)[0].text, "事件", "刚选过的提前");
+        assert_eq!(e.input_at("shijian", 29 * day)[0].text, "事件", "一个月以内还提前");
+        assert_eq!(e.input_at("shijian", 45 * day)[0].text, "时间", "一个半月以后回到原位");
+    }
+
+    #[test]
+    fn undo_learning_rolls_back_one_selection() {
+        let e = shuangpinge_engine();
+        e.add_user_word("wo te", "我特", 5000.0).unwrap();
+        e.record_selection("我特");
+        e.set_context("我特");
+        let start = e.learn_mark();
+        // 选够次数自动收词、学搭配、记候选新词
+        for _ in 0..3 {
+            e.record_selection_with_pinyin("双拼", Some("shuang pin"));
+        }
+        e.record_composed_word("霜频阁", "shuang pin ge");
+        let end = e.learn_mark();
+        assert!(e.user_words().iter().any(|(_, w, _)| w == "双拼"));
+        assert!(e.pair_count() >= 1);
+        assert!(e.is_new_word("霜频阁"));
+        assert!(e.undo_learning(start, end));
+        assert_eq!(e.history_count("双拼"), 0);
+        assert_eq!(e.history_count("霜频阁"), 0);
+        assert!(!e.is_new_word("霜频阁"));
+        assert_eq!(e.pair_count(), 0, "我特 -> 双拼 退掉");
+        let words: Vec<String> = e.user_words().into_iter().map(|(_, w, _)| w).collect();
+        assert_eq!(words, ["我特"], "自动收的退掉，原来的用户词不动");
+        assert_eq!(e.history_count("我特"), 1, "之前的学习不动");
+        assert!(!e.undo_learning(start, end), "撤销过的不再撤销");
+
+        // 撤销以后又被别处学过的不动
+        let start = e.learn_mark();
+        e.record_selection("双拼");
+        let end = e.learn_mark();
+        e.record_selection("双拼");
+        e.undo_learning(start, end);
+        assert_eq!(e.history_count("双拼"), 2, "后来又选的一次在，撤销不去碰");
     }
 
     #[test]

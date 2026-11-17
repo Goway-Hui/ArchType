@@ -8,6 +8,7 @@
 #   2. 用 apt-get / pacman / dnf 安装（含 fcitx5、GTK 4 / libadwaita）
 #   3. 输入法框架不是 fcitx5 时，用 im-config 切到 fcitx5（之后要注销重新登录一次）
 #   4. 把 ArchType 加进 fcitx5 的输入法列表（fcitx5 正在运行时会先重启它一次）
+#   3、4 两步是 archtype-config --setup 做的（直接装包的用户在「ArchType 设置」第一页点「一键设置」也是它）
 #
 # 再跑一遍就是升级到最新版。发行版和源码安装说明见 docs/INSTALL.md。
 #
@@ -239,10 +240,67 @@ install_packages() {
       ;;
     dnf)
       "${SUDO[@]}" dnf install -y "${paths[@]}" \
-        fcitx5-configtool fcitx5-gtk3 fcitx5-gtk4 fcitx5-qt5 fcitx5-qt6 \
+        fcitx5-configtool fcitx5-gtk3 fcitx5-gtk4 fcitx5-qt5 fcitx5-qt6 fcitx5-autostart \
         python3-gobject gtk4 libadwaita gobject-introspection
       ;;
   esac
+}
+
+# GNOME 的候选框靠扩展 Input Method Panel（kimpanel@kde.org）画，活动概览的搜索框里才看得到。
+# 发行版仓库里有它的（Debian 12 / 13 的 gnome-shell-extension-kimpanel，Fedora 45 起）就问一句装上并启用；
+# 仓库里没有的（Ubuntu、Arch 官方仓库、更早的 Fedora）照旧只给链接。有没有按仓库实际查，不按发行版猜。
+KIMPANEL_UUID=kimpanel@kde.org
+KIMPANEL_PKG=gnome-shell-extension-kimpanel
+KIMPANEL_URL=https://extensions.gnome.org/extension/261/kimpanel/
+kimpanel_in_repo() {
+  case "$manager" in
+    apt-get) apt-cache show "$KIMPANEL_PKG" >/dev/null 2>&1 ;;
+    dnf) dnf -q info "$KIMPANEL_PKG" >/dev/null 2>&1 ;;
+    *) return 1 ;;
+  esac
+}
+enable_kimpanel() {
+  gnome-extensions enable "$KIMPANEL_UUID" 2>/dev/null && return 0
+  # 刚装的扩展 GNOME Shell 还没扫到（Wayland 下要重新登录），enable 会失败：直接记进启用列表，登录后生效
+  command -v gsettings >/dev/null || return 1
+  local current
+  current=$(gsettings get org.gnome.shell enabled-extensions 2>/dev/null) || return 1
+  [[ "$current" == *"'$KIMPANEL_UUID'"* ]] && return 0
+  if [[ "$current" == "@as []" || "$current" == "[]" ]]; then
+    current="['$KIMPANEL_UUID']"
+  else
+    current="${current%]}, '$KIMPANEL_UUID']"
+  fi
+  gsettings set org.gnome.shell enabled-extensions "$current"
+}
+gnome_kimpanel() {
+  [[ "${XDG_CURRENT_DESKTOP:-}" == *GNOME* ]] && command -v gnome-extensions >/dev/null || return 0
+  local installed
+  installed=$(gnome-extensions list 2>/dev/null) || return 0
+  if grep -qx "$KIMPANEL_UUID" <<<"$installed"; then
+    gnome-extensions list --enabled 2>/dev/null | grep -qx "$KIMPANEL_UUID" && return 0
+    if confirm "GNOME 扩展 Input Method Panel 装了但没启用（候选框要靠它显示），现在启用吗？"; then
+      enable_kimpanel && say "已启用 GNOME 扩展 Input Method Panel" ||
+        warn "没启用成功，请在「扩展」应用里打开 Input Method Panel"
+    fi
+    return 0
+  fi
+  if kimpanel_in_repo &&
+     confirm "GNOME 下候选框要靠扩展 Input Method Panel 显示，现在装上（${KIMPANEL_PKG}）并启用吗？"; then
+    local ok=""
+    case "$manager" in
+      apt-get) "${SUDO[@]}" env DEBIAN_FRONTEND=noninteractive apt-get install -y "$KIMPANEL_PKG" && ok=1 ;;
+      dnf) "${SUDO[@]}" dnf install -y "$KIMPANEL_PKG" && ok=1 ;;
+    esac
+    if [[ -n "$ok" ]] && enable_kimpanel; then
+      say "已装上并启用 GNOME 扩展 Input Method Panel（注销重新登录后生效）"
+      relogin=1
+      return 0
+    fi
+    warn "Input Method Panel 没装好，可以从 ${KIMPANEL_URL} 安装"
+    return 0
+  fi
+  warn "GNOME 下建议装扩展 Input Method Panel（${KIMPANEL_URL}），活动概览的搜索框里才能显示候选框"
 }
 
 main() {
@@ -317,61 +375,30 @@ main() {
   say "安装（需要时会要求输入密码）"
   install_packages
 
-  # 旧品牌 WowType 的包如果还装着，输入法列表里会多一个用不了的 WowType；只提示，不替用户卸
-  if [[ -e /usr/share/fcitx5/addon/wowtype.conf || -e /usr/lib/fcitx5/libwowtype.so ]]; then
-    warn "检测到旧品牌 WowType 的安装文件。建议卸载旧包（pacman -R wowtype / apt remove wowtype / dnf remove wowtype），用户词库和设置会自动迁移到 ArchType"
-  fi
-
-  # 输入法框架。deepin 默认就是 fcitx5（经 deepin-im），不去动它
-  local relogin=""
-  local -a mode=()
-  if [[ "$distro" == deepin* ]]; then
-    :
-  elif [[ -z "${ARCHTYPE_NO_IM_CONFIG:-}" ]] && command -v im-config >/dev/null &&
-     mapfile -t mode < <(im-config -m 2>/dev/null) && [[ ${#mode[@]} -gt 0 ]]; then
-    # im-config -m：第 1 行系统设置，第 2 行当前用户的设置（没设过是 missing）
-    local active=${mode[1]:-}
-    [[ -z "$active" || "$active" == missing ]] && active=${mode[0]:-}
-    if [[ "$active" != fcitx5 ]]; then
-      if confirm "现在的输入法框架是「${active:-未知}」，切换到 fcitx5 吗？（要注销重新登录一次）"; then
-        if im-config -n fcitx5; then
-          relogin=1
-          say "已把输入法框架切到 fcitx5（im-config）"
-        else
-          warn "im-config 切换失败，请手动运行：im-config -n fcitx5，然后注销重新登录"
-        fi
-      else
-        warn "没切换输入法框架，ArchType 要在 fcitx5 下才能用"
-      fi
-    fi
-  elif [[ -z "${ARCHTYPE_NO_IM_CONFIG:-}" ]]; then
-    if [[ "$manager" == apt-get ]]; then
-      warn "没法自动确认输入法框架。请安装 im-config，运行 im-config -n fcitx5 后注销重新登录"
-    else
-      warn "请在桌面设置中启用 Fcitx 5 并注销重新登录；Wayland / X11 配置见 https://github.com/$REPO/blob/main/docs/INSTALL.md"
-    fi
-  fi
-
-  # 加进输入法列表
-  local restarted=""
+  # 输入法框架、输入法列表交给 archtype-config --setup（直接装包的用户在设置第一页点「一键设置」是同一套）：
+  #   fcitx5 没在跑：输入法框架不是 fcitx5 时问一句再 im-config -n fcitx5，写好 fcitx5 的输入法列表，要注销重新登录
+  #   在跑但还没载入 ArchType：问一句再重启 fcitx5，加进输入法列表；在跑也认得：直接加
+  # 问话从终端读（from_tty）；ARCHTYPE_YES / ARCHTYPE_NO_IM_CONFIG / ARCHTYPE_NO_RESTART 照旧。
+  # deepin 默认就是 fcitx5（经 deepin-im），不去动输入法框架
+  local relogin="" restarted="" code=0
+  local -a setup=(--setup)
+  [[ -n "${ARCHTYPE_YES:-}" ]] && setup+=(--yes)
+  [[ -n "${ARCHTYPE_NO_IM_CONFIG:-}" || "$distro" == deepin* ]] && setup+=(--no-im-config)
+  [[ -n "${ARCHTYPE_NO_RESTART:-}" ]] && setup+=(--no-restart)
   if ! command -v archtype-config >/dev/null || ! archtype-config --self-test >/dev/null 2>&1; then
     warn "设置界面用不了（缺 PyGObject / GTK 4 / libadwaita？），请在「Fcitx 5 配置」里手动添加 ArchType"
-  elif command -v pgrep >/dev/null && pgrep -x fcitx5 >/dev/null; then
-    if [[ -n "${ARCHTYPE_NO_RESTART:-}" ]] || ! confirm "fcitx5 正在运行，重启它并把 ArchType 加进输入法列表吗？"; then
-      warn "没重启 fcitx5。之后重启它（archtype-config --restart-fcitx）或注销再登录，再在「ArchType 设置」第一页点「添加」"
-    elif archtype-config --add-to-group --restart; then
-      restarted=1
-    else
-      warn "没加上，请在「ArchType 设置」第一页点「添加」"
-    fi
   else
-    archtype-config --add-to-group || warn "没加上，请在「ArchType 设置」第一页点「添加」"
+    from_tty archtype-config "${setup[@]}" || code=$?
+    case "$code" in
+      0) ;;
+      2) relogin=1 ;;   # 切了输入法框架或 fcitx5 没在跑
+      3) restarted=1 ;; # 刚重启了 fcitx5
+      4) ;;             # 用户没答应或不让重启，archtype-config 已经说了还差哪一步
+      *) warn "没设置好，请在「ArchType 设置」第一页点「一键设置」" ;;
+    esac
   fi
 
-  if [[ "${XDG_CURRENT_DESKTOP:-}" == *GNOME* ]] && command -v gnome-extensions >/dev/null &&
-     ! gnome-extensions list 2>/dev/null | grep -q '^kimpanel@kde.org$'; then
-    warn "GNOME 下建议装扩展 Input Method Panel（https://extensions.gnome.org/extension/261/kimpanel/），活动概览的搜索框里才能显示候选框"
-  fi
+  gnome_kimpanel
 
   echo
   say "ArchType $version 装好了"

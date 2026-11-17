@@ -24,7 +24,7 @@
 </tr>
 <tr>
 <td align="center"><sub>介绍视频</sub></td>
-<td align="center"><sub>v0.3.12：互译、语音输入、日期时间、候选更准……</sub></td>
+<td align="center"><sub>v0.3.12：互译、语音输入、macOS 版、日期时间、候选更准……</sub></td>
 </tr>
 </table>
 
@@ -35,7 +35,7 @@
 <p align="center"><img src="docs/images/candidates.png" width="720" alt="在文本编辑器里打 hengxianghouxuanci：横排候选条，第一个是横向候选词，后面是横向、横向后选词……"><br>
 <sub>候选横排，和微信输入法一样：整句只留几个，后面是词，最后是单字</sub></p>
 
-- **整句输入**：`xiangquzijieshangban` 直接出「想去字节上班」；后面跟着句子的前半截，可以先上屏一段，剩下的拼音接着改。
+- **整句输入**：`xiangquzijieshangban` 直接出「想去字节上班」；后面跟着句子的前半截，可以先上屏一段，剩下的拼音接着改。自带 ArchType 自己训的整句增强模型（字级神经语言模型），长句的首选更准，开箱即用；也可以导入微信输入法的（[说明](docs/CONFIG.md#数据文件)）。
 - **半成品也有词**：`zhongg` 就有「中国」，不用打全。打全了的拼音正好是个词时，它一定排第一。
 - **按错键能认出来**：按成相邻键、两个键按反、多按或漏按一个键（`zhognguo` → 中国）。本来就打对的输入不受影响。
 - **越用越懂你**：记住你选过的词和常连着用的词（选过一次「我们再讨论」，下次就不会出「我们在讨论」），30 天不用会慢慢淡掉。
@@ -50,7 +50,6 @@
 - **繁体、模糊音、双拼**：可切繁体输出；模糊音分 16 组单独开（z=zh、n=l、f=h、r=l、an=ang、un=ong、huang=wang……）；双拼支持自然码、小鹤、微软、搜狗、智能 ABC、紫光、拼音加加，双拼也有整句、句首词和分段选词，编辑区显示全拼。
 - **五笔 86**：设置里「输入方案」选「五笔输入」。四码唯一自动上屏、第五码顶字、标点顶字、空码提示，候选后面显示还要打的码；不会打的字按 `z` 临时打拼音，候选后面就是它的五笔码。码表来自 [rime-wubi](https://github.com/rime/rime-wubi)，码位固定、不调频，见[五笔](#五笔)。
 - **图形设置界面**：候选排列、模糊音、语音键都在「ArchType 设置」里点一下就改，马上生效；还能加自定义词（人名、公司名、常用的长句、邮箱），加进去的词排第一，简拼也能打；编码可以是 `mail` 这类字母，词里能换行，可以导入导出。
-- **打字统计**：设置里的「统计」页看今天和累计的输入字数、活跃时长、速度、连续天数，以及每个键按了多少次（按键热力图）和候选命中位置。只在本机按天记计数，不保存输入内容；默认打开，可以关掉或清空。
 - **快、全在本地**：完整的雾凇拼音词库，按一个键一般几毫秒内出候选；不联网，输入内容不离开你的电脑（语音模型在设置里下载一次；互译要联网，只在切到「译」时把那句话发给你填的服务）。
 
 <table>
@@ -98,7 +97,7 @@
 
 - Linux x86_64 或 arm64（aarch64），输入法框架 **fcitx5 5.0 或更新**。Arch 的安装包只有 x86_64
 - 有现成安装包的发行版：**Ubuntu 22.04 / 24.04 / 26.04、Debian 13、deepin 23 / 25**（deb）、**Arch Linux** 及 EndeavourOS / Garuda / CachyOS（pkg.tar.zst）、**Fedora**（[rpm](#fedora)）、**NixOS**（[flake](#nixos--nix)）。其他发行版请[从源码构建](docs/INSTALL.md)
-- Ubuntu 22.04 的 GNOME 是 42：蓝色候选框主题和语音浮条（GNOME 扩展，要 GNOME 45+）用不了，见[安装说明](docs/INSTALL.md#ubuntu-2204fcitx5-50)
+- Ubuntu 22.04 的 GNOME 是 42：绿色候选框主题和语音浮条（GNOME 扩展，要 GNOME 45+）用不了，见[安装说明](docs/INSTALL.md#ubuntu-2204fcitx5-50)
 - deepin 的安装包只有 x86_64
 
 ### 一行命令安装（推荐）
@@ -109,15 +108,16 @@ Ubuntu 22.04 / 24.04 / 26.04、Debian 13、deepin 23 / 25、Arch Linux（及衍�
 curl -fsSL https://raw.githubusercontent.com/Goway-Hui/ArchType/main/install.sh | bash
 ```
 
-在 Linux 上它会：
+它会：
 
 1. 下载和你系统对应的最新安装包（词库已经在包里，约 29 MB），按 `SHA256SUMS` 校验
 2. 用系统的包管理器（`apt-get`、`pacman`、`dnf`）装上，顺带装好 fcitx5 和设置界面要用的 GTK 4 / libadwaita。Arch 不会替你整机升级，提示依赖不满足时先 `sudo pacman -Syu`
 3. 输入法框架还不是 fcitx5（Ubuntu 默认是 IBus）时，问你要不要用 `im-config` 切过去（deepin 默认就是 fcitx5，不动）
-4. 把 ArchType 加进 fcitx5 的输入法列表；fcitx5 正在运行的话会先重启它一次
+4. 把 ArchType 加进 fcitx5 的输入法列表；fcitx5 正在运行的话会先重启它一次（3、4 两步是 `archtype-config --setup` 做的，直接装包的话在「ArchType 设置」第一页点「一键设置」一样）
+5. GNOME 上软件源里有 Input Method Panel 扩展（Debian 13、Fedora 45 起）时，问你要不要装上并启用
 
 装完按提示做：切换了输入法框架的话**注销并重新登录**，然后按 `Ctrl+Space` 切到 ArchType，打 `nihao` 试试。
-以后再跑一遍同样的命令就是升级（设置界面里也会提醒有新版本）。
+以后再跑一遍同样的命令就是升级（设置界面里也会提醒有新版本；升级以后还没重启输入法的话，会发通知提醒重启）。
 
 > 想先看看脚本做了什么：[install.sh](install.sh)，或者 `bash install.sh --print-plan` 只看会装哪个包、不动系统。
 > 不想让它改输入法框架或重启 fcitx5，可以加环境变量，例如 `curl -fsSL … | ARCHTYPE_NO_IM_CONFIG=1 ARCHTYPE_NO_RESTART=1 bash`。
@@ -160,7 +160,9 @@ sudo apt install ./archtype_*.deb
 ```
 
 `apt` 会顺带装上设置界面要用的 GTK 4 和 libadwaita（`python3-gi`、`gir1.2-gtk-4.0`、`gir1.2-adw-1`）。
-加了 `--no-install-recommends` 的话不会装，打字不受影响，只是打不开设置界面。
+装完打开应用菜单里的「ArchType 设置」，点第一页的「一键设置」（或者在终端运行 `archtype-config --setup`）：
+输入法框架还不是 fcitx5 时问你要不要用 `im-config` 切过去（之后注销重新登录），fcitx5 正在运行的话问你要不要重启它，
+再把 ArchType 加进输入法列表。
 
 > 0.3.3 及以前的版本，词库是单独的 `archtype-data-rime-ice` 包。装新版时 apt 会自动把它删掉（文件由新包接管），不用管它。
 
@@ -170,7 +172,7 @@ sudo apt install ./archtype_*.deb
 
 ```bash
 sudo dnf install ./archtype-*.rpm
-archtype-config --add-to-group      # 把 ArchType 加进 fcitx5 的输入法列表
+archtype-config --setup             # 把 ArchType 加进 fcitx5 的输入法列表（fcitx5 在跑时会问要不要重启它）
 ```
 
 `dnf` 会顺带装上 fcitx5 和设置界面要用的 PyGObject、GTK 4、libadwaita。
@@ -221,7 +223,7 @@ home-manager 的 `i18n.inputMethod.fcitx5.addons` 用法相同。
 ### 检查是否装好
 
 ```bash
-archtype-check --lexicon /usr/share/archtype/lexicon.tsv    # 源码安装的用 ~/.local/share/archtype/lexicon.tsv
+archtype-check --lexicon /usr/share/archtype/lexicon.tsv
 archtype-show  --lexicon /usr/share/archtype/lexicon.tsv nihao
 # nihao: 1.你好词 2.拟好词 ...
 ```
@@ -242,7 +244,7 @@ archtype-show  --lexicon /usr/share/archtype/lexicon.tsv nihao
 | 方向键的另一种用法 | 设置「常规 → 候选词 → 方向键」选「左右键移动光标」：`↑` `↓` 选词，`←` `→` 在打了一半的拼音里移动光标改字（打的字母插在光标处，退格删光标前一个，`Home` `End` `Delete` 也管用），翻页用 `PgUp` `PgDn` 和翻页键。竖排时上下键本来就选词，这一项只改左右键 |
 | 回车 | 把打的字母原样上屏 |
 | `Esc` | 清空正在打的内容 |
-| 点到别处、换窗口 | Linux 上和 `Esc` 一样丢掉打到一半的，文档里不会留下 `ni'hao` 这样的拼音（想留字母就先按回车） |
+| 点到别处、换窗口 | Linux 上和 `Esc` 一样丢掉打到一半的，文档里不会留下 `ni'hao` 这样的拼音（想留字母就先按回车）；macOS 上把打的字母原样上屏，和回车一样 |
 | 退格 | 选过词时先撤销最后一次选词（拼音回到编辑区）；没有选词时删一个字母 |
 | `Ctrl+Delete` | 忘掉光标所在的候选：学错的词（比如一段一段选出来、选一次就记住的词）从用户词库里删掉，选词记录也清掉；词库里本来就有的词回到原来的位置。正在打的拼音不动，候选马上刷新。`Ctrl+退格`、`Shift+Delete` 也行（Mac 上按 `Control+Delete`）。设置里加的自定义词不受影响 |
 | `'` | 分隔音节，比如 `xi'an` → 西安 |
@@ -271,14 +273,16 @@ archtype-show  --lexicon /usr/share/archtype/lexicon.tsv nihao
 
 ### 中英文切换
 
-fcitx5 上至少有一种切法管用：
+两个平台的习惯不一样，默认跟着各自的习惯走，哪个应用里都至少有一种切法管用：
 
-- **系统自己的**：`Ctrl` + `空格` 在 ArchType 和英文键盘之间切（fcitx5 的「切换启用/禁用输入法」）。
-- **单按 `Shift`**：默认开着，切到 ArchType 自己的英文（字母直接上屏，不用换输入法）。
-- **另设一个切换键**：设置「输入」页选，比如 `Ctrl` + `Shift` + `空格`；默认不用。
-- **互译的快捷键**：设置「输入」页选，比如 `Ctrl` + `Shift` + `Y`：进「译」，再按回到原来的模式；设了以后单按 Shift 只切中英。
+| | Linux | macOS |
+|---|---|---|
+| 系统自己的 | `Ctrl` + `空格` 在 ArchType 和英文键盘之间切（fcitx5 的「切换启用/禁用输入法」） | 按 `中/英` 键（大写锁定键）在 ArchType 和 ABC 之间切：在「系统设置 → 键盘 → 文字输入 → 输入法 → 编辑…」里打开「使用“中/英”键切换“ABC”输入法」，设置「输入」页有按钮直接打开键盘设置。不经过输入法，所有应用里都管用 |
+| 单按 `Shift` | 默认开着：ArchType 自己的英文（字母直接上屏，不用换输入法） | 默认开着，和搜狗、微信输入法一样。个别应用（比如一些用 Electron 做的）里有时不灵，用 `中/英` 键或下面的快捷键 |
+| 另设一个切换键 | 设置「输入」页选，比如 `Ctrl` + `Shift` + `空格`；默认不用 | 同左（`Control` + `Shift` + `空格`） |
+| 互译的快捷键 | 设置「输入」页选，比如 `Ctrl` + `Shift` + `Y`：进「译」，再按回到原来的模式；设了以后单按 Shift 只切中英 | 同左（`Control` + `Shift` + `Y`） |
 
-设置文件里的键名是 `ShiftToggle`、`ToggleKey`、`TranslateModeKey`，见 [docs/CONFIG.md](docs/CONFIG.md)。系统自己的快捷键（fcitx5 的）先处理，设成它们 ArchType 收不到。
+设置文件里的键名两端一样（`ShiftToggle`、`ToggleKey`、`TranslateModeKey`，见 [docs/CONFIG.md](docs/CONFIG.md)）。系统自己的快捷键（fcitx5 的、macOS 的）先处理，设成它们 ArchType 收不到。
 
 #### Shift 被 fcitx5 占了
 
@@ -295,7 +299,7 @@ ArchType 在会话总线上登记了 `org.archtype.Input`，外部命令可以�
 busctl --user call org.archtype.Input /org/archtype/Input org.archtype.Input1 SetMode s en
 ```
 
-模式可以是 `zh`、`en`、`translate`（配置了互译时）、`toggle`（中英之间切），返回切完以后的模式；查现在的模式用 `Mode`。
+模式可以是 `zh`、`en`、`translate`（配置了互译时）、`toggle`（中英之间切），返回切完以后的模式；查现在的模式用 `Mode`；`Version` 返回正在跑的插件版本（升级后设置界面拿它判断要不要提醒重启输入法）。
 neovim 里退出插入模式切英文、回到插入模式切回原来的模式：
 
 ```lua
@@ -334,10 +338,10 @@ vim.api.nvim_create_autocmd("InsertEnter", { callback = function() archtype("Set
 - **按住右 `Alt` 说话，松开**：说的话上屏。
 - **点一下右 `Alt`**：开始听，说完停 1.5 秒自动上屏，或者再点一下右 `Alt` 马上结束。
 - 说话时编辑区里是正在识别的字；按 `Esc` 不要这次说的话；按别的键也会放弃这次说的话，那个键照常打字。
-- **GNOME** 上光标下面会弹出一条语音浮条：蓝色话筒（外圈跟着音量呼吸）、「正在听… 离线」和一排跟着你音量跳动的竖条，
-  光标右边也会裂成几根跳动的蓝色竖条；松开后显示「识别完成」再淡出。浮条是 ArchType 的 GNOME 扩展画的
-  （和蓝色主题是同一个扩展，见[主题](#主题)），**装好或升级后要注销重新登录一次**才会出现。
-  其他桌面（或关掉了蓝色主题）在候选框里显示 🎙 和用字符画的波形。
+- **GNOME** 上光标下面会弹出一条语音浮条：绿色话筒（外圈跟着音量呼吸）、「正在听… 离线」和一排跟着你音量跳动的竖条，
+  光标右边也会裂成几根跳动的绿色竖条；松开后显示「识别完成」再淡出。浮条是 ArchType 的 GNOME 扩展画的
+  （和绿色主题是同一个扩展，见[主题](#主题)），**装好或升级后要注销重新登录一次**才会出现。
+  其他桌面（或关掉了绿色主题）在候选框里显示 🎙 和用字符画的波形。
 
 识别用的是微信输入法的离线语音模型，在你的电脑上算，录音不上传。模型不随 ArchType 分发，
 **要先在 [ArchType 设置](#设置)的「语音」页点「下载」**：从腾讯的服务器下载约 100MB（能取消，断了再点接着下），
@@ -349,9 +353,6 @@ vim.api.nvim_create_autocmd("InsertEnter", { callback = function() archtype("Set
 （也接受已经下载好的语音包路径），`archtype-config --remove-voice-model` 删掉并关闭。
 
 换语音键（右 Ctrl、菜单键、F8–F10）或者关掉语音，在 [ArchType 设置](#设置)的「语音」页里改。
-
-（和 Linux 同一个包，存在 `~/Library/Application Support/ArchType/wtlocal/`），第一次说话时允许 ArchType 使用麦克风。
-提示显示在候选框里（🎙 和字符画的波形）。
 
 <img src="docs/images/voice.png" width="560" alt="按住右 Alt 说话：光标变成声波，下面是正在听、离线和实时波形">
 
@@ -403,45 +404,44 @@ vim.api.nvim_create_autocmd("InsertEnter", { callback = function() archtype("Set
 
 | 页面 | 能改什么 |
 |---|---|
-| 常规 | 候选排列（横排 / 竖排）、每页个数（3–9）、ArchType 蓝色主题（见[主题](#主题)）、候选字号。还会检查 ArchType 有没有加进 fcitx5 的输入法列表，没有的话一键添加；底下的「帮助」能[导出日志](#出问题时导出日志) |
+| 常规 | 候选排列（横排 / 竖排）、每页个数（3–9）、ArchType 绿色主题（见[主题](#主题)）、候选字号。还会检查 ArchType 有没有加进 fcitx5 的输入法列表，没有的话一键添加；底下的「帮助」能[导出日志](#出问题时导出日志) |
 | 输入 | 词库（默认雾凇，可下载切换到[万象](docs/CONFIG.md#可选词库万象拼音)）、输入方案（拼音、双拼、五笔）、双拼方案（自然码、小鹤、微软、搜狗、智能 ABC、紫光、拼音加加）、五笔的四码唯一自动上屏和编码提示、单按哪个 Shift 切中英文（和 fcitx5 抢 Shift 时提示并能一键让出）、另设一个切换中英文的快捷键、互译的快捷键、模糊音（16 组分别开关：z=zh、c=ch、s=sh、n=l、f=h、r=l、an=ang、an=ai、ian=iang、uan=uang、huang=wang、en=eng、eng=ong、in=ing、un=ong、un=iong）、按错键自动纠正、繁体字、日期时间、计算器、v + 空格工具栏、剪贴板历史、中英文之间自动加空格、分号引号选第 2/3 个候选 |
 | 表情 | 打字时推荐 emoji、表情面板快捷键 |
 | 语音 | 下载 / 删除识别模型（有进度、能取消）；下载好模型后才能打开语音输入；语音键（右 Alt / 右 Ctrl / 菜单键 / F8–F10）、识别结果同时复制到剪贴板 |
 | 翻译 | [互译](#互译)开关、翻成哪种语言、正式语气；用什么翻译：本地模型（默认，下载、闲置释放）或自定义翻译服务（服务商、地址、Key、模型、测试连接） |
 | 自定义词 | 人名、公司名、常用的长句。填上词，拼音自动查好（多音字记得检查一下）；编码也可以是 `mail` 这类字母，词里写 `\n` 换行；可以搜索、导入导出，删错了能撤销 |
-| 统计 | 今天 / 累计的输入字数、活跃时长、速度、连续天数，按键热力图、其他键和 Top 5，字符类型、语言模式、输入方案、候选命中位置；可以关掉或清空。只在本机按天记计数，不保存输入内容 |
 | 更新 | 检查新版本、看更新内容、下载并安装（见[更新](#更新)），自动检查的开关 |
 
 各设置项对应的配置文件键名、环境变量、数据文件位置，见 [docs/CONFIG.md](docs/CONFIG.md)。
 
 右上角菜单里还有：用文本编辑器打开自定义词文件、导出日志、恢复默认设置（不影响自定义词和翻译服务）、关于。
 
-- `archtype-config --page voice`（或 `general`、`input`、`emoji`、`translate`、`words`、`stats`、`update`）直接打开某一页。
+- `archtype-config --page voice`（或 `general`、`translate`、`words`、`update`）直接打开某一页。
 - **Fcitx 5 配置**里选中 ArchType 点「配置」，也能改上面这些设置，里面的「自定义词和更多设置」会打开 ArchType 设置。
 
 #### 主题
 
-ArchType 默认用自己的蓝色主题：选中的词是图标里的那种蓝，系统换深色模式时跟着换深色版。
+ArchType 默认用自己的绿色主题：选中的词是图标里的那种绿，系统换深色模式时跟着换深色版。
 第一次切到 ArchType 时自动打开（只这一次；你在用别的 fcitx5 主题时不动）。
-不喜欢的话在「ArchType 设置 → 常规 → 外观」里关掉「ArchType 蓝色主题」，换回默认。
+不喜欢的话在「ArchType 设置 → 常规 → 外观」里关掉「ArchType 绿色主题」，换回默认。
 候选框的字嫌小，在同一个地方调「候选字号」（8–32 磅），改了马上生效：GNOME 上改的是 Input Method Panel 扩展的字体，别的桌面改的是 fcitx5 经典界面的字体，两边一起改。
 
 <table>
 <tr>
-<td align="center" width="50%"><img src="docs/images/theme-light.png" alt="ArchType 浅色主题：白底细边框的候选框，第一个候选是蓝底白字"><br><sub>浅色</sub></td>
-<td align="center" width="50%"><img src="docs/images/theme-dark.png" alt="ArchType 深色主题：下键展开的候选面板，当前行是蓝底"><br><sub>深色（按下键展开）</sub></td>
+<td align="center" width="50%"><img src="docs/images/theme-light.png" alt="ArchType 浅色主题：白底细边框的候选框，第一个候选是绿底白字"><br><sub>浅色</sub></td>
+<td align="center" width="50%"><img src="docs/images/theme-dark.png" alt="ArchType 深色主题：下键展开的候选面板，当前行是绿底"><br><sub>深色（按下键展开）</sub></td>
 </tr>
 </table>
 
 候选框由谁来画，决定了主题怎么生效：
 
 - **KDE、X11 等**：fcitx5 自己画（经典界面），用的是主题 `archtype` / `archtype-dark`，打开开关马上生效。
-  也可以在 Fcitx 5 配置 → 附加组件 → 经典用户界面里手动选。候选框是不透明的圆角加细边框：
-  没开混成器的 X11（openbox、i3、关了混成的 xfwm4）上 fcitx5 不裁窗口形状，圆角外面会露出一圈黑角；
-  Wayland 和有混成器的 X11 上是正常的圆角。主题不带半透明阴影也是这个原因。
+  也可以在 Fcitx 5 配置 → 附加组件 → 经典用户界面里手动选。候选框是不透明的方角加细边框：没开混成器的 X11
+  （openbox、i3、关了混成的 xfwm4）上 fcitx5 不处理透明，透明的阴影和圆角会画成一圈黑框，
+  所以这个主题不用它们（选中的词还是圆角的绿块）。
 - **GNOME（Wayland）**：候选框是 Input Method Panel 扩展画的，fcitx5 的主题管不到。ArchType 另带一个只有样式表的小扩展
   `archtype-theme@goway-hui.github.io` 给它换色，打开开关会顺带启用它。**第一次启用要注销重新登录一次**（GNOME 只在登录时加载新装的扩展）。
-  这个扩展同时画[语音浮条](#语音输入)，关掉蓝色主题，语音提示也会回到候选框里的文字版。
+  这个扩展同时画[语音浮条](#语音输入)，关掉绿色主题，语音提示也会回到候选框里的文字版。
 
 主题文件在 `themes/`：`themes/fcitx5/` 是经典界面主题，图片由 `themes/src/*.svg` 经 `themes/render.sh` 生成；`themes/gnome-shell/` 是 GNOME 扩展。
 
@@ -460,7 +460,7 @@ ArchType 默认用自己的蓝色主题：选中的词是图标里的那种蓝�
 | 输入法列表里找不到 ArchType | 添加时取消勾选「仅显示当前语言」；确认 `/usr/share/fcitx5/inputmethod/archtype.conf` 存在；`archtype-config --restart-fcitx` 重启 |
 | KDE Wayland 下已经开着的程序能打字，新打开的程序打不了 | fcitx5 是用 `fcitx5 -r` 或托盘「重新启动」重启的，没经过 KWin。运行 `archtype-config --restart-fcitx`，或注销再登录 |
 | 某个程序里打不了中文，别的程序可以 | 重启 fcitx5 以后 Chrome / Electron 程序要彻底退出再打开 |
-| 能打，但候选很少、很多常用词没有 | 没找到词库，用的是演示词库。用安装包装的话重装一遍（安装包自带词库）；从源码装的把 `lexicon.tsv` 放进 `~/.local/share/archtype/` |
+| 能打，但候选很少、很多常用词没有 | 没找到词库，用的是演示词库。用安装包装的话重装一遍（安装包自带词库）；从源码装的先跑 `scripts/make-data.sh "" dist/data`，再 `sudo cmake --install build`（词库跟着一起装） |
 | 第一次切到 ArchType 时要等一两秒 | 正常：第一次要载入词库并生成快照，之后约 0.3 秒 |
 | 按右 Alt 提示「没有语音模型」 | 到 ArchType 设置的「语音」页点「下载」（或运行 `archtype-config --install-voice-model`） |
 | 按右 Alt 提示「开不了麦克风」 | 在系统设置的「声音」里确认有输入设备；`arecord -l` 应该能列出麦克风 |
@@ -502,14 +502,14 @@ ArchType 自己的日志在 `~/.local/state/archtype/archtype.log`（满 512 KB 
 ```bash
 cargo test --workspace                     # Rust 测试（需要 libasound2-dev，语音守护进程还要 libx11-dev libxkbcommon-dev）
 ./scripts/abi-smoke.sh                     # C 接口冒烟测试
-scripts/addon-test.sh ~/.local/share/archtype/lexicon.tsv ~/.local/share/archtype/english.txt
+scripts/addon-test.sh /usr/share/archtype/lexicon.tsv /usr/share/archtype/english.txt
                                            # 插件按键测试：起一个私有的 fcitx5，不影响你正在用的输入法
 ARCHTYPE_VOICE_WAV=说的话.wav ARCHTYPE_VOICE_EXPECT=期望的字 scripts/addon-test.sh ...
                                            # 加跑语音用例：用 WAV 代替麦克风，要先下载好语音模型
                                            # （不给 WAV 时跑「没有模型按右 Alt 只提示」）
 ```
 
-改了排序，用 `archtype-eval` 在几百个用例上对比改前改后（用法见 [docs/ENGINE.md](docs/ENGINE.md#调排序)）。
+改了排序，用 `scripts/eval.sh <数据目录>` 跑仓库里的评测集、和基线对比改前改后（CI 也跑这个，回归集必须全过；见 [tools/eval/README.md](tools/eval/README.md)，`archtype-eval` 的用法见 [docs/ENGINE.md](docs/ENGINE.md#调排序)）。
 推送 `v*` 标签会自动编译各发行版的安装包并发布到 Releases。
 
 | 目录 | 内容 |
@@ -544,4 +544,4 @@ ARCHTYPE_VOICE_WAV=说的话.wav ARCHTYPE_VOICE_EXPECT=期望的字 scripts/addo
 
 ## 许可证
 
-代码按 MIT 或 Apache-2.0 双许可证发布，任选其一。安装包里的词库数据遵循 rime-ice 的 GPL-3.0（词频另融进了 Tatoeba 句子统计出的词频，Tatoeba 句子是 CC BY 2.0 FR，署名见 DATA-SOURCE.txt），五笔码表遵循 rime-wubi 的 LGPL-3.0，可选的万象词库包遵循 CC BY 4.0，词级语言模型 `words.lm` 是 CC BY-SA 4.0，编进程序里的 emoji 关键词来自 Unicode CLDR（Unicode License v3）。
+代码按 MIT 或 Apache-2.0 双许可证发布，任选其一。安装包里的词库数据遵循 rime-ice 的 GPL-3.0（词频另融进了 Tatoeba 句子统计出的词频，Tatoeba 句子是 CC BY 2.0 FR，署名见 DATA-SOURCE.txt），五笔码表遵循 rime-wubi 的 LGPL-3.0，可选的万象词库包遵循 CC BY 4.0，词级语言模型 `words.lm` 和整句增强模型 `nnlm.bin`（都用 LCCC 和中文维基训练）是 CC BY-SA 4.0，编进程序里的 emoji 关键词来自 Unicode CLDR（Unicode License v3）。

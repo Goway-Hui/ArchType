@@ -63,9 +63,10 @@ impl Default for BeamConfig {
             max_word_syllables: 6,
             max_expansions_per_state: 32,
             unknown_cost: 18.0,
-            lm_weight: 1.0,
-            typo_cost: 6.0,
-            completion_cost: 1.2,
+            // 下面三个（tools/tune_weights.py 在评测集上自动调的，2026-11-17，见 docs/ENGINE.md「排序参数」）：原来是 1.0 / 6.0 / 1.2
+            lm_weight: 0.85,
+            typo_cost: 8.0,
+            completion_cost: 1.5,
             max_typos: 2,
             max_typos_per_word: 1,
             swap_discount: 1.5,

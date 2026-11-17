@@ -19,6 +19,10 @@ STPhrases_GeneratedFromRegionalPhrases（从 pip 包里导出）。现在仓库�
     $C/bin/opencc_dict -i $C/share/opencc/STPhrases_GeneratedFromRegionalPhrases.ocd2 \\
         -o Regional.txt -f ocd2 -t text
     /tmp/occ/bin/python tools/opencc2tsv.py STPhrases.txt Regional.txt > core/data/s2t.tsv
+    python3 tools/datamark.py stamp core/data/s2t.tsv s2t.tsv <生成日期>.0 --source "OpenCC 1.4.1"
+
+最后一步加数据版本标记（docs/DATA.md「数据版本标记」）：版本是生成日期加修订号（2026.11.14.0），
+换 OpenCC 版本、重新生成时换成当天的日期，同一天再改就加修订号。插件靠它认出用户目录里的旧副本。
 
 只要字符映射时不给参数。
 """

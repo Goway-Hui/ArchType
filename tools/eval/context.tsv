@@ -1,4 +1,5 @@
 # 由 tools/make_sentence_eval.py --context 生成：拼音<TAB>词<TAB>前面已经上屏的文字
+# pypinyin 标错、手改过读音的三条：微调 weitiao、越长越 yuechangyue、还款 huankuan（重新生成后要再改，见 tools/eval/README.md）
 jintian	今天	我
 hen	很	我今天
 kaixin	开心	我今天很
@@ -248,7 +249,7 @@ yong	用	我们
 kaiyuan	开源	我们用
 moxing	模型	我们用开源
 zuo	做	我们用开源模型
-weidiao	微调	我们用开源模型做
+weitiao	微调	我们用开源模型做
 li	力	算
 bugou	不够	算力
 xunlian	训练	算力不够
@@ -264,7 +265,7 @@ hui	会	模型有时候
 chansheng	产生	模型有时候会
 huanjue	幻觉	模型有时候会产生
 chuangkou	窗口	上下文
-yuezhangyue	越长越	上下文窗口
+yuechangyue	越长越	上下文窗口
 hao	好	上下文窗口越长越
 moxing	模型	这个
 zhichi	支持	这个模型
@@ -461,7 +462,7 @@ fangzu	房租	这个月的
 jiao	交	这个月的房租
 le	了	这个月的房租交
 ma	吗	这个月的房租交了
-haikuan	还款	信用卡
+huankuan	还款	信用卡
 ri	日	信用卡还款
 kuai	快	信用卡还款日
 dao	到	信用卡还款日快

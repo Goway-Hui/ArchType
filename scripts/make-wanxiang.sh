@@ -64,6 +64,10 @@ EOF
 REV=0
 VERSION="${DATE//-/.}.$REV"
 echo "$VERSION" > "$OUT/VERSION"
+# 版本标记（docs/DATA.md「数据版本标记」）。名字不叫 lexicon.tsv：它不是安装包里那份词库的另一版，
+# 用户拿它换掉 ~/.local/share/archtype/lexicon.tsv 时插件不会当成旧副本让给安装包的雾凇词库
+python3 tools/datamark.py stamp "$OUT/lexicon.tsv" wanxiang/lexicon.tsv "$VERSION" \
+  --source "rime_wanxiang ${COMMIT:0:12} (${DATE})"
 
 LINES=$(grep -vc '^#' "$OUT/lexicon.tsv" || true)
 echo "词库 $LINES 条 -> $OUT/lexicon.tsv（万象 ${DATE}，修订 ${REV}）"

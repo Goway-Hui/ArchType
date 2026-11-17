@@ -638,6 +638,16 @@
       "note": "以词定字：[ ] 上屏候选的第一个、最后一个字"
     },
     {
+      "key": "Association",
+      "type": "bool",
+      "default": false,
+      "platforms": [
+        "fcitx5",
+        "settings"
+      ],
+      "note": "联想：选词、整句上屏以后给出一页常跟在后面的词（词级模型 + 学到的搭配）。按 Tab 进联想行再用空格、回车、数字选，Esc 退出；没进联想行时打字、数字、标点、空格、回车照常（数字不选联想）。五笔、「译」、密码框不出"
+    },
+    {
       "key": "DateTime",
       "type": "bool",
       "default": true,
@@ -818,7 +828,16 @@
         "fcitx5",
         "settings"
       ],
-      "note": "自动检查更新（最多一小时一次）。macOS 还没做"
+      "note": "自动检查更新。Linux 切到 ArchType 时最多一小时查一次，有新版发桌面通知；macOS 输入法进程每天最多查一次，有新版时输入法菜单里多一项，设置窗口打开时也查"
+    },
+    {
+      "key": "BetaUpdates",
+      "type": "bool",
+      "default": false,
+      "platforms": [
+        "settings"
+      ],
+      "note": "Beta 计划：检查更新也算 GitHub 上的预发布版（pre-release，v 开头的 tag），新功能先到、可能不稳定。关着时只认最新正式版（releases/latest）。关掉以后已经装上的预发布版不会退回，等正式版追上来再提示"
     },
     {
       "key": "Translate",
@@ -1055,7 +1074,7 @@
     "note": "fcitx5 配置工具里打开 archtype-config 的按钮（ExternalOption），不存盘，不算设置项"
   },
   "translateProviders": {
-    "$comment": "设置里「服务商」的预设：名字、接口地址、模型框空着时建议的模型。最后一项是「自己填地址」。设置界面（TRANSLATE_PROVIDERS）。",
+    "$comment": "设置里「服务商」的预设：名字、接口地址、模型框空着时建议的模型。最后一项是「自己填地址」。设置界面（TRANSLATE_PROVIDERS）和 macOS（ArchtypeConfig.translateProviders）都对照。",
     "platforms": [
       "settings"
     ],

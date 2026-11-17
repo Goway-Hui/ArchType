@@ -99,6 +99,8 @@ int main(int argc, char **argv) {
     }
     check(archtype_engine_set_domain_lm(e, "/nonexistent/words.domain.lm") == -1, "set_domain_lm 文件不在返回 -1");
     check(archtype_engine_set_domain_lm(e, NULL) == 0, "set_domain_lm(NULL) 去掉");
+    check(archtype_nnlm_check("/nonexistent/nlrgpt2_nnlm.bin") == -1, "nnlm_check 文件不在返回 -1");
+    check(archtype_nnlm_check(lexicon) == -1, "nnlm_check 词库不是模型");
 
     check(archtype_engine_add_user_word(e, "wo wo te", "我特") == 0, "add_user_word");
     c = archtype_engine_input(e, "wowote");
@@ -129,6 +131,19 @@ int main(int argc, char **argv) {
     check(archtype_engine_save_user_dict(e, "/tmp/archtype_abi_user.tsv") == 0, "save_user_dict");
     check(archtype_engine_remove_user_word(e, "我特") == 1, "remove_user_word");
     check(archtype_engine_load_user_dict(e, "/tmp/archtype_abi_user.tsv") >= 1, "load_user_dict");
+    /* 后台存盘（1.11）：交出去就返回，等写完以后读得回来；写不了的只报一次错 */
+    remove("/tmp/archtype_abi_user_async.tsv");
+    check(archtype_engine_save_user_dict_async(e, "/tmp/archtype_abi_user_async.tsv") == 0,
+          "save_user_dict_async");
+    check(archtype_engine_save_history_async(e, "/tmp/archtype_abi_history_async.tsv") == 0,
+          "save_history_async");
+    check(archtype_engine_save_wait(e, -1) == 0, "save_wait");
+    check(archtype_engine_load_user_dict(e, "/tmp/archtype_abi_user_async.tsv") >= 1,
+          "async user dict readable");
+    check(archtype_engine_save_history_async(e, "/tmp/archtype_abi_no_such_dir/h.tsv") == 0,
+          "save_history_async queues");
+    check(archtype_engine_save_wait(e, -1) == -1, "save_wait reports a failed write");
+    check(archtype_engine_save_wait(e, 0) == 0, "save_wait reports it once");
     {
         FILE *custom = fopen("/tmp/archtype_abi_custom.tsv", "w");
         check(custom != NULL, "open custom.tsv");
@@ -246,8 +261,9 @@ int main(int argc, char **argv) {
         }
         ArchtypeKey enter = {sizeof(ArchtypeKey), 0xff0d, 0, 0, 0};
         f = archtype_session_key(s, &enter);
-        check(f && f->commit && strcmp(f->commit, "nihaozh") == 0 && f->learned,
-              "session: return commits raw letters (learned)");
+        /* 回车上屏的原始字母串不记选词（终端里的密码提示没有密码框标记） */
+        check(f && f->commit && strcmp(f->commit, "nihaozh") == 0 && !f->learned,
+              "session: return commits raw letters (not learned)");
         /* ABI 1.6：显示的这一页、点候选、上屏的是哪个候选、候选框状态 */
         for (const char *k = "nihao"; *k; ++k) {
             ArchtypeKey key = {sizeof(ArchtypeKey), (uint32_t)*k, 0, 0, 0};

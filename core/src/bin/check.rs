@@ -2,6 +2,8 @@
 //!
 //! ```
 //! archtype-check [--lexicon path] [--lm tsv] [--arpa file] [--s2t tsv] [--user-dict tsv]
+//! archtype-check --nnlm <文件>   只试着解析字级神经语言模型：读得出来打印字表大小、退出码 0，否则 1
+//!                               （设置界面导入微信输入法的模型前用它，不看版本号）
 //! ```
 //!
 //! 默认读与插件相同的环境变量（ARCHTYPE_LEXICON / ARCHTYPE_LM / ARCHTYPE_S2T / ARCHTYPE_USER_DICT），
@@ -61,6 +63,21 @@ fn main() {
     let mut user_dict = env_or("ARCHTYPE_USER_DICT", "");
 
     let args: Vec<String> = std::env::args().collect();
+    if args.get(1).map(String::as_str) == Some("--nnlm") {
+        let Some(path) = args.get(2) else {
+            eprintln!("用法：archtype-check --nnlm <文件>");
+            std::process::exit(2);
+        };
+        match std::panic::catch_unwind(|| archtype_core::nnlm::Nnlm::load(path)) {
+            Ok(Ok(model)) => {
+                println!("{}", model.vocab_size());
+                return;
+            }
+            Ok(Err(e)) => eprintln!("{e:#}"),
+            Err(_) => eprintln!("模型文件格式不对"),
+        }
+        std::process::exit(1);
+    }
     let mut i = 1;
     while i < args.len() {
         let take = |i: &mut usize| -> String {

@@ -1,4 +1,5 @@
 # 由 tools/opencc2tsv.py 生成，数据来源 OpenCC 1.4.1 (Apache-2.0)
+# archtype-data: s2t.tsv 2026.11.14.0 OpenCC 1.4.1
 # 简体<TAB>繁体；左边多于一个字的是词组，转换时最长匹配优先
 万	萬
 与	與

@@ -9,11 +9,16 @@
 #   WUBI-LICENSE      rime-wubi 的许可证（LGPL-3.0），随码表一起分发
 #   WUBI-AUTHORS      rime-wubi 的作者与来源说明
 #   WUBI-SOURCE.txt   来源、钉死的提交、转换方式
+#   DATA-MANIFEST     数据清单（tools/datamark.py manifest），和 make-data.sh 输出到同一个目录时一起列上词库
+# wubi86.tsv 第一行是版本标记 `# archtype-data: wubi86.tsv <版本> <来源>`（docs/DATA.md「数据版本标记」），
+# 版本 = rime-wubi 提交日期 + 修订号 WUBI_REV。
 # 文件名带 WUBI- 前缀，跟 make-data.sh 输出到同一个目录时不会盖掉 rime-ice 的 LICENSE、SOURCE.txt。
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-# 换版本时三处一起改：提交、提交日期、各文件的 sha256
+# 换版本时三处一起改：提交、提交日期、各文件的 sha256（WUBI_REV 归 0）。
+# 只改了转换方式（tools/wubi2tsv.py）、码表内容变了时 WUBI_REV 加一，插件才分得出新旧。
+WUBI_REV=0
 WUBI_REPO=https://github.com/rime/rime-wubi
 WUBI_COMMIT=152a0d3f3efe40cae216d1e3b338242446848d07
 WUBI_DATE=2023-10-25
@@ -62,6 +67,8 @@ check "$SRC/AUTHORS" "$WUBI_AUTHORS_SHA256"
 
 python3 tools/wubi2tsv.py "$SRC/wubi86.dict.yaml" -o "$OUT/wubi86.tsv"
 [[ -s "$OUT/wubi86.tsv" ]] || { echo "wubi86.tsv 是空的" >&2; exit 1; }
+python3 tools/datamark.py stamp "$OUT/wubi86.tsv" wubi86.tsv "${WUBI_DATE//-/.}.${WUBI_REV}" \
+  --source "rime-wubi ${WUBI_COMMIT:0:12} (${WUBI_DATE})"
 
 cp "$SRC/LICENSE" "$OUT/WUBI-LICENSE"
 cp "$SRC/AUTHORS" "$OUT/WUBI-AUTHORS"
@@ -76,10 +83,14 @@ LGPL-3.0 是在 GPL-3.0 之上的附加许可，GPL-3.0 全文见同目录（或
 下载：https://raw.githubusercontent.com/rime/rime-wubi/${WUBI_COMMIT}/wubi86.dict.yaml
 
 wubi86.tsv 由 ArchType 的 tools/wubi2tsv.py 转换，scripts/make-wubi.sh 可重新生成（逐字节相同）：
-每行 code<TAB>词<TAB>频次，按码升序、频次降序；去掉了 z 开头的符号码、权重为 0 的扩展区生僻字与部首、
+第一行是版本标记（# archtype-data: wubi86.tsv ${WUBI_DATE//-/.}.${WUBI_REV} ...），
+之后每行 code<TAB>词<TAB>频次，按码升序、频次降序；去掉了 z 开头的符号码、权重为 0 的扩展区生僻字与部首、
 注释掉的条目和 stem（构词码）列；没有权重的《通用规范汉字表》字频次记 1。
 ArchType 的源代码（含上面两个脚本）：https://github.com/Goway-Hui/ArchType
 EOF
 
-echo "wubi86.tsv: $(wc -l < "$OUT/wubi86.tsv" | tr -d ' ') 条"
+# 数据清单：同一目录里 make-data.sh 生成的词库、语言模型一起列上（它们要带版本标记）
+python3 tools/datamark.py manifest "$OUT" core/data/s2t.tsv >/dev/null
+
+echo "wubi86.tsv: $(grep -vc '^#' "$OUT/wubi86.tsv") 条"
 echo "输出目录: $OUT"

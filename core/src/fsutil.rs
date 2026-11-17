@@ -19,6 +19,36 @@ pub fn write_replace(path: &Path, contents: &[u8]) -> Result<()> {
     write(path, contents, false)
 }
 
+/// 把学习数据（一行一条的 TSV）读成一行一行的文本，返回这些行、丢掉了几行。
+///
+/// 不是合法 UTF-8 的行单独丢掉，别的行照常返回。不能整份 `read_to_string`：文件里只要有一个
+/// 坏字节（磁盘坏了一块、别的程序动过）就整份读不出来，外壳当成「还没有数据」照常存盘，
+/// 学了几个月的东西被这一次会话的内容盖掉。行尾的 `\r` 去掉，和 `str::lines` 一样。
+pub fn read_lines_lossy(path: &Path) -> std::io::Result<(Vec<String>, usize)> {
+    let data = std::fs::read(path)?;
+    let mut lines = Vec::new();
+    let mut bad = 0usize;
+    let mut pieces = data.split(|&b| b == b'\n').peekable();
+    while let Some(raw) = pieces.next() {
+        // 文件以换行结尾时最后多出来的那个空段不算一行
+        if raw.is_empty() && pieces.peek().is_none() {
+            break;
+        }
+        let raw = raw.strip_suffix(b"\r").unwrap_or(raw);
+        match std::str::from_utf8(raw) {
+            Ok(line) => lines.push(line.to_string()),
+            Err(_) => bad += 1,
+        }
+    }
+    if bad > 0 {
+        eprintln!(
+            "archtype: {} 里有 {bad} 行不是合法的 UTF-8，跳过了",
+            path.display()
+        );
+    }
+    Ok((lines, bad))
+}
+
 fn write(path: &Path, contents: &[u8], sync: bool) -> Result<()> {
     let tmp = temp_path(path);
     let written = (|| -> std::io::Result<()> {
@@ -162,5 +192,33 @@ mod tests {
         let path = dir.join("nope").join("user.tsv");
         assert!(write_atomic(&path, b"x").is_err());
         assert!(!path.exists());
+    }
+
+    #[test]
+    fn read_lines_lossy_drops_only_the_bad_lines() {
+        let dir = std::env::temp_dir().join(format!("archtype-fsutil-lossy-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("user.tsv");
+        let mut data = "第一行\r\n".as_bytes().to_vec();
+        data.extend_from_slice(b"bad \xff line\n");
+        data.extend_from_slice("\n第三行\n".as_bytes());
+        // 截断在一个汉字中间
+        data.extend_from_slice(&"半个字".as_bytes()[..4]);
+        data.extend_from_slice("\n最后一行没有换行".as_bytes());
+        std::fs::write(&path, &data).unwrap();
+        let (lines, bad) = read_lines_lossy(&path).unwrap();
+        assert_eq!(lines, ["第一行", "", "第三行", "最后一行没有换行"]);
+        assert_eq!(bad, 2);
+
+        std::fs::write(&path, "a\nb\n").unwrap();
+        assert_eq!(
+            read_lines_lossy(&path).unwrap(),
+            (vec!["a".into(), "b".into()], 0)
+        );
+        std::fs::write(&path, "").unwrap();
+        assert_eq!(read_lines_lossy(&path).unwrap(), (vec![], 0));
+        let missing = read_lines_lossy(&dir.join("nope.tsv")).unwrap_err();
+        assert_eq!(missing.kind(), std::io::ErrorKind::NotFound);
+        std::fs::remove_dir_all(&dir).unwrap();
     }
 }

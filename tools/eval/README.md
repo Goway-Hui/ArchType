@@ -1,6 +1,148 @@
-# 评测数据与基线数字
+# 排序评测
 
-这里放公开语料生成的评测用例怎么来、以及当前基线，方便改排序/LM 时对比。
+排序（候选顺序）是输入法的核心。这里放仓库里固定的评测集、回归集和基线；CI 的「排序评测」任务每次都用真实词库跑一遍，
+回归集必须全过、其余各组不许比基线差。改排序的 PR 照这里在本地跑同一套，提交说明里贴前后对比。
+
+## 一条命令跑全套
+
+```bash
+scripts/eval.sh <数据目录>                    # 和 CI 一样：回归集必须全过，其余各组和 baseline.tsv 比
+scripts/eval.sh <数据目录> --misses           # 再列出每组没通过的用例（其它参数原样交给 archtype-eval）
+scripts/eval.sh <数据目录> --update-baseline  # 打印和旧基线的对比，再把这次的数字写进 baseline.tsv
+```
+
+数据目录是 `scripts/make-data.sh` 的输出（`lexicon.tsv`、`words.lm`、`english.txt`，有 `VERSION`、`SOURCE.txt` 更好），
+要和基线用的是同一份（`baseline.tsv` 的「数据」一行：词库包版本、rime-ice 提交）：
+
+```bash
+# 照 CI 的做法生成（rime-ice 钉在基线记的提交上；words.lm 本机有就用 ARCHTYPE_LM_FILE，不然要下载）
+want=$(awk -F'\t' '$1 == "# 数据" { print $3 }' tools/eval/baseline.tsv)
+git init -q /tmp/rime-ice && git -C /tmp/rime-ice fetch -q --depth 1 https://github.com/iDvel/rime-ice.git "$want" \
+    && git -C /tmp/rime-ice checkout -q FETCH_HEAD
+ARCHTYPE_LM_FILE=/usr/share/archtype/words.lm scripts/make-data.sh /tmp/rime-ice /tmp/archtype-data
+scripts/eval.sh /tmp/archtype-data
+
+# 装着的数据正好是这个版本时也可以直接用（/usr/share/archtype 不可写，脚本会先复制到临时目录）
+scripts/eval.sh /usr/share/archtype
+```
+
+脚本先编一个 release 的 `archtype-eval`（`--no-default-features`，不用语音的系统库；`ARCHTYPE_EVAL_BIN` 可以指定现成的），
+全部用例在一台普通机器上跑 20 秒左右。数据目录可写时载入词库会在旁边写 `lexicon.tsv.wcache`。
+
+### 和外壳一致的配置
+
+`archtype-eval`、`archtype-show` 默认和 fcitx5 插件、macOS 默认设置下一样配引擎（`core/src/bin/common/preset.rs` 逐项对照）：
+候选上限 1000（`kMaxCandidates` / `Engine.maxCandidates`）、词库旁边的 `words.lm` 和 `english.txt`、纠错开、模糊音关（分组是默认那几组，
+兜底开）、扩展 B 区生僻字关、全拼、简体，上文只给最后 24 个字节（会话的 `CONTEXT_BYTES`）。不带用户词库、输入习惯、自定义词、
+领域模型和神经语言模型（CI 里也没有）；会话在引擎候选之外插的 emoji 推荐、日期时间不算。
+
+**首选会随候选上限变**（上限 10 时 `trunc_exact` 的 top1 是 89.7%，1000 时 95.4%；`yingai` 上限 10 首选「应该」、1000 首选「因该」），
+所以评测要和外壳用同样的上限。以前的默认（上限 10、只用命令行给的语言模型和英文词表、上文不截）还能用 `--legacy` 跑。
+
+## 评测集
+
+| 文件 | 条数 | 测什么 | 怎么来的 |
+|---|---:|---|---|
+| `regress.tsv` | 66 | 已知要对的（打全了的词、儿化、英文、双拼、单字、接着上文打、按错键、热词……），**必须全过** | 手写，每条都用真实词库核实过；来源见文件里的注释 |
+| `common.tsv` | 1000 | 常用词：词频前 5000 的词，每个拼音取词频最高的那个 | `make_eval.py --count 1000` |
+| `mid.tsv` | 1000 | 中频词：第 3 万到 30 万名 | `make_eval.py --skip 30000 --top 300000` |
+| `rare.tsv` | 1000 | 冷门词：第 30 万名以后 | `make_eval.py --skip 300000 --top 1000000` |
+| `jianpin.tsv` | 1000 | 简拼：常用词每个音节只打声母 | `make_eval.py --jianpin` |
+| `trunc.tsv` | 1000 | 少打最后一个字母、截完不是任何词：期望补全出原词 | `make_eval.py --truncate 1 --exact skip --top 30000` |
+| `trunc_exact.tsv` | 1000 | 少打最后一个字母、截完**正好是词频 ≥ 1000 的词**：期望就是这些精确词（补全排后面） | `make_eval.py --truncate 1 --exact only --top 30000` |
+| `homophone2.tsv` | 300 | 两个音节的输入，词库里每个同音词都排在第一个单字前（看「通过」） | `make_eval.py --homophones 2 --top 20000 --count 300` |
+| `homophone3.tsv` | 200 | 同上，三个音节 | `make_eval.py --homophones 3 --top 20000 --count 200` |
+| `daily.tsv` | 138 | 手写的日常整句（`daily_sentences.txt`），一次打完整句 | `make_sentence_eval.py --lexicon`：按词库切词取读音 |
+| `context.tsv` | 533 | 同一批句子逐词打，带前面已经上屏的文字 | `make_sentence_eval.py --context`（jieba 分词 + pypinyin） |
+
+- 除了 `regress.tsv`、`context.tsv`，都由 `scripts/make-eval-sets.sh <lexicon.tsv>` 一次重新生成：只用 Python 标准库，
+  输出只取决于词库（同频的按词库里的顺序），同一份词库生成的文件逐字节一样；每个文件开头记着参数和词库的 sha256。
+  抽样是在按词频排好的列表里等间隔取（不用随机数）。
+- 少打一个字母为什么分两组：项目的既定规则是「打全了的拼音正好是一个够常用的词时，它排第一」（docs/ENGINE.md「半成品输入」），
+  `zhonggu` 本身是「中古」，期望写「中国」就是把正确的行为算成错。所以截完正好是词频 ≥ 1000 的词的单独成组、期望写那个精确词
+  （和 `core/src/lib.rs` 的 `EXACT_PROTECT_MIN_FREQ` 一样）；截完是词、但词频都不到 1000 的两组都不收（哪个排第一都说得过去）。
+  这组里有些精确词本身就很怪（`kanda` 的「看打」、`rena` 的「人啊」），没过的多半是补全排了第一，要不要改规则另说，评测只量现在的规则。
+- 同音词组：同一串字母还能按别的音节数切的（`xian` 是一个音节，也是「西安」xi an）不收，那时单字也是打全了的精确结果。
+  「词库里的每个同音词」包括词频很低的，所以这组的「通过」比 top1 严得多。
+- `daily.tsv` 不用 pypinyin：每句按词库切词（词数最少，一样多时词频乘积最大），每个词取它在词库里词频最高的读音。
+  和 `context.tsv`（pypinyin 标的）对过：138 句里只有 3 处不一样，都是 pypinyin 标错了（微调、越长、还款），`context.tsv` 里这三条已经手改。
+  重新生成 `context.tsv` 时（`make_sentence_eval.py --text daily_sentences.txt --context`，要 jieba 0.42.1、pypinyin）记得再改这三条。
+
+### 用例格式
+
+```
+输入<TAB>期望[<TAB>上文[<TAB>属性]]
+```
+
+- 期望：多个可接受的答案用 `|` 分隔；上文：光标前已经上屏的文字（可空）；`#` 开头是注释。只有两三列的老用例照旧能用。
+- 属性（空格或逗号分隔，可选）：`top=N` 期望在前 N 名就算通过（默认 `top=1`）；`at=N` 期望正好在第 N 名；
+  `before-single` 期望里的每个词都排在第一个单字候选前面；`sp=方案` 这一条按双拼打（`xiaohe`、`ziranma`……）。
+- 每组报 top1 / top3 / top9 和「通过」（按属性判断；没写属性的用例「通过」就是 top1）。
+
+## 回归集
+
+`regress.tsv` 里每条都必须通过。只收「现在就是对的」用例：加之前先用真实词库确认现在确实通过。
+排序改动弄坏了其中一条，要么修好，要么在提交说明里写清楚为什么新的结果更好，再改那一条。
+
+下面这些是排序计划（`docs/plans/2026-11-13-ranking-and-architecture.md`）各节「验收」里的，2026-11-17 用真实词库核实**现在不对**，
+没放进回归集；修好了就挪进去：
+
+| 输入 | 期望 | 现在（候选上限 1000） |
+|---|---|---|
+| `yingai` | 应该 | 因该、影子、应该（上限 10 时首选是「应该」） |
+| `zidao` | 知道 | 自到、自导、知道 |
+| `yyds` | 永远的神 | 又有多少、永远的神 |
+| `wmyqqcf` | 我们一起去吃饭 | 我们一起请处分、我们一起去、我们一起去吃饭 |
+
+## 基线和门槛
+
+`baseline.tsv` 记着每组的条数（用例、top1、top3、top9、通过）和用的是哪份数据。CI 和 `scripts/eval.sh` 每组和它比：
+
+- `regress` 必须全过；
+- 其余各组 top1、「通过」任何一个比基线低超过 **0.5 个百分点**就失败（`archtype-eval --tolerance` 可以改）。
+  小组一条就不止 0.5 个点（`daily` 138 句一句是 0.72 个点，`homophone3` 一条正好 0.5），等于这些组一条都不许掉；
+- 比基线高超过 0.5 个点会提示「可以更新基线」，不算失败；用例数、数据版本和基线对不上会提示（照样比）。
+
+当前基线（2026-11-17，`origin/pre-release` fd3eb42 的排序代码，rime-ice 927e1cf + `words.lm` lm-2026.11.09 + english.txt，外壳配置）：
+
+| 组 | 用例 | top1 | top3 | top9 | 通过 |
+|---|---:|---:|---:|---:|---:|
+| regress | 66 | 89.4% | 93.9% | 100.0% | 100.0% |
+| common | 1000 | 96.3% | 99.8% | 100.0% | 96.3% |
+| mid | 1000 | 92.8% | 98.5% | 99.7% | 92.8% |
+| rare | 1000 | 88.2% | 98.5% | 100.0% | 88.2% |
+| jianpin | 1000 | 59.7% | 78.3% | 89.6% | 59.7% |
+| trunc | 1000 | 90.7% | 98.0% | 99.0% | 90.7% |
+| trunc_exact | 1000 | 95.4% | 97.7% | 99.2% | 95.4% |
+| homophone2 | 300 | 99.7% | 100.0% | 100.0% | 99.7% |
+| homophone3 | 200 | 99.5% | 100.0% | 100.0% | 100.0% |
+| daily | 138 | 90.6% | 94.9% | 94.9% | 90.6% |
+| context | 533 | 88.9% | 98.3% | 99.8% | 88.9% |
+
+### 改了排序怎么更新基线
+
+1. `scripts/eval.sh <数据目录>` 看哪些组变了；`--misses` 看具体哪些用例变了。
+2. 回归集全过、没有一组变差（或者变差的那组说得清为什么值得）以后，`scripts/eval.sh <数据目录> --update-baseline`。
+3. 把它打印的对比表（「基线 top1」「差」两列）贴进提交说明，和 `baseline.tsv` 的改动放在同一个提交里。
+
+换了数据（rime-ice 提交、`data/` 下的热词和词频表、`words.lm`）也要重写基线，提交说明里写清是数据变了。
+评测集本身改了（重新生成、加了用例）同样要重写基线，前后数字不能直接比。
+
+## 来源和许可证
+
+- `common`、`mid`、`rare`、`jianpin`、`trunc`、`trunc_exact`、`homophone2`、`homophone3` 是从雾凇拼音 rime-ice
+  （https://github.com/iDvel/rime-ice ，GPL-3.0）生成的词库里摘的「拼音、词」对，只用来评测，和 `data/rime-ice-freq.tsv` 一样随仓库分发，
+  遵循 rime-ice 的 GPL-3.0。生成用的词库是 `scripts/make-data.sh` 在 rime-ice 927e1cf 上的输出（还融了 `data/` 下的热词表、词频修正和
+  Tatoeba 语料词频，Tatoeba 句子是 CC BY 2.0 FR，这里只有词，没有句子）。
+- `daily_sentences.txt`、`daily.tsv`、`context.tsv`、`regress.tsv` 是 ArchType 自己写的（MIT OR Apache-2.0）；`daily.tsv` 的读音取自上面的词库，
+  `context.tsv` 的读音是 pypinyin 标的（三处手改）。
+- 下面「以前的手动评测」里的 Tatoeba、维基百科用例只在本地生成，不提交。
+
+---
+
+# 以前的手动评测
+
+下面是建这套固定评测集以前的记录（当时的工具默认候选上限是 10，数字和上面的基线不能直接比）。
 
 ## 生成用例
 
@@ -16,12 +158,12 @@ python3 tools/make_corpus_eval.py --text sentences.txt --out cases.tsv --count 2
 ## 跑评测
 
 ```bash
-# 词库 + 词级 LM
-cargo run --bin archtype-eval -- --lexicon lexicon.tsv --eval /tmp/test.tsv \
+# 词库 + 词级 LM（--legacy：以前的默认，候选上限 10）
+cargo run --bin archtype-eval -- --legacy --lexicon lexicon.tsv --eval /tmp/test.tsv \
     --lm words.lm --k 1
 
 # 再加上字级神经语言模型（从本机微信输入法里取，见 tools/install_wetype_nnlm.py）
-cargo run --bin archtype-eval -- --lexicon lexicon.tsv --eval /tmp/test.tsv \
+cargo run --bin archtype-eval -- --legacy --lexicon lexicon.tsv --eval /tmp/test.tsv \
     --lm words.lm --nnlm nlrgpt2_nnlm.bin --k 1
 ```
 

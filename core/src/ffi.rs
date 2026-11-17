@@ -405,6 +405,69 @@ pub unsafe extern "C" fn archtype_engine_save_history(
     }
 }
 
+/// 在后台存用户词库（1.11）：在锁里抄一份就返回，写文件在存盘的线程上。返回 0 交出去了，-1 参数不对。
+#[no_mangle]
+pub unsafe extern "C" fn archtype_engine_save_user_dict_async(
+    engine: *mut ArchtypeEngineHandle,
+    path: *const c_char,
+) -> c_int {
+    unsafe { save_async(engine, path, |engine, path| engine.save_user_dict_async(path)) }
+}
+
+/// 在后台存用户输入习惯（1.11），同 [`archtype_engine_save_user_dict_async`]。
+#[no_mangle]
+pub unsafe extern "C" fn archtype_engine_save_history_async(
+    engine: *mut ArchtypeEngineHandle,
+    path: *const c_char,
+) -> c_int {
+    unsafe { save_async(engine, path, |engine, path| engine.save_history_async(path)) }
+}
+
+unsafe fn save_async(
+    engine: *mut ArchtypeEngineHandle,
+    path: *const c_char,
+    save: impl FnOnce(&Engine, &str) -> anyhow::Result<()>,
+) -> c_int {
+    if engine.is_null() {
+        set_last_error("engine is null");
+        return -1;
+    }
+    let Some(path) = (unsafe { cstr_to_str(path) }).filter(|p| !p.is_empty()) else {
+        set_last_error("path is null, empty or not utf8");
+        return -1;
+    };
+    match save(&unsafe { &*engine }.engine, path) {
+        Ok(()) => 0,
+        Err(e) => {
+            set_last_error(format!("{e:#}"));
+            -1
+        }
+    }
+}
+
+/// 等后台存盘写完（1.11）。timeout_ms 小于 0 一直等，否则最多等这么久（0 只看一眼）。
+/// 返回 0：都写完了，上次调用以后交的都写成了；1：还没写完；-1：上次调用以后有写失败的
+/// （原因在 archtype_last_error，只报一次），或者 engine 是 NULL。
+#[no_mangle]
+pub unsafe extern "C" fn archtype_engine_save_wait(
+    engine: *mut ArchtypeEngineHandle,
+    timeout_ms: c_int,
+) -> c_int {
+    let Some(handle) = (unsafe { engine.as_ref() }) else {
+        set_last_error("engine is null");
+        return -1;
+    };
+    let timeout = u64::try_from(timeout_ms).ok().map(std::time::Duration::from_millis);
+    match handle.engine.save_wait(timeout) {
+        crate::saver::SaveStatus::Done => 0,
+        crate::saver::SaveStatus::Pending => 1,
+        crate::saver::SaveStatus::Failed(e) => {
+            set_last_error(e);
+            -1
+        }
+    }
+}
+
 /// 读回用户输入习惯，返回条数，-1 表示出错（文件不存在也是 -1）。
 #[no_mangle]
 pub unsafe extern "C" fn archtype_engine_load_history(
@@ -513,6 +576,26 @@ pub unsafe extern "C" fn archtype_engine_load_nnlm(
         Ok(n) => n.min(c_int::MAX as usize) as c_int,
         Err(e) => {
             set_last_error(format!("{e:#}"));
+            -1
+        }
+    }
+}
+
+/// 只检查文件是不是读得出来的字级神经语言模型，不载入引擎。返回字表大小，失败返回 -1。
+#[no_mangle]
+pub unsafe extern "C" fn archtype_nnlm_check(path: *const c_char) -> c_int {
+    let Some(path) = (unsafe { cstr_to_str(path) }) else {
+        set_last_error("path is null or not utf8");
+        return -1;
+    };
+    match std::panic::catch_unwind(|| crate::nnlm::Nnlm::load(path)) {
+        Ok(Ok(model)) => model.vocab_size().min(c_int::MAX as usize) as c_int,
+        Ok(Err(e)) => {
+            set_last_error(format!("{e:#}"));
+            -1
+        }
+        Err(_) => {
+            set_last_error("模型文件格式不对");
             -1
         }
     }
@@ -1205,6 +1288,16 @@ mod tests {
         assert_eq!(read("ARCHTYPE_ABI_VERSION_MAJOR"), ABI_VERSION_MAJOR);
         assert_eq!(read("ARCHTYPE_ABI_VERSION_MINOR"), ABI_VERSION_MINOR);
         assert_eq!(archtype_abi_version(), 1011);
+    }
+
+    #[test]
+    fn nnlm_check_rejects_bad_files() {
+        assert_eq!(unsafe { archtype_nnlm_check(ptr::null()) }, -1);
+        let missing = CString::new("/nonexistent/nlrgpt2_nnlm.bin").unwrap();
+        assert_eq!(unsafe { archtype_nnlm_check(missing.as_ptr()) }, -1);
+        // 别的文件（词库）不是模型
+        let lexicon = CString::new(concat!(env!("CARGO_MANIFEST_DIR"), "/data/demo_lexicon.tsv")).unwrap();
+        assert_eq!(unsafe { archtype_nnlm_check(lexicon.as_ptr()) }, -1);
     }
 }
 

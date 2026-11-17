@@ -7,19 +7,19 @@
     python3 tools/install_wetype_nnlm.py /Applications/WeType.app
     python3 tools/install_wetype_nnlm.py path/to/nlrgpt2_nnlm.bin
 
-默认放到 ~/.local/share/archtype/wetype/nlrgpt2_nnlm.bin（--dest 可改），会核对 MD5，
-对不上就不装（别的版本的文件格式可能不同）。装完重启 fcitx5 生效。
+默认放到 ~/.local/share/archtype/wetype/nlrgpt2_nnlm.bin（--dest 可改）。不看版本号：找得到
+archtype-check 时用核心的读取代码试解析，解析不了才不装。设置界面「输入 → 整句增强模型」里的「导入…」做的是同一件事。
 """
 
 import argparse
 import hashlib
 import os
+import shutil
+import subprocess
 import sys
 import zipfile
 
 NAME = "nlrgpt2_nnlm.bin"
-# 微信输入法 3.0.0（macOS）里的版本，ArchType 按它写的读取代码
-KNOWN_MD5 = {"edca685aba600497de298dd68a5d5e4d"}
 
 
 def default_dest():
@@ -48,18 +48,22 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("source", help="微信输入法的安装包（.zip）、程序目录（.app）或模型文件本身")
     ap.add_argument("--dest", default=default_dest())
-    ap.add_argument("--force", action="store_true", help="MD5 对不上也装（不保证能用）")
+    ap.add_argument("--force", action="store_true", help="解析不了也装（不保证能用）")
     args = ap.parse_args()
     data = read_model(args.source)
-    md5 = hashlib.md5(data).hexdigest()
-    if md5 not in KNOWN_MD5 and not args.force:
-        sys.exit(f"MD5 是 {md5}，不是已知的版本；确定要装加 --force")
     os.makedirs(os.path.dirname(args.dest), exist_ok=True)
     tmp = args.dest + ".tmp"
     with open(tmp, "wb") as f:
         f.write(data)
+    check = shutil.which("archtype-check")
+    if check and not args.force:
+        done = subprocess.run([check, "--nnlm", tmp], capture_output=True, text=True)
+        if done.returncode != 0:
+            os.remove(tmp)
+            sys.exit(f"读不出这个模型：{done.stderr.strip()}；确定要装加 --force")
     os.replace(tmp, args.dest)
-    print(f"已装到 {args.dest}（{len(data) / 1e6:.1f} MB，MD5 {md5}）。重启 fcitx5 生效。")
+    md5 = hashlib.md5(data).hexdigest()
+    print(f"已装到 {args.dest}（{len(data) / 1e6:.1f} MB，MD5 {md5}）。在设置里点一次「导入」或重启 fcitx5 生效。")
 
 
 if __name__ == "__main__":

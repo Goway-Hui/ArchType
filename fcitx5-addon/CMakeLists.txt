@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.16)
 
-project(archtype-fcitx5 VERSION 0.4.11 LANGUAGES CXX)
+project(archtype-fcitx5 VERSION 0.5.1 LANGUAGES CXX)
 
 # fcitx5 5.1 的头文件用到了 std::span、std::source_location
 set(CMAKE_CXX_STANDARD 20)
@@ -111,6 +111,27 @@ if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/../core/data/s2t.tsv")
     )
 endif()
 
+# 真实词库、英文词表、词级语言模型、整句增强模型、五笔码表：scripts/make-data.sh、make-wubi.sh 生成在 dist/data，
+# 有就一起装进系统数据目录（OPTIONAL：安装时没有就跳过，插件退到 demo 词典）。
+# 以前源码安装要自己把它们拷进 ~/.local/share/archtype/，那份拷贝以后会一直挡在新版数据前面。
+# 各发行版的打包脚本自己放这几个文件（同样的位置），这里多装一遍不碍事；不想要就 -DARCHTYPE_DATA_DIR=
+set(ARCHTYPE_DATA_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../dist/data" CACHE PATH
+    "Directory with lexicon.tsv, english.txt, words.lm, nnlm.bin, wubi86.tsv and DATA-MANIFEST (scripts/make-data.sh output); empty to skip")
+if(ARCHTYPE_DATA_DIR)
+    # DATA-MANIFEST：各数据文件的名字、版本、来源（docs/DATA.md「数据版本标记」）
+    # nnlm.bin：ArchType 自己训的整句增强模型（make-data.sh 下载到了才有）
+    foreach(_archtype_data lexicon.tsv english.txt words.lm nnlm.bin wubi86.tsv DATA-MANIFEST)
+        install(FILES "${ARCHTYPE_DATA_DIR}/${_archtype_data}"
+            DESTINATION "${CMAKE_INSTALL_DATADIR}/archtype" OPTIONAL)
+    endforeach()
+endif()
+# 自检工具 archtype-check、archtype-show：和核心库一起由 cargo 编在同一个目录
+get_filename_component(_archtype_cargo_dir "${ARCHTYPE_CORE_LIB}" DIRECTORY)
+foreach(_archtype_tool archtype-check archtype-show)
+    install(PROGRAMS "${_archtype_cargo_dir}/${_archtype_tool}"
+        DESTINATION "${CMAKE_INSTALL_BINDIR}" OPTIONAL)
+endforeach()
+
 configure_file(conf/archtype.conf.in
     "${CMAKE_CURRENT_BINARY_DIR}/archtype.conf" @ONLY)
 # 插件清单里要求的 fcitx5 版本：编译时版本的「主.次.0」（5.1.x 上编的写 5.1.0，22.04 的 5.0.14 上编的写 5.0.0）。
@@ -163,6 +184,8 @@ if(ARCHTYPE_BUILD_TESTS)
     add_executable(archtype-key-harness test/key_harness.cpp src/clipboard_copy.cpp)
     target_include_directories(archtype-key-harness PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src")
     target_link_libraries(archtype-key-harness PRIVATE Fcitx5::Core Fcitx5::Utils)
+    # 经 D-Bus 问插件版本（Version）的用例拿它对照
+    target_compile_definitions(archtype-key-harness PRIVATE ARCHTYPE_ADDON_VERSION="${ARCHTYPE_VERSION}")
     # 「密码框也用输入法」（Behavior/AllowInputMethodForPassword）5.0 没有：看头文件里有没有它的读取函数，
     # 有就测「打开以后密码框里照常打中文」，没有就测「密码框里不用输入法、按键原样交给应用」
     get_target_property(_archtype_fcitx_inc Fcitx5::Core INTERFACE_INCLUDE_DIRECTORIES)

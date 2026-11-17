@@ -102,6 +102,16 @@ stdenv.mkDerivation {
     mkdir -p data
     tar -xzf ${data} -C data
     install -Dm644 -t "$out/share/archtype" data/lexicon.tsv data/english.txt data/words.lm
+    # 数据清单（docs/DATA.md「数据版本标记」）：REV=6 起的词库包里才有，钉的还是旧包时没有
+    if [ -f data/DATA-MANIFEST ]; then
+      install -Dm644 -t "$out/share/archtype" data/DATA-MANIFEST
+    fi
+    # 整句增强模型 nnlm.bin（ArchType 自己训的，CC BY-SA 4.0）：词库包是 package-deb.sh data 打的，
+    # make-data.sh 下载到了模型的那次发版起包里才有它；钉的还是更早的包时没有，插件只是不做整句增强
+    # （用户可以自己导入微信输入法的模型）。发版后 nix-data-pr.sh 换成新包，就自动带上
+    if [ -f data/nnlm.bin ]; then
+      install -Dm644 -t "$out/share/archtype" data/nnlm.bin
+    fi
     install -Dm644 ../README.md "$out/share/doc/archtype/README.md"
     install -Dm644 data/SOURCE.txt "$out/share/doc/archtype/DATA-SOURCE.txt"
     echo ${dataVersion} > "$out/share/doc/archtype/DATA-VERSION"
@@ -139,7 +149,7 @@ stdenv.mkDerivation {
       asl20
       unicode-30
       gpl3Only # 词库（rime-ice）
-      cc-by-sa-40 # 词级语言模型 words.lm
+      cc-by-sa-40 # 词级语言模型 words.lm、整句增强模型 nnlm.bin
       lgpl3Only # 五笔码表 wubi86.tsv（rime-wubi）
     ];
     platforms = lib.platforms.linux;

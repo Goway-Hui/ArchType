@@ -253,13 +253,16 @@ class UpdateTests(unittest.TestCase):
                 glib = SimpleNamespace(Error=RuntimeError, SOURCE_REMOVE=False)
                 window = SimpleNamespace(progress=Mock(), install_row=Mock(), restart_row=Mock(),
                                          latest_row=Mock(), release={"version": "0.3.9"},
-                                         install_failed=Mock(), toast=Mock(), updated=False)
+                                         install_failed=Mock(), toast=Mock(), updated=False,
+                                         ask_restart_after_update=Mock())
                 with patch.dict(updater, Gio=gui, GLib=glib, log=lambda _m: None,
                                 update_platform=lambda: ("pacman", "archlinux", "x86_64", "")):
                     updater["run_installer"](window, ["/tmp/archtype.pkg.tar.zst"])
                 self.assertEqual(len(commands), expected_calls)
                 self.assertEqual(window.updated, updated)
                 self.assertEqual(window.install_failed.called, not updated)
+                # 装好了马上问要不要重启输入法
+                self.assertEqual(window.ask_restart_after_update.called, updated)
 
 
 if __name__ == "__main__":

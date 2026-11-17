@@ -8,10 +8,20 @@
 #   english.txt   英文词表
 #   LICENSE       rime-ice 的许可证（GPL-3.0），随数据一起分发
 #   words.lm      词级语言模型（从 GitHub Release 下载，见下面 LM_URL）
+#   nnlm.bin      整句增强模型：ArchType 自己的字级神经语言模型（WTNN，从 GitHub Release 下载，见下面 NNLM_URL；
+#                 下载不到时只警告，不带它照样出别的文件）
 #   SOURCE.txt    数据来源与版本
+#   VERSION       词库版本（rime-ice 日期 + 修订号，如 2026.11.14.6）
+#   DATA-MANIFEST 数据清单：每个数据文件的名字、版本、sha256、来源（tools/datamark.py manifest），
+#                 装进安装包的系统数据目录；也列上 core/data/s2t.tsv 和同一目录里的 wubi86.tsv（make-wubi.sh）
+#
+# 每个数据文件带版本标记（docs/DATA.md「数据版本标记」）：lexicon.tsv、english.txt 在这里写进头部注释，
+# 版本就是 VERSION；words.lm 的标记在发布模型时就写好了（加标记以前的 lm-2026.11.09 按字节数认）。
 #
 # words.lm 是用 archtype-lmbuild 从约 5 GB 语料训练的，不在这里重新训练。
 # 想用本机的文件（不下载）：ARCHTYPE_LM_FILE=path/to/words.lm scripts/make-data.sh
+# nnlm.bin 是 tools/nnlm/train.py 训出来的（docs/DATA.md「整句增强模型」），也不在这里训。
+# 用本机的（不下载）：ARCHTYPE_NNLM_FILE=path/to/nnlm.bin；ARCHTYPE_NO_NNLM=1 不带它。
 #
 # 语料词频（默认开，不联网、不要额外的 Python 包）：data/tatoeba-freq.tsv 是从钉死版本的 Tatoeba 中文句子
 # （CC BY 2.0 FR）挖出的词频，按权重 0.3 融进已有词（只改词频，不加词），署名写进 SOURCE.txt。
@@ -107,6 +117,23 @@ if [[ -n "$corpus_counts" ]]; then
   mv "$tmp/lexicon.corpus.tsv" "$OUT/lexicon.rime.tsv"
 fi
 
+# 只有占位词频（100）的词（rime-ice 的 ext / tencent 词表，三十多万个）换上语料里数出来的词频：
+# data/placeholder-freq.tsv 是 LCCC + 维基（约 10 亿字）里这些词的次数，至少 5 次的才换，其余照旧在加载时估。
+# 占位词频低，切分时常被拆成几段，数出来的次数偏少，换算系数再乘 1.4（扫过 1 / 1.4 / 2 / 3 / 5：1 时没有收益，
+# 3 起简拼掉 1 个点以上，5 时回归集挂一条）。评测（scripts/eval.sh）：日常整句 +1.4、上文 +0.2，
+# 冷门词 -0.4、简拼 -0.2，其余持平。ARCHTYPE_NO_PLACEHOLDER_FREQ=1 不换。
+PLACEHOLDER_NOTE=""
+if [[ "${ARCHTYPE_NO_PLACEHOLDER_FREQ:-}" != "1" && -f data/placeholder-freq.tsv ]]; then
+  python3 tools/placeholder-freq.py "$OUT/lexicon.rime.tsv" data/placeholder-freq.tsv "$tmp/lexicon.ph.tsv" \
+    --min-count 5 --boost 1.4
+  mv "$tmp/lexicon.ph.tsv" "$OUT/lexicon.rime.tsv"
+  PLACEHOLDER_NOTE="
+占位词频：rime-ice 里只有占位频次 100 的词，在 data/placeholder-freq.tsv 里出现至少 5 次的，换成了语料词频
+（tools/placeholder-freq.py）。那张表是 LCCC（thu-coai，MIT）和中文维基百科（CC BY-SA 4.0）里这些词的次数，
+不含语料本身。
+"
+fi
+
 # 合进 ArchType 自己整理的热词（AI、工作、网络用语），见 data/hotwords.tsv；
 # 再按 data/rime-ice-freq.tsv 修正几个常用词的词频，去掉 data/blocklist.tsv 里的错条目（去次）
 python3 tools/add_hotwords.py "$OUT/lexicon.rime.tsv" data/hotwords.tsv > "$OUT/lexicon.hot.tsv"
@@ -115,7 +142,14 @@ rm "$OUT/lexicon.rime.tsv" "$OUT/lexicon.hot.tsv"
 cat "$RIME/en_dicts/en.dict.yaml" "$RIME/en_dicts/en_ext.dict.yaml" > "$OUT/english.txt"
 cp "$RIME/LICENSE" "$OUT/LICENSE"
 
-# 词级语言模型，训练语料与命令见 Release 说明；换模型时同时改 URL 和 sha256
+# 词级语言模型，训练语料与命令见 Release 说明。换模型时：
+#   1. 训练出的 words.lm 先加版本标记再上传 Release（lm-<日期>），版本比上一版大：
+#        python3 tools/datamark.py stamp words.lm words.lm <日期>.0 --source "lm-<日期>"
+#      （或者在 archtype-lmbuild 里调 wordlm::set_data_marker，两种写出来逐字节一样）；
+#   2. 同时改下面的 URL 和 sha256（sha256 是加了标记以后的文件的）。
+# 插件和设置界面按标记里的版本认用户目录里的旧副本，不用再往 kOfficialLmSizes（data_files.h）、
+# OFFICIAL_LM_SIZES（archtype-config）里加字节数：那两张表只为认出加标记以前发布的 lm-2026.11.09
+# （它不会重新生成），以后不动。没有标记的新模型会在下面写清单时报错。
 LM_URL=https://github.com/Gloridust/WowType/releases/download/lm-2026.11.09/words.lm.xz
 LM_SHA256=42cb7c4a7cededa29b1a9ff105530085529fefff96535cc051341ebd51605dbe
 if [[ -n "${ARCHTYPE_LM_FILE:-}" ]]; then
@@ -136,8 +170,61 @@ if [[ "$actual" != "$LM_SHA256" ]]; then
   exit 1
 fi
 
+# 整句增强模型（nnlm.bin，WTNN）：tools/nnlm/prep_corpus.py 整理语料、tools/nnlm/train.py 训练，
+# xz 压缩后上传 Release（nnlm-<日期>）。换模型时改下面的 URL 和 sha256（sha256 是解压后的 nnlm.bin 的；
+# 版本标记 train.py 导出时就写在文件头里了）。下载不到（比如 Release 还没发）时只警告、不带它，
+# 别的文件照常生成；下载到了但 sha256 对不上就报错退出。
+NNLM_URL=https://github.com/Gloridust/WowType/releases/download/nnlm-2026.11.17/nnlm.bin.xz
+NNLM_SHA256=d50289dfd10c8a4a0da49fc412bdc61a37c6f63ef1a1cbec4bdb74bf5bb7b52b
+rm -f "$OUT/nnlm.bin"
+if [[ "${ARCHTYPE_NO_NNLM:-}" == "1" ]]; then
+  echo "不带整句增强模型 nnlm.bin（ARCHTYPE_NO_NNLM=1）" >&2
+elif [[ -n "${ARCHTYPE_NNLM_FILE:-}" ]]; then
+  cp "$ARCHTYPE_NNLM_FILE" "$OUT/nnlm.bin"
+else
+  if ! curl -fsSL --retry 3 -o "$tmp/nnlm.bin.xz" "$NNLM_URL"; then
+    echo "警告：下载不到整句增强模型（${NNLM_URL}），这次不带 nnlm.bin" >&2
+    rm -f "$tmp/nnlm.bin.xz"
+  elif command -v xz >/dev/null; then
+    xz -dc "$tmp/nnlm.bin.xz" > "$OUT/nnlm.bin"
+  else
+    python3 -c 'import lzma, shutil, sys; shutil.copyfileobj(lzma.open(sys.argv[1]), sys.stdout.buffer)' \
+      "$tmp/nnlm.bin.xz" > "$OUT/nnlm.bin"
+  fi
+fi
+NNLM_NOTE=""
+if [[ -f "$OUT/nnlm.bin" ]]; then
+  actual=$(sha256 "$OUT/nnlm.bin")
+  if [[ "$actual" != "$NNLM_SHA256" ]]; then
+    echo "nnlm.bin 的 sha256 对不上（应为 ${NNLM_SHA256}，实际 ${actual}）" >&2
+    rm -f "$OUT/nnlm.bin"
+    exit 1
+  fi
+  NNLM_NOTE="
+nnlm.bin 是 ArchType 的整句增强模型（字级神经语言模型，WTNN 格式，3 层 GPT-2、宽 256），
+由 ArchType 的 tools/nnlm/train.py 从下列语料训练，许可证 CC BY-SA 4.0：
+  LCCC（https://huggingface.co/datasets/thu-coai/lccc，清华大学 CoAI 组，MIT）
+  中文维基百科（Hugging Face wikimedia/wikipedia 20231101.zh，https://zh.wikipedia.org/，CC BY-SA 4.0）
+许可证全文：https://creativecommons.org/licenses/by-sa/4.0/
+下载地址：$NNLM_URL
+sha256（解压后）：$NNLM_SHA256
+"
+fi
+
 COMMIT=$(git -C "$RIME" rev-parse HEAD 2>/dev/null || echo unknown)
 DATE=$(git -C "$RIME" log -1 --format=%cs 2>/dev/null || date +%F)
+# 词库版本 = rime-ice 日期 + ArchType 自己的修订号；只改了热词表等、rime-ice 没变时加 REV，
+# 否则同版本号的包 apt 不会更新、插件也分不出新旧。rime-ice 换新日期时 REV 归 0。
+# 5：默认融进 Tatoeba 语料词频（data/tatoeba-freq.tsv）；数据压缩包里加上五笔码表。
+# 6：数据文件带版本标记（archtype-data），多了 DATA-MANIFEST；VERSION 全用点分隔（2026.11.14.6）。
+# 7：占位词频换成语料词频（data/placeholder-freq.tsv）。
+REV=7
+VERSION="${DATE//-/.}.$REV"
+echo "$VERSION" > "$OUT/VERSION"
+# 版本标记：插在第一行注释后面（插件和设置界面按它认用户目录里的旧副本，见 docs/DATA.md）
+python3 tools/datamark.py stamp "$OUT/lexicon.tsv" lexicon.tsv "$VERSION" --source "rime-ice ${COMMIT:0:12} (${DATE})"
+python3 tools/datamark.py stamp "$OUT/english.txt" english.txt "$VERSION" --source "rime-ice ${COMMIT:0:12} (${DATE})"
+
 cat > "$OUT/SOURCE.txt" <<EOF
 数据来源：雾凇拼音 rime-ice（https://github.com/iDvel/rime-ice），许可证 GPL-3.0，见 LICENSE。
 版本：${COMMIT}（${DATE}）
@@ -146,18 +233,17 @@ lexicon.tsv 由 ArchType 的 tools/rime2tsv.py 转换自 rime_ice.dict.yaml 及�
 再用 tools/add_hotwords.py 合进 ArchType 的热词表 data/hotwords.tsv、按 data/rime-ice-freq.tsv 修正几个常用词的词频、
 去掉 data/blocklist.tsv 里的错条目；
 english.txt 是 en_dicts/en.dict.yaml 与 en_dicts/en_ext.dict.yaml 原样拼接。
-${CORPUS_NOTE}
+${CORPUS_NOTE}${PLACEHOLDER_NOTE}
 words.lm 是 ArchType 的词级语言模型，由 archtype-lmbuild 从下列语料统计生成，许可证 CC BY-SA 4.0：
   LCCC（https://huggingface.co/datasets/thu-coai/lccc，清华大学 CoAI 组，MIT）
   中文维基百科（https://zh.wikipedia.org/，CC BY-SA 4.0）
 下载地址：$LM_URL
 sha256：$LM_SHA256
+${NNLM_NOTE}
+各数据文件的版本（文件头的 archtype-data 标记）和 sha256 见同一目录（安装包里是 /usr/share/archtype）的 DATA-MANIFEST。
 EOF
-# 词库包版本 = rime-ice 日期 + ArchType 自己的修订号；只改了热词表等、rime-ice 没变时加 REV，
-# 否则同版本号的包 apt 不会更新。rime-ice 换新日期时 REV 归 0。
-# 5：默认融进 Tatoeba 语料词频（data/tatoeba-freq.tsv）；数据压缩包里加上五笔码表。
-REV=5
-echo "$DATE.$REV" > "$OUT/VERSION"
+# 数据清单（同一目录里已有 make-wubi.sh 生成的 wubi86.tsv 时一起列上；make-wubi.sh 跑完会再写一遍）
+python3 tools/datamark.py manifest "$OUT" core/data/s2t.tsv
 
 LINES=$(grep -vc '^#' "$OUT/lexicon.tsv" || true)
 echo "词库 $LINES 条 -> $OUT/lexicon.tsv（rime-ice ${DATE}，修订 ${REV}）"

@@ -9,11 +9,67 @@
 
 默认只取最常用的 5000 个词。常用词几乎不会出错，「打全了的低频词被高频补全抢走」
 （zhongdi 出「重点」不出「种地」）这类问题要用 --skip 换到中低频词才测得出来。
+
+--truncate 1（少打最后一个字母）时，截完的拼音可能正好是另一个词（zhonggu 是「中古」，不是没打完的
+「中国」）。引擎的既定规则是「打全了的词排第一」（docs/ENGINE.md「半成品输入」），所以用 --exact 分开：
+    --exact skip   只留截完不是任何词的（期望是补全出来的原词）
+    --exact only   只留截完正好是词频 >= 1000 的词的（期望是这些精确词，补全排后面）
+截完是词、但词频都不到 1000 的两边都不要（不受「精确优先」保护，哪个排第一都说得过去）。
+
+--homophones 2（或 3）生成同音词排序用例：两（三）个音节的输入，期望是词库里所有用完整个输入的
+多字词（`|` 分隔），第四列 before-single：这些词都要排在第一个单字候选前面（archtype-eval 判断）。
+
+输出只取决于参数和词库（同频的按词库里的顺序），同一份词库生成的文件逐字节一样。
 """
 
 import argparse
+import hashlib
+import os
+import re
 import sys
 from collections import defaultdict
+
+
+# 和 core/src/lib.rs 的 EXACT_PROTECT_MIN_FREQ 一样：词频低于这个的精确词不保证排第一
+EXACT_PROTECT_MIN_FREQ = 1000.0
+CJK = re.compile(r"^[\u4e00-\u9fff]+$")
+
+
+def sha256(path):
+    h = hashlib.sha256()
+    with open(path, "rb") as f:
+        for block in iter(lambda: f.read(1 << 20), b""):
+            h.update(block)
+    return h.hexdigest()
+
+
+def homophones(rows, args, out):
+    """同音词用例：按最常用的那个词的词频排，从前 --top 个输入里均匀抽 --count 个。"""
+    words = defaultdict(list)  # 输入 -> [词]（按词频从高到低，同频按词库顺序）
+    order = []  # 输入，按最常用的那个词的词频从高到低
+    # 同一串字母还能按别的音节数切的（xian 是一个音节，也是 xi an「西安」）不要：
+    # 那时单字也是打全了的精确结果，「同音词都在单字前」不成立
+    counts = defaultdict(set)
+    for freq, pinyin, word in rows:
+        counts[pinyin.replace(" ", "")].add(len(pinyin.split()))
+    for freq, pinyin, word in rows:
+        syllables = pinyin.split()
+        if len(syllables) != args.homophones or len(word) != len(syllables) or not CJK.match(word):
+            continue
+        joined = "".join(syllables)
+        if len(counts[joined]) > 1:
+            continue
+        if joined not in words:
+            order.append(joined)
+        if word not in words[joined]:
+            words[joined].append(word)
+    order = order[: args.top]
+    step = max(1, len(order) // args.count)
+    sampled = order[::step][: args.count]
+    out.write("# 输入\t词库里全部同音词（都要排在第一个单字前）\t上文\t属性\n")
+    for joined in sampled:
+        out.write("%s\t%s\t\tbefore-single\n" % (joined, "|".join(words[joined])))
+    print("生成 %d 条同音词用例" % len(sampled), file=sys.stderr)
 
 
 def main():
@@ -43,6 +99,18 @@ def main():
         help="截掉末尾 N 个字母，模拟半成品输入（测补全能力）",
     )
     ap.add_argument(
+        "--exact",
+        choices=["any", "skip", "only"],
+        default="any",
+        help="--truncate 时截完正好是词的怎么办（见上面）",
+    )
+    ap.add_argument(
+        "--homophones",
+        type=int,
+        default=0,
+        help="生成同音词排序用例：几个音节（2 或 3）",
+    )
+    ap.add_argument(
         "--rank",
         type=int,
         default=1,
@@ -68,18 +136,40 @@ def main():
             rows.append((freq, pinyin, word))
 
     rows.sort(key=lambda r: -r[0])
+
+    out = sys.stdout
+    out.write("# 由 tools/make_eval.py 生成：%s\n" % " ".join([os.path.basename(args.lexicon)] + sys.argv[2:]))
+    out.write("# 词库 %s 的 sha256：%s\n" % (os.path.basename(args.lexicon), sha256(args.lexicon)))
+    if args.homophones:
+        homophones(rows, args, out)
+        return
+
+    # 截完的拼音正好是哪些词（全部词，不只前 top 个）
+    exact = defaultdict(list)  # 拼音（不带空格）-> [(freq, word)]
+    if args.truncate > 0 and args.exact != "any":
+        for freq, pinyin, word in rows:
+            exact[pinyin.replace(" ", "")].append((freq, word))
     rows = rows[: args.top]
 
     for index, (freq, pinyin, word) in enumerate(rows):
         syllables = pinyin.split()
         joined = "".join(s[0] for s in syllables) if args.jianpin else pinyin.replace(" ", "")
+        if len(word) > args.max_word:
+            continue
         if args.truncate > 0:
             if len(joined) <= args.truncate + 1:
                 continue
             joined = joined[: -args.truncate]
+            if args.exact != "any":
+                hits = exact.get(joined, [])
+                solid = [w for f, w in hits if f >= EXACT_PROTECT_MIN_FREQ]
+                if args.exact == "skip" and hits:
+                    continue
+                if args.exact == "only":
+                    if not solid:
+                        continue
+                    word = "|".join(solid)
         if not (args.min_len <= len(joined) <= args.max_len):
-            continue
-        if len(word) > args.max_word:
             continue
         bucket = per_pinyin[joined]
         if len(bucket) < args.rank:
@@ -95,8 +185,6 @@ def main():
     step = max(1, len(items) // args.count)
     sampled = items[::step][: args.count]
 
-    out = sys.stdout
-    out.write("# 由 tools/make_eval.py 生成\n")
     out.write("# 输入\t期望\n")
     for joined, (word, _freq) in sampled:
         out.write("%s\t%s\n" % (joined, word))
