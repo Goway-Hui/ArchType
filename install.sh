@@ -375,6 +375,11 @@ main() {
   say "安装（需要时会要求输入密码）"
   install_packages
 
+  # 旧品牌 WowType 的包如果还装着，输入法列表里会多一个用不了的 WowType；只提示，不替用户卸
+  if [[ -e /usr/share/fcitx5/addon/wowtype.conf || -e /usr/lib/fcitx5/libwowtype.so ]]; then
+    warn "检测到旧品牌 WowType 的安装文件。建议卸载旧包（pacman -R wowtype / apt remove wowtype / dnf remove wowtype），用户词库和设置会自动迁移到 ArchType"
+  fi
+
   # 输入法框架、输入法列表交给 archtype-config --setup（直接装包的用户在设置第一页点「一键设置」是同一套）：
   #   fcitx5 没在跑：输入法框架不是 fcitx5 时问一句再 im-config -n fcitx5，写好 fcitx5 的输入法列表，要注销重新登录
   #   在跑但还没载入 ArchType：问一句再重启 fcitx5，加进输入法列表；在跑也认得：直接加
