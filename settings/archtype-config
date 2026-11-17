@@ -5656,15 +5656,18 @@ class SettingsWindow(Adw.ApplicationWindow):
     # ---- 方案
 
     def stats_scheme_page(self, page, data):
-        schemes = stats_scope_counts(data)["schemes"]
+        scope = stats_scope_counts(data)
+        schemes = scope["schemes"]
         page.append(self.stats_heading("输入方案"))
-        total = sum(schemes.values()) or 1
-        # 所有双拼方案都列出来（没用过的显示 0），不用等打了双拼才出现
+        # 全拼单独一行（记在 sources 里），双拼各方案固定列出（没用过的显示 0）
         names = [("ziranma", "自然码"), ("xiaohe", "小鹤双拼"), ("microsoft", "微软双拼"),
                  ("sogou", "搜狗双拼"), ("abc", "智能 ABC"), ("ziguang", "紫光双拼"),
                  ("pinyinjiajia", "拼音加加")]
-        for key, label in names:
-            page.append(self.stats_bar_row(label, schemes.get(key, 0), total))
+        rows = [("全拼", scope["sources"].get("quanpin", 0))]
+        rows += [(label, schemes.get(key, 0)) for key, label in names]
+        total = sum(count for _, count in rows) or 1
+        for label, count in rows:
+            page.append(self.stats_bar_row(label, count, total))
 
     # ---- 候选
 
