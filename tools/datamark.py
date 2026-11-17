@@ -26,6 +26,8 @@ import struct
 import sys
 
 KEY = "archtype-data:"
+# 上游 WowType 发布的数据文件（nnlm.bin 等）里还是旧标记，读的时候也认
+LEGACY_KEYS = ("wowtype-data:",)
 SCAN_BYTES = 4096
 MANIFEST = "DATA-MANIFEST"
 # 系统数据目录里会有的数据文件（清单按这个顺序列）。nnlm.bin 是 ArchType 自己的字级神经语言模型（WTNN）
@@ -46,9 +48,16 @@ def valid_marker(name, version, source=""):
 def parse(text):
     """`... archtype-data: 名字 版本 [来源]` -> (名字, 版本, 来源)，不合规矩返回 None。"""
     at = text.find(KEY)
+    key = KEY
+    if at < 0:
+        for legacy in LEGACY_KEYS:
+            at = text.find(legacy)
+            if at >= 0:
+                key = legacy
+                break
     if at < 0:
         return None
-    rest = re.split(r"[\n\r\0]", text[at + len(KEY):], maxsplit=1)[0]
+    rest = re.split(r"[\n\r\0]", text[at + len(key):], maxsplit=1)[0]
     if not rest.startswith(" "):
         return None
     rest = rest.lstrip(" ")

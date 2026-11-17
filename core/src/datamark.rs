@@ -31,6 +31,8 @@ use std::path::Path;
 
 /// 标记的开头。
 pub const KEY: &str = "archtype-data:";
+/// 上游 WowType 发布的数据文件（nnlm.bin 等）里还是旧标记，读的时候也认。
+pub const LEGACY_KEY: &str = "wowtype-data:";
 /// 只在文件的前这么多字节里找标记。
 pub const SCAN_BYTES: usize = 4096;
 
@@ -64,8 +66,11 @@ impl DataMarker {
 
     /// 解析 `archtype-data: 名字 版本 [来源]`（一行，前面可以有别的字，如 `# `）。
     pub fn parse(text: &str) -> Option<Self> {
-        let at = text.find(KEY)?;
-        let rest = &text[at + KEY.len()..];
+        let (at, key) = text
+            .find(KEY)
+            .map(|at| (at, KEY))
+            .or_else(|| text.find(LEGACY_KEY).map(|at| (at, LEGACY_KEY)))?;
+        let rest = &text[at + key.len()..];
         let rest = rest
             .split(['\n', '\r', '\0'])
             .next()
@@ -136,8 +141,10 @@ pub fn scan(head: &[u8]) -> Option<DataMarker> {
     if head.starts_with(b"WTLM") {
         return wtlm_marker(head);
     }
-    let key = KEY.as_bytes();
-    let at = head.windows(key.len()).position(|w| w == key)?;
+    let at = head
+        .windows(KEY.len())
+        .position(|w| w == KEY.as_bytes())
+        .or_else(|| head.windows(LEGACY_KEY.len()).position(|w| w == LEGACY_KEY.as_bytes()))?;
     let end = head[at..]
         .iter()
         .position(|&b| b == b'\n' || b == b'\r' || b == 0)?;
