@@ -1,9 +1,0 @@
-/home/ahui/DevCode/WowType/build/CMakeFiles/generate-desktop-file.dir
-/home/ahui/DevCode/WowType/build/CMakeFiles/translation-file.dir
-/home/ahui/DevCode/WowType/build/CMakeFiles/archtype.dir
-/home/ahui/DevCode/WowType/build/CMakeFiles/edit_cache.dir
-/home/ahui/DevCode/WowType/build/CMakeFiles/rebuild_cache.dir
-/home/ahui/DevCode/WowType/build/CMakeFiles/list_install_components.dir
-/home/ahui/DevCode/WowType/build/CMakeFiles/install.dir
-/home/ahui/DevCode/WowType/build/CMakeFiles/install/local.dir
-/home/ahui/DevCode/WowType/build/CMakeFiles/install/strip.dir
