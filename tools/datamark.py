@@ -90,6 +90,11 @@ def scan(head):
         return _wtlm_marker(head)
     at = head.find(KEY.encode())
     if at < 0:
+        for legacy in LEGACY_KEYS:
+            at = head.find(legacy.encode())
+            if at >= 0:
+                break
+    if at < 0:
         return None
     ends = [i for i in (head.find(b"\n", at), head.find(b"\r", at), head.find(b"\0", at)) if i >= 0]
     if not ends:
@@ -110,7 +115,9 @@ def _wtlm_marker(head):
     if at >= len(head):
         return None
     word = head[at + 1:at + 1 + head[at]]
-    if len(word) != head[at] or not word.startswith(KEY.encode()):
+    if len(word) != head[at] or not (
+            word.startswith(KEY.encode())
+            or any(word.startswith(legacy.encode()) for legacy in LEGACY_KEYS)):
         return None
     try:
         return parse(word.decode("utf-8"))
