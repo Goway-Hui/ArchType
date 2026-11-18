@@ -319,9 +319,20 @@ function Metric(props: { title: string; value: string; unit?: string; note?: str
   );
 }
 
+function heatColor(count: number, max: number): string {
+  if (count <= 0 || max <= 0) return colorScheme() === "dark" ? "#343a37" : "#eef1f0";
+  const level = Math.max(1, Math.min(4, Math.ceil((count * 4) / max)));
+  if (colorScheme() === "dark") {
+    return ["#343a37", "rgba(110, 168, 254, 0.22)", "rgba(110, 168, 254, 0.42)",
+      "rgba(110, 168, 254, 0.68)", "#6EA8FE"][level];
+  }
+  return ["#eef1f0", "rgba(47, 111, 237, 0.20)", "rgba(47, 111, 237, 0.40)",
+    "rgba(47, 111, 237, 0.65)", "#2F6FED"][level];
+}
+
 function KeyCap(props: { label: string; weight: number; count: number; max: number }) {
-  const ratio = props.max > 0 ? props.count / props.max : 0;
-  const background = ratio <= 0 ? ui().page : `rgba(59, 130, 246, ${Math.min(0.85, 0.12 + ratio * 0.75)})`;
+  const level = props.count <= 0 ? 0 : Math.max(1, Math.min(4, Math.ceil((props.count * 4) / props.max)));
+  const background = heatColor(props.count, props.max);
   return (
     <View
       style={{
@@ -335,7 +346,41 @@ function KeyCap(props: { label: string; weight: number; count: number; max: numb
         justifyContent: "center",
       }}
     >
-      <Text style={{ color: ratio > 0.55 ? "white" : ui().text, fontSize: 11 }}>{props.label}</Text>
+      <Text style={{ color: level >= 3 ? (colorScheme() === "dark" ? "#0B1B33" : "white") : ui().text, fontSize: 11 }}>
+        {props.label}
+      </Text>
+    </View>
+  );
+}
+
+function KeyChip(props: { label: string; count: number; max: number }) {
+  return (
+    <View
+      style={{
+        flex: 1,
+        flexDirection: "row",
+        alignItems: "center",
+        gap: 6,
+        borderWidth: 1,
+        borderColor: ui().border,
+        borderRadius: 6,
+        paddingLeft: 8,
+        paddingRight: 8,
+        paddingTop: 5,
+        paddingBottom: 5,
+        minWidth: 150,
+      }}
+    >
+      <View
+        style={{
+          width: 10,
+          height: 10,
+          borderRadius: 2,
+          backgroundColor: heatColor(props.count, props.max),
+        }}
+      />
+      <Text style={{ color: ui().text, fontSize: 12, flex: 1 }}>{props.label}</Text>
+      <Text style={{ color: ui().muted, fontSize: 11 }}>{formatNumber(props.count)}</Text>
     </View>
   );
 }
@@ -1346,9 +1391,10 @@ function App() {
                 <>
                   <Card>
                     <Text style={{ color: ui().muted, fontSize: 12 }}>
-                      按键热力图 · 累计（共 {formatNumber(summary().totalKeys)} 次）
+                      按键热力图 · 累计
+                      共 {formatNumber(summary().totalKeys)} 次按键，颜色越深按得越多
                     </Text>
-                    <View style={{ gap: 4, paddingTop: 8, paddingBottom: 8 }}>
+                    <View style={{ alignItems: "center", gap: 4, paddingTop: 8, paddingBottom: 8 }}>
                       {keyboardRows.map((row) => (
                         <View style={{ flexDirection: "row", gap: 4 }}>
                           {row.map((key) =>
@@ -1366,16 +1412,15 @@ function App() {
                         </View>
                       ))}
                     </View>
-                    <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+                    <View style={{ flexDirection: "row", justifyContent: "center", alignItems: "center", gap: 6 }}>
                       <Text style={{ color: ui().muted, fontSize: 11 }}>少</Text>
-                      {[0, 0.2, 0.4, 0.6, 0.8].map((ratio) => (
+                      {[0, 1, 2, 3, 4].map((level) => (
                         <View
                           style={{
-                            width: 16,
-                            height: 10,
+                            width: 12,
+                            height: 12,
                             borderRadius: 2,
-                            backgroundColor:
-                              ratio <= 0 ? ui().page : `rgba(59, 130, 246, ${0.12 + ratio * 0.75})`,
+                            backgroundColor: heatColor(level, 4),
                           }}
                         />
                       ))}
@@ -1384,10 +1429,37 @@ function App() {
                   </Card>
                   <Card>
                     <Text style={{ color: ui().muted, fontSize: 12 }}>其他键</Text>
-                    {otherKeys(summary().keys)
-                      .slice(0, 24)
-                      .map((key) => (
-                        <Row title={key.label} subtitle={`${formatNumber(key.count)} 次`} />
+                    {Array.from({ length: Math.ceil(otherKeys(summary().keys).length / 5) }).map(
+                      (_, rowIndex) => (
+                        <View style={{ flexDirection: "row", gap: 6 }}>
+                          {otherKeys(summary().keys)
+                            .slice(rowIndex * 5, rowIndex * 5 + 5)
+                            .map((key) => (
+                              <KeyChip
+                                label={key.label}
+                                count={key.count}
+                                max={maxKeyCount(summary().keys)}
+                              />
+                            ))}
+                        </View>
+                      ),
+                    )}
+                    <View style={{ height: 4 }} />
+                    {Object.entries(summary().keys)
+                      .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+                      .slice(0, 5)
+                      .map(([code, count], index) => (
+                        <View
+                          style={{ flexDirection: "row", gap: 8, paddingTop: 2, paddingBottom: 2 }}
+                        >
+                          <Text style={{ color: ui().muted, fontSize: 12, width: 18 }}>{index + 1}</Text>
+                          <Text style={{ color: ui().text, fontSize: 12, flex: 1 }}>
+                            {keyLabel(code)}
+                          </Text>
+                          <Text style={{ color: ui().text, fontSize: 12 }}>
+                            {formatNumber(count)} 次
+                          </Text>
+                        </View>
                       ))}
                   </Card>
                 </>
