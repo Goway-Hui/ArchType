@@ -1394,7 +1394,7 @@ function App() {
                       按键热力图 · 累计
                       共 {formatNumber(summary().totalKeys)} 次按键，颜色越深按得越多
                     </Text>
-                    <View style={{ alignItems: "center", gap: 4, paddingTop: 8, paddingBottom: 8 }}>
+                    <View style={{ alignItems: "center", gap: 4 }}>
                       {keyboardRows.map((row) => (
                         <View style={{ flexDirection: "row", gap: 4 }}>
                           {row.map((key) =>
@@ -1412,7 +1412,7 @@ function App() {
                         </View>
                       ))}
                     </View>
-                    <View style={{ flexDirection: "row", justifyContent: "center", alignItems: "center", gap: 6 }}>
+                    <View style={{ flexDirection: "row", justifyContent: "center", alignItems: "center", gap: 6, marginTop: 8 }}>
                       <Text style={{ color: ui().muted, fontSize: 11 }}>少</Text>
                       {[0, 1, 2, 3, 4].map((level) => (
                         <View
