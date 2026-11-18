@@ -1,11 +1,11 @@
-import { mount, setColorScheme, signal, Scroll, Text, View } from "nsh";
-import { NumberInput, Select, Switch } from "nsh/base";
+import { mount, setColorScheme, colorScheme, computed, signal, Scroll, Text, View } from "nsh";
+import { Button, Input, NumberInput, Select, Switch } from "nsh/base";
 import type { JSX } from "nsh/jsx-runtime";
 import { Config } from "archtype/native";
 
 const pages = ["常规", "输入", "表情", "语音", "翻译", "自定义词", "统计", "更新"];
 
-const ui = {
+const lightUi = {
   page: "#f5f7f6",
   sidebar: "#e2ecfc",
   card: "#ffffff",
@@ -16,14 +16,96 @@ const ui = {
   trackOff: "#cfd5d1",
 };
 
+const darkUi = {
+  page: "#17191b",
+  sidebar: "#1e2530",
+  card: "#22262a",
+  border: "#363b40",
+  text: "#e6ece9",
+  muted: "#9aa49f",
+  accent: "#3B82F6",
+  trackOff: "#3d4348",
+};
+
+const ui = computed(() => (colorScheme() === "dark" ? darkUi : lightUi));
+
+function SmallButton(props: {
+  title: string;
+  onPress: () => void;
+  tone?: "accent" | "plain";
+  disabled?: boolean;
+}) {
+  return (
+    <View
+      style={{
+        backgroundColor: props.tone === "accent" ? ui().accent : ui().card,
+        borderWidth: 1,
+        borderColor: props.tone === "accent" ? ui().accent : ui().border,
+        borderRadius: 8,
+        opacity: props.disabled ? 0.5 : 1,
+      }}
+    >
+      <Button onPress={props.onPress} disabled={props.disabled}>
+        <Text
+          style={{
+            color: props.tone === "accent" ? "white" : ui().text,
+            fontSize: 13,
+            paddingLeft: 12,
+            paddingRight: 12,
+            paddingTop: 4,
+            paddingBottom: 4,
+          }}
+        >
+          {props.title}
+        </Text>
+      </Button>
+    </View>
+  );
+}
+
+function InputBox(props: {
+  value: string;
+  placeholder?: string;
+  masked?: boolean;
+  width?: number;
+  onChange: (value: string) => void;
+}) {
+  return (
+    <View
+      style={{
+        backgroundColor: ui().page,
+        borderWidth: 1,
+        borderColor: ui().border,
+        borderRadius: 8,
+        width: props.width ?? 280,
+      }}
+    >
+      <Input
+        value={props.value}
+        placeholder={props.placeholder}
+        masked={props.masked}
+        style={{
+          color: ui().text,
+          paddingLeft: 10,
+          paddingRight: 10,
+          paddingTop: 6,
+          paddingBottom: 6,
+          fontSize: 13,
+        }}
+        onChange={(event) => props.onChange(event.value)}
+      />
+    </View>
+  );
+}
+
 function Card(props: { children: JSX.Element }) {
   return (
     <View
       style={{
-        backgroundColor: ui.card,
+        backgroundColor: ui().card,
         borderRadius: 12,
         borderWidth: 1,
-        borderColor: ui.border,
+        borderColor: ui().border,
         paddingLeft: 16,
         paddingRight: 16,
         paddingTop: 2,
@@ -48,9 +130,9 @@ function Row(props: { title: string; subtitle?: string; children?: JSX.Element }
       }}
     >
       <View style={{ flex: 1, gap: 2 }}>
-        <Text style={{ color: ui.text, fontSize: 15 }}>{props.title}</Text>
+        <Text style={{ color: ui().text, fontSize: 15 }}>{props.title}</Text>
         {props.subtitle ? (
-          <Text style={{ color: ui.muted, fontSize: 12 }}>{props.subtitle}</Text>
+          <Text style={{ color: ui().muted, fontSize: 12 }}>{props.subtitle}</Text>
         ) : null}
       </View>
       {props.children}
@@ -80,16 +162,16 @@ function SelectBox(props: {
             paddingRight: 10,
             borderRadius: 6,
             borderWidth: 1,
-            borderColor: ui.border,
-            backgroundColor: ui.card,
+            borderColor: ui().border,
+            backgroundColor: ui().card,
             minWidth: 120,
             justifyContent: "space-between",
           }}
         >
-          <Text style={{ color: ui.text, fontSize: 13 }}>
+          <Text style={{ color: ui().text, fontSize: 13 }}>
             {props.items.find((item) => item.value === props.value)?.title ?? "选择"}
           </Text>
-          <Text style={{ color: ui.muted, fontSize: 10 }}>▾</Text>
+          <Text style={{ color: ui().muted, fontSize: 10 }}>▾</Text>
         </View>
       }
     />
@@ -106,7 +188,7 @@ function Toggle(props: { checked: boolean; onChange: (on: boolean) => void }) {
         height: 22,
         borderRadius: 11,
         padding: 2,
-        backgroundColor: props.checked ? ui.accent : ui.trackOff,
+        backgroundColor: props.checked ? ui().accent : ui().trackOff,
       }}
       thumbStyle={{
         width: 18,
@@ -154,6 +236,31 @@ const translateTargetItems = [
   { value: "id", title: "印尼语" },
   { value: "ar", title: "阿拉伯语" },
 ];
+
+const translateProviders = [
+  { title: "OpenAI", base: "https://api.openai.com/v1", model: "" },
+  { title: "DeepSeek", base: "https://api.deepseek.com/v1", model: "deepseek-chat" },
+  { title: "通义千问（阿里云百炼）", base: "https://dashscope.aliyuncs.com/compatible-mode/v1", model: "qwen-plus" },
+  { title: "Kimi（月之暗面）", base: "https://api.moonshot.cn/v1", model: "moonshot-v1-8k" },
+  { title: "智谱 GLM", base: "https://open.bigmodel.cn/api/paas/v4", model: "glm-4-flash" },
+  { title: "硅基流动", base: "https://api.siliconflow.cn/v1", model: "" },
+  { title: "OpenRouter", base: "https://openrouter.ai/api/v1", model: "" },
+  { title: "Ollama（本机）", base: "http://127.0.0.1:11434/v1", model: "" },
+  { title: "其他（自己填地址）", base: "", model: "" },
+];
+
+const providerItems = translateProviders.map((provider, index) => ({
+  value: String(index),
+  title: provider.title,
+}));
+
+function providerIndexOf(base: string): number {
+  const trimmed = base.trim().replace(/\/+$/, "");
+  const index = translateProviders.findIndex(
+    (provider) => provider.base !== "" && trimmed.startsWith(provider.base),
+  );
+  return index >= 0 ? index : translateProviders.length - 1;
+}
 
 const BILIBILI_URL = "https://index-translate.bilibili.com/v1";
 
@@ -255,6 +362,8 @@ function boolOf(value: string, fallback: boolean): boolean {
   return fallback;
 }
 
+let voicePollStarted = false;
+
 function App() {
   const current = signal(0);
 
@@ -282,6 +391,32 @@ function App() {
   const translateBase = signal(Config.get("TranslateBaseUrl") || "");
   const translateTarget = signal(Config.get("TranslateTarget") || "en");
   const customWords = signal(Config.customWords());
+  const translateModel = signal(Config.get("TranslateModel") || "");
+  const translateFormal = signal(boolOf(Config.get("TranslateFormal"), false));
+  const translateKey = signal(Config.translateKey());
+  const translateProvider = signal(providerIndexOf(Config.get("TranslateBaseUrl") || ""));
+  const testState = signal("");
+  const customWord = signal("");
+  const customPinyin = signal("");
+  const customMessage = signal("");
+  const voiceState = signal(Config.voiceDownloadState());
+  const voiceBusy = computed(
+    () =>
+      voiceState().startsWith("downloading") ||
+      voiceState().startsWith("verifying") ||
+      voiceState().startsWith("extracting"),
+  );
+  const updateState = signal("");
+  const updateUrl = signal("");
+
+  if (!voicePollStarted) {
+    voicePollStarted = true;
+    setInterval(() => {
+      const state = Config.voiceDownloadState();
+      voiceState.set(state);
+      if (state === "done") voiceModel.set(Config.voiceModel());
+    }, 1000);
+  }
 
   const statsFile = parseStats(Config.stats());
   const days = statsFile.days ?? {};
@@ -306,6 +441,71 @@ function App() {
   const keysComma = signal(boolOf(Config.get("PageKeysCommaPeriod"), false));
   const keysTab = signal(boolOf(Config.get("PageKeysTab"), false));
 
+  const applyProvider = (value: string) => {
+    translateProvider.set(Number(value));
+    const provider = translateProviders[Number(value)];
+    if (provider.base) {
+      translateBase.set(provider.base);
+      Config.set("TranslateBaseUrl", provider.base);
+    }
+    if (provider.model) {
+      translateModel.set(provider.model);
+      Config.set("TranslateModel", provider.model);
+    }
+  };
+
+  const runTranslateTest = () => {
+    testState.set("测试中…");
+    const result: { ok: boolean; text?: string; error?: string } = JSON.parse(
+      Config.translateTest(
+        translateBase(),
+        translateKey(),
+        translateModel(),
+        translateTarget(),
+        translateFormal(),
+      ),
+    );
+    testState.set(result.ok ? `成功：${result.text ?? ""}` : `失败：${result.error ?? "未知错误"}`);
+  };
+
+  const addCustomWord = () => {
+    const added = Config.customWordAdd(customWord(), customPinyin());
+    customMessage.set(added ? "已添加" : "词和编码都要填");
+    if (added) {
+      customWord.set("");
+      customPinyin.set("");
+      customWords.set(Config.customWords());
+    }
+  };
+
+  const removeCustomWord = (word: string) => {
+    Config.customWordRemove(word);
+    customWords.set(Config.customWords());
+  };
+
+  const downloadVoice = () => {
+    voiceState.set("downloading");
+    Config.voiceDownloadStart();
+  };
+
+  const deleteVoice = () => {
+    Config.voiceModelDelete();
+    voiceModel.set(Config.voiceModel());
+    voiceState.set("idle");
+  };
+
+  const runCheckUpdate = () => {
+    updateState.set("检查中…");
+    const result: { ok: boolean; tag?: string; newer?: boolean; url?: string; error?: string } =
+      JSON.parse(Config.checkUpdate());
+    if (!result.ok) {
+      updateState.set(`失败：${result.error ?? "未知错误"}`);
+      return;
+    }
+    updateState.set(result.newer ? `有新版 ${result.tag}` : "已是最新");
+    updateUrl.set(result.url ?? "");
+  };
+
   const save = (key: string, value: string) => {
     Config.set(key, value);
     Config.restartFcitx();
@@ -325,11 +525,11 @@ function App() {
   };
 
   return (
-    <View style={{ flex: 1, flexDirection: "row", backgroundColor: ui.page }}>
+    <View style={{ flex: 1, flexDirection: "row", backgroundColor: ui().page }}>
       <View
         style={{
           width: 210,
-          backgroundColor: ui.sidebar,
+          backgroundColor: ui().sidebar,
           paddingLeft: 12,
           paddingRight: 12,
           paddingTop: 14,
@@ -343,15 +543,15 @@ function App() {
               width: 26,
               height: 26,
               borderRadius: 13,
-              backgroundColor: ui.accent,
+              backgroundColor: ui().accent,
               alignItems: "center",
               justifyContent: "center",
             }}
           >
             <Text style={{ color: "white", fontWeight: "800", fontSize: 14 }}>A</Text>
           </View>
-          <Text style={{ color: ui.text, fontWeight: "800", fontSize: 16 }}>ArchType</Text>
-          <Text style={{ color: ui.muted, fontSize: 12 }}>设置</Text>
+          <Text style={{ color: ui().text, fontWeight: "800", fontSize: 16 }}>ArchType</Text>
+          <Text style={{ color: ui().muted, fontSize: 12 }}>设置</Text>
         </View>
         {pages.map((p, i) => (
           <View
@@ -362,21 +562,21 @@ function App() {
               paddingLeft: 12,
               paddingRight: 12,
               borderRadius: 8,
-              backgroundColor: current() === i ? ui.accent : "transparent",
+              backgroundColor: current() === i ? ui().accent : "transparent",
             }}
           >
-            <Text style={{ color: current() === i ? "white" : ui.text, fontSize: 14 }}>{p}</Text>
+            <Text style={{ color: current() === i ? "white" : ui().text, fontSize: 14 }}>{p}</Text>
           </View>
         ))}
       </View>
 
       <Scroll style={{ flex: 1 }}>
         <View style={{ padding: 28, gap: 16 }}>
-          <Text style={{ color: ui.text, fontWeight: "800", fontSize: 24 }}>{pages[current()]}</Text>
+          <Text style={{ color: ui().text, fontWeight: "800", fontSize: 24 }}>{pages[current()]}</Text>
 
           {current() === 0 ? (
             <>
-              <Text style={{ color: ui.muted, fontSize: 12 }}>候选词</Text>
+              <Text style={{ color: ui().muted, fontSize: 12 }}>候选词</Text>
               <Card>
                 <Row title="候选排列" subtitle="横排 / 竖排">
                   <SelectBox
@@ -403,7 +603,7 @@ function App() {
                 </Row>
               </Card>
 
-              <Text style={{ color: ui.muted, fontSize: 12 }}>翻页键</Text>
+              <Text style={{ color: ui().muted, fontSize: 12 }}>翻页键</Text>
               <Card>
                 <Row title="- 和 =" subtitle="翻到头时不当标点上屏">
                   <Toggle
@@ -443,7 +643,7 @@ function App() {
                 </Row>
               </Card>
 
-              <Text style={{ color: ui.muted, fontSize: 12 }}>外观</Text>
+              <Text style={{ color: ui().muted, fontSize: 12 }}>外观</Text>
               <Card>
                 <Row title="界面主题" subtitle="跟随系统 / 浅色 / 深色">
                   <SelectBox
@@ -471,13 +671,13 @@ function App() {
                 </Row>
               </Card>
 
-              <Text style={{ color: ui.muted, fontSize: 12 }}>
+              <Text style={{ color: ui().muted, fontSize: 12 }}>
                 配置文件：{Config.configPath()}
               </Text>
             </>
           ) : current() === 1 ? (
             <>
-              <Text style={{ color: ui.muted, fontSize: 12 }}>输入方案</Text>
+              <Text style={{ color: ui().muted, fontSize: 12 }}>输入方案</Text>
               <Card>
                 <Row title="输入方案" subtitle="全拼 / 双拼 / 五笔">
                   <SelectBox
@@ -503,7 +703,7 @@ function App() {
                 ) : null}
               </Card>
 
-              <Text style={{ color: ui.muted, fontSize: 12 }}>模糊音</Text>
+              <Text style={{ color: ui().muted, fontSize: 12 }}>模糊音</Text>
               <Card>
                 {fuzzyGroups.map((group) => (
                   <Row title={group.label}>
@@ -518,7 +718,7 @@ function App() {
                 ))}
               </Card>
 
-              <Text style={{ color: ui.muted, fontSize: 12 }}>其他</Text>
+              <Text style={{ color: ui().muted, fontSize: 12 }}>其他</Text>
               <Card>
                 <Row title="按错键自动纠正" subtitle="比如 weixni 打成微信">
                   <Toggle
@@ -550,13 +750,13 @@ function App() {
                 </Row>
               </Card>
 
-              <Text style={{ color: ui.muted, fontSize: 12 }}>
+              <Text style={{ color: ui().muted, fontSize: 12 }}>
                 词库：{Config.get("Lexicon") || "雾凇拼音（默认）"}
               </Text>
             </>
           ) : current() === 2 ? (
             <>
-              <Text style={{ color: ui.muted, fontSize: 12 }}>表情</Text>
+              <Text style={{ color: ui().muted, fontSize: 12 }}>表情</Text>
               <Card>
                 <Row title="打字时推荐 emoji" subtitle="打「开心」「点赞」时，候选里有对应的 emoji">
                   <Toggle
@@ -581,7 +781,7 @@ function App() {
             </>
           ) : current() === 6 ? (
             <>
-              <Text style={{ color: ui.muted, fontSize: 12 }}>打字统计</Text>
+              <Text style={{ color: ui().muted, fontSize: 12 }}>打字统计</Text>
               <Card>
                 <Row title="今日输入" subtitle={`${todayChars} 字符`} />
                 <Row title="累计输入" subtitle={`${totalChars} 字符`} />
@@ -589,7 +789,7 @@ function App() {
                 <Row title="今日速度" subtitle={`${speed} 字/分钟`} />
                 <Row title="累计按键" subtitle={`${totalKeys} 次`} />
               </Card>
-              <Text style={{ color: ui.muted, fontSize: 12 }}>输入来源</Text>
+              <Text style={{ color: ui().muted, fontSize: 12 }}>输入来源</Text>
               <Card>
                 <Row title="全拼" subtitle={`${sources.quanpin ?? 0} 次`} />
                 <Row title="双拼" subtitle={`${sources.shuangpin ?? 0} 次`} />
@@ -599,7 +799,7 @@ function App() {
             </>
           ) : current() === 3 ? (
             <>
-              <Text style={{ color: ui.muted, fontSize: 12 }}>语音</Text>
+              <Text style={{ color: ui().muted, fontSize: 12 }}>语音</Text>
               <Card>
                 <Row title="语音输入" subtitle="按住语音键说话，松开上屏">
                   <Toggle
@@ -630,13 +830,21 @@ function App() {
                   />
                 </Row>
               </Card>
-              <Text style={{ color: ui.muted, fontSize: 12 }}>
-                识别模型：{voiceModel() || "未下载（在语音设置里下载模型后可用）"}
-              </Text>
+              <Text style={{ color: ui().muted, fontSize: 12 }}>识别模型</Text>
+              <Card>
+                <Row title="模型状态" subtitle={voiceModel() ? `已安装：${voiceModel()}` : "未下载"}>
+                  <SmallButton
+                    title={voiceModel() ? "删除模型" : "下载模型"}
+                    onPress={voiceModel() ? deleteVoice : downloadVoice}
+                    disabled={voiceBusy()}
+                  />
+                </Row>
+                <Row title="下载状态" subtitle={voiceState()} />
+              </Card>
             </>
           ) : current() === 4 ? (
             <>
-              <Text style={{ color: ui.muted, fontSize: 12 }}>翻译</Text>
+              <Text style={{ color: ui().muted, fontSize: 12 }}>翻译</Text>
               <Card>
                 <Row title="互译" subtitle="按互译键进入「译」模式，打字后上屏译文">
                   <Toggle
@@ -680,34 +888,116 @@ function App() {
                 </Row>
               </Card>
               {engineOf(translateLocal(), translateBase()) === "custom" ? (
-                <Text style={{ color: ui.muted, fontSize: 12 }}>
-                  自定义接口：{translateBase() || "未填写（编辑功能迁移中）"}
-                </Text>
+                <>
+                  <Text style={{ color: ui().muted, fontSize: 12 }}>翻译服务</Text>
+                  <Card>
+                    <Row title="服务商" subtitle="选一家，自动填地址和建议的模型">
+                      <SelectBox
+                        items={providerItems}
+                        value={String(translateProvider())}
+                        onChange={applyProvider}
+                      />
+                    </Row>
+                    <Row title="接口地址" subtitle="OpenAI 格式，最后不用带 /chat/completions">
+                      <InputBox
+                        value={translateBase()}
+                        placeholder="https://api.example.com/v1"
+                        onChange={(value) => {
+                          translateBase.set(value);
+                          Config.set("TranslateBaseUrl", value);
+                        }}
+                      />
+                    </Row>
+                    <Row title="模型" subtitle="留空用服务商的默认模型">
+                      <InputBox
+                        value={translateModel()}
+                        placeholder="deepseek-chat"
+                        onChange={(value) => {
+                          translateModel.set(value);
+                          Config.set("TranslateModel", value);
+                        }}
+                      />
+                    </Row>
+                    <Row title="API Key" subtitle="只存在这台电脑上；本机服务可以不填">
+                      <InputBox
+                        value={translateKey()}
+                        masked
+                        onChange={(value) => {
+                          translateKey.set(value);
+                          Config.setTranslateKey(value);
+                        }}
+                      />
+                    </Row>
+                    <Row title="正式语气" subtitle="默认是聊天的口吻">
+                      <Toggle
+                        checked={translateFormal()}
+                        onChange={(on) => {
+                          translateFormal.set(on);
+                          save("TranslateFormal", on ? "True" : "False");
+                        }}
+                      />
+                    </Row>
+                    <Row title="测试连接" subtitle={testState() || "用「你好」试一下"}>
+                      <SmallButton title="测试" onPress={runTranslateTest} />
+                    </Row>
+                  </Card>
+                </>
               ) : null}
             </>
           ) : current() === 5 ? (
             <>
-              <Text style={{ color: ui.muted, fontSize: 12 }}>自定义词</Text>
+              <Text style={{ color: ui().muted, fontSize: 12 }}>自定义词</Text>
               <Card>
-                {customWords() ? (
+                <Row title="词">
+                  <InputBox
+                    value={customWord()}
+                    placeholder="例如：ArchType"
+                    onChange={(value) => customWord.set(value)}
+                  />
+                </Row>
+                <Row title="编码" subtitle="拼音（空格分开音节），也可以是 mail 这类字母">
+                  <InputBox
+                    value={customPinyin()}
+                    placeholder="例如：a r c h"
+                    onChange={(value) => customPinyin.set(value)}
+                  />
+                </Row>
+                <Row title="添加" subtitle={customMessage()}>
+                  <SmallButton title="添加" tone="accent" onPress={addCustomWord} />
+                </Row>
+              </Card>
+              <Card>
+                {customWords().trim() ? (
                   customWords()
                     .split("\n")
-                    .filter((line) => line.trim() !== "")
-                    .slice(0, 40)
-                    .map((line) => (
-                      <Row title={line.split("\t")[0]} subtitle={line.split("\t")[1] ?? ""} />
-                    ))
+                    .filter((line) => line.trim() !== "" && !line.trimStart().startsWith("#"))
+                    .map((line) => {
+                      const parts = line.split("\t");
+                      const word = parts[1] ?? parts[0];
+                      return (
+                        <Row title={word} subtitle={`编码 ${parts[0] ?? ""}`}>
+                          <SmallButton title="删除" onPress={() => removeCustomWord(word)} />
+                        </Row>
+                      );
+                    })
                 ) : (
-                  <Row title="还没有自定义词" subtitle="在设置里添加后显示在这里" />
+                  <Row title="还没有自定义词" subtitle="在上面的卡片里添加" />
                 )}
               </Card>
             </>
           ) : current() === 7 ? (
             <>
-              <Text style={{ color: ui.muted, fontSize: 12 }}>更新</Text>
+              <Text style={{ color: ui().muted, fontSize: 12 }}>更新</Text>
               <Card>
                 <Row title="当前版本" subtitle={Config.version()} />
-                <Row title="检查更新" subtitle="检查更新和下载安装正在迁移中" />
+                <Row title="检查更新" subtitle={updateState() || "从 GitHub 查最新发布"}>
+                  <SmallButton title="检查" onPress={runCheckUpdate} />
+                </Row>
+                {updateUrl() ? (
+                  <Row title="打开下载页" subtitle={updateUrl()}>
+                    <SmallButton title="打开" onPress={() => Config.openUrl(updateUrl())} />
+                  </Row>
+                ) : null}
               </Card>
             </>
           ) : (
@@ -716,7 +1006,7 @@ function App() {
             </Card>
           )}
 
-          <Text style={{ color: ui.muted, fontSize: 12 }}>
+          <Text style={{ color: ui().muted, fontSize: 12 }}>
             ArchType 设置（NSH 预览版，版本 {Config.version()}）
           </Text>
         </View>

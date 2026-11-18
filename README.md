@@ -98,8 +98,9 @@
 
 - Linux x86_64 或 arm64（aarch64），输入法框架 **fcitx5 5.0 或更新**。Arch 的安装包只有 x86_64
 - 有现成安装包的发行版：**Ubuntu 22.04 / 24.04 / 26.04、Debian 13、deepin 23 / 25**（deb）、**Arch Linux** 及 EndeavourOS / Garuda / CachyOS（pkg.tar.zst）、**Fedora**（[rpm](#fedora)）、**NixOS**（[flake](#nixos--nix)）。其他发行版请[从源码构建](docs/INSTALL.md)
-- Ubuntu 22.04 的 GNOME 是 42：绿色候选框主题和语音浮条（GNOME 扩展，要 GNOME 45+）用不了，见[安装说明](docs/INSTALL.md#ubuntu-2204fcitx5-50)
+- Ubuntu 22.04 的 GNOME 是 42：蓝色候选框主题和语音浮条（GNOME 扩展，要 GNOME 45+）用不了，见[安装说明](docs/INSTALL.md#ubuntu-2204fcitx5-50)
 - deepin 的安装包只有 x86_64
+- 「ArchType 设置」有两版：GTK 4.14+ 的系统（Arch、Fedora 40+、Ubuntu 24.04+、Debian 13+）用 NSH 重写的新界面；Ubuntu 22.04、deepin 23 这类 GTK 4.6/4.8 的系统继续用原来的 Python 界面，功能一致
 
 ### 一行命令安装（推荐）
 

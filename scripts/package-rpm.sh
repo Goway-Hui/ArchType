@@ -176,6 +176,16 @@ install -Dm644 packaging/COPYRIGHT $lic/COPYRIGHT
 install -Dm644 dist/data/LICENSE $lic/LICENSE.rime-ice
 install -Dm644 dist/data/WUBI-LICENSE $lic/LICENSE.rime-wubi
 
+# NSH 版设置界面（可选）：rpmbuild 带 --define "archtype_nsh_archive <tar.gz>" 时安装
+%if 0%{?archtype_nsh_archive:1}
+mkdir -p %{buildroot}%{_prefix}/lib/archtype/settings
+tar -xzf %{archtype_nsh_archive} -C %{buildroot}%{_prefix}/lib/archtype/settings --strip-components=1
+runner=$(find %{buildroot}%{_prefix}/lib/archtype/settings -maxdepth 1 -type f -perm -u+x | head -1)
+printf '#!/bin/sh\nexec %{_prefix}/lib/archtype/settings/%s "$@"\n' "$(basename "$runner")" > %{buildroot}%{_bindir}/archtype-settings
+chmod 755 %{buildroot}%{_bindir}/archtype-settings
+sed -i 's|^Exec=.*|Exec=archtype-settings|' %{buildroot}%{_datadir}/applications/io.github.GowayHui.ArchType.Config.desktop
+%endif
+
 %files
 %dir %{_licensedir}/archtype
 %license %{_licensedir}/archtype/COPYRIGHT
@@ -183,6 +193,10 @@ install -Dm644 dist/data/WUBI-LICENSE $lic/LICENSE.rime-wubi
 %license %{_licensedir}/archtype/LICENSE.rime-wubi
 %{_docdir}/archtype/
 %{_bindir}/archtype-config
+%if 0%{?archtype_nsh_archive:1}
+%{_prefix}/lib/archtype/settings
+%{_bindir}/archtype-settings
+%endif
 %{_bindir}/archtype-check
 %{_bindir}/archtype-show
 %{_libdir}/fcitx5/libarchtype.so
@@ -209,10 +223,13 @@ SPEC
     "$(LC_ALL=C date -u '+%a %b %d %Y')" "$VERSION"
 } > "$work/SPECS/archtype.spec"
 
+nsh_define=()
+[[ -n "${ARCHTYPE_NSH_ARCHIVE:-}" ]] && nsh_define+=(--define "archtype_nsh_archive $ARCHTYPE_NSH_ARCHIVE")
 rpmbuild -bb "$work/SPECS/archtype.spec" \
   --define "_topdir $work" \
   --define "_rpmdir $OUT" \
-  --define '_rpmfilename %%{NAME}-%%{VERSION}-%%{RELEASE}.%%{ARCH}.rpm'
+  --define '_rpmfilename %%{NAME}-%%{VERSION}-%%{RELEASE}.%%{ARCH}.rpm' \
+  "${nsh_define[@]}"
 shopt -s nullglob
 files=("$OUT"/archtype-"$VERSION"-1*."$(uname -m)".rpm)
 (( ${#files[@]} )) || { echo "rpmbuild 没有生成 archtype-$VERSION 的 rpm" >&2; exit 1; }

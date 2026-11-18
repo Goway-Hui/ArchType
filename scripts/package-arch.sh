@@ -113,9 +113,26 @@ package() {
   fi
   install -Dm644 dist/data/LICENSE "$pkgdir/usr/share/licenses/archtype/LICENSE.rime-ice"
   install -Dm644 dist/data/WUBI-LICENSE "$pkgdir/usr/share/licenses/archtype/LICENSE.rime-wubi"
+  # NSH 版设置界面（可选）：ARCHTYPE_NSH_ARCHIVE 给了就装，并把桌面入口换成 archtype-settings
+  if [[ -f archtype-settings.tar.gz ]]; then
+    install -d "$pkgdir/usr/lib/archtype/settings"
+    tar -xzf archtype-settings.tar.gz -C "$pkgdir/usr/lib/archtype/settings" --strip-components=1
+    runner=$(find "$pkgdir/usr/lib/archtype/settings" -maxdepth 1 -type f -perm -u+x | head -1)
+    printf '#!/bin/sh\nexec /usr/lib/archtype/settings/%s "$@"\n' "$(basename "$runner")" > "$pkgdir/usr/bin/archtype-settings"
+    chmod 755 "$pkgdir/usr/bin/archtype-settings"
+    sed -i 's|^Exec=.*|Exec=archtype-settings|' "$pkgdir/usr/share/applications/io.github.GowayHui.ArchType.Config.desktop"
+  fi
 }
 PKGBUILD
 } > "$work/PKGBUILD"
+if [[ -n "${ARCHTYPE_NSH_ARCHIVE:-}" ]]; then
+  cp "$ARCHTYPE_NSH_ARCHIVE" "$work/archtype-settings.tar.gz"
+  nsh_sum=$(sha256sum "$work/archtype-settings.tar.gz")
+  sed -i \
+    -e "s|^source=('archtype-src.tar')$|source=('archtype-src.tar' 'archtype-settings.tar.gz')|" \
+    -e "s|^sha256sums=('.*')$|sha256sums=('${checksum%% *}' '${nsh_sum%% *}')|" \
+    "$work/PKGBUILD"
+fi
 cat > "$work/archtype.install" <<'INSTALL'
 post_install() {
   cat <<'EOF'

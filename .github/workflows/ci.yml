@@ -46,6 +46,50 @@ jobs:
       # 设置契约：spec/ 自检 + 设置界面对照（fcitx5 插件在「插件」任务的 addon-test.sh 里对照）
       - run: python3 scripts/test-config-contract.py
 
+  settings:
+    name: 设置界面（NSH） · ${{ matrix.arch }}
+    strategy:
+      fail-fast: false
+      matrix:
+        arch: [amd64, arm64]
+    runs-on: ${{ matrix.arch == 'arm64' && 'ubuntu-24.04-arm' || 'ubuntu-24.04' }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: 系统依赖
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends build-essential pkg-config \
+            libgtk-4-dev libadwaita-1-dev ca-certificates curl
+      - name: Rust
+        run: |
+          curl -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal
+          echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: settings-nsh-${{ matrix.arch }}
+      - name: nsh
+        run: cargo install nsh --locked --version 0.6.0
+      - name: 类型检查与无头测试
+        working-directory: settings-nsh
+        run: |
+          nsh check
+          nsh test
+      - name: 版本号
+        run: |
+          if [ "${GITHUB_REF_TYPE}" = tag ]; then
+            version=${GITHUB_REF_NAME#v}
+          else
+            base=$(sed -n 's/^version = "\(.*\)"/\1/p' core/Cargo.toml | head -1)
+            version="${base}~git$(date -u +%Y%m%d).$(echo "$GITHUB_SHA" | cut -c1-7)"
+          fi
+          echo "VERSION=$version" >> "$GITHUB_ENV"
+      - name: 打包
+        run: scripts/package-settings-nsh.sh "$VERSION" dist/pkg
+      - uses: actions/upload-artifact@v4
+        with:
+          name: settings-nsh-${{ matrix.arch }}
+          path: dist/pkg/archtype-settings-nsh-*.tar.gz
+
   core:
     name: Rust 核心测试
     runs-on: ubuntu-24.04
@@ -144,7 +188,7 @@ jobs:
 
   addon:
     name: 插件 · ${{ matrix.distro }} · ${{ matrix.arch }}
-    needs: [data, data-wanxiang]
+    needs: [data, data-wanxiang, settings]
     runs-on: ${{ matrix.arch == 'arm64' && 'ubuntu-24.04-arm' || 'ubuntu-24.04' }}
     container: ${{ matrix.image }}
     strategy:
@@ -206,8 +250,20 @@ jobs:
             version="${base}~git$(date -u +%Y%m%d).$(echo "$GITHUB_SHA" | cut -c1-7)"
           fi
           echo "VERSION=$version" >> "$GITHUB_ENV"
+      - name: NSH 设置界面（GTK 4.14+ 的发行版）
+        if: matrix.distro != 'ubuntu22.04' && matrix.distro != 'deepin23'
+        uses: actions/download-artifact@v4
+        with:
+          name: settings-nsh-${{ matrix.arch }}
+          path: dist/nsh
       - name: 打包
-        run: ARCHTYPE_DISTRO=${{ matrix.distro }} scripts/package-deb.sh engine "$VERSION" dist/pkg
+        run: |
+          archive=$(ls dist/nsh/archtype-settings-nsh-*.tar.gz 2>/dev/null || true)
+          if [ -n "$archive" ]; then
+            ARCHTYPE_NSH_ARCHIVE="$archive" ARCHTYPE_DISTRO=${{ matrix.distro }} scripts/package-deb.sh engine "$VERSION" dist/pkg
+          else
+            ARCHTYPE_DISTRO=${{ matrix.distro }} scripts/package-deb.sh engine "$VERSION" dist/pkg
+          fi
       - name: 用一键安装脚本装上试一下
         run: |
           mkdir -p /tmp/inst && cp dist/pkg/archtype_*.deb /tmp/inst/
@@ -245,7 +301,7 @@ jobs:
 
   arch:
     name: 插件 · archlinux
-    needs: data
+    needs: [data, settings]
     runs-on: ubuntu-24.04
     container: archlinux:latest
     defaults:
@@ -276,10 +332,17 @@ jobs:
             version="${base}~git$(date -u +%Y%m%d).$(echo "$GITHUB_SHA" | cut -c1-7)"
           fi
           echo "VERSION=$version" >> "$GITHUB_ENV"
+      - name: NSH 设置界面
+        uses: actions/download-artifact@v4
+        with:
+          name: settings-nsh-amd64
+          path: dist/nsh
       - name: 用 makepkg 打 pacman 包（普通用户、从源码重建）
         run: |
           install -d -o builder -g builder dist/pkg
-          runuser -u builder -- scripts/package-arch.sh "$VERSION" dist/pkg
+          archive=$(ls dist/nsh/archtype-settings-nsh-*.tar.gz 2>/dev/null || true)
+          chmod -R a+rX dist/nsh 2>/dev/null || true
+          runuser -u builder -- env ARCHTYPE_NSH_ARCHIVE="$archive" scripts/package-arch.sh "$VERSION" dist/pkg
       - name: 用一键安装脚本安装 Arch 包
         run: |
           # archlinux 容器的 pacman.conf 用 NoExtract 跳过了 /usr/share/doc 等，
@@ -322,7 +385,7 @@ jobs:
 
   fedora:
     name: 插件 · fedora${{ matrix.version }} · ${{ matrix.arch }}
-    needs: data
+    needs: [data, settings]
     runs-on: ${{ matrix.arch == 'aarch64' && 'ubuntu-24.04-arm' || 'ubuntu-24.04' }}
     container: fedora:${{ matrix.version }}
     strategy:
@@ -359,8 +422,19 @@ jobs:
             version="${base}~git$(date -u +%Y%m%d).$(echo "$GITHUB_SHA" | cut -c1-7)"
           fi
           echo "VERSION=$version" >> "$GITHUB_ENV"
+      - name: NSH 设置界面
+        uses: actions/download-artifact@v4
+        with:
+          name: settings-nsh-${{ matrix.arch == 'aarch64' && 'arm64' || 'amd64' }}
+          path: dist/nsh
       - name: 用 rpmbuild 打 rpm 包（从源码重建）
-        run: scripts/package-rpm.sh "$VERSION" dist/pkg
+        run: |
+          archive=$(ls dist/nsh/archtype-settings-nsh-*.tar.gz 2>/dev/null || true)
+          if [ -n "$archive" ]; then
+            ARCHTYPE_NSH_ARCHIVE="$archive" scripts/package-rpm.sh "$VERSION" dist/pkg
+          else
+            scripts/package-rpm.sh "$VERSION" dist/pkg
+          fi
       - name: 用一键安装脚本安装 Fedora 包
         run: |
           # fedora 容器的 dnf 默认 tsflags=nodocs，去掉免得 rpm -V 把没装的文档当成缺失

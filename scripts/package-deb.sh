@@ -125,6 +125,29 @@ POSTINST
   chmod 755 "$1"
 }
 
+# NSH 版设置界面（可选）：ARCHTYPE_NSH_ARCHIVE 指向 scripts/package-settings-nsh.sh 的产物时安装它，
+# 并把「ArchType 设置」的桌面入口换成 archtype-settings。只有 GTK 4.14+ 的发行版才该设置
+# （Ubuntu 22.04、deepin 23 继续用 Python 版 archtype-config）。
+install_nsh_settings() { # <root>
+  local root=$1
+  [[ -n "${ARCHTYPE_NSH_ARCHIVE:-}" ]] || return 0
+  local dest="$root/usr/lib/archtype/settings"
+  mkdir -p "$root/usr/bin" "$dest"
+  tar -xzf "$ARCHTYPE_NSH_ARCHIVE" -C "$dest" --strip-components=1
+  local runner
+  runner=$(find "$dest" -maxdepth 1 -type f -perm -u+x | head -1)
+  [[ -n "$runner" ]] || { echo "NSH 设置产物里没有可执行文件" >&2; exit 1; }
+  {
+    echo '#!/bin/sh'
+    echo "exec /usr/lib/archtype/settings/$(basename "$runner") \"\$@\""
+  } > "$root/usr/bin/archtype-settings"
+  chmod 755 "$root/usr/bin/archtype-settings"
+  local desktop
+  desktop=$(find "$root/usr/share/applications" -name '*.desktop' 2>/dev/null | head -1)
+  [[ -n "$desktop" ]] || { echo "没找到设置界面的 desktop 文件" >&2; exit 1; }
+  sed -i 's|^Exec=.*|Exec=archtype-settings|' "$desktop"
+}
+
 check_data() { # <数据目录>
   for f in lexicon.tsv english.txt words.lm LICENSE SOURCE.txt VERSION DATA-MANIFEST; do
     [[ -f "$1/$f" ]] || { echo "缺 $1/${f}，先跑 scripts/make-data.sh" >&2; exit 1; }
@@ -149,6 +172,7 @@ engine)
   cmake --build "$work/build" -j"$(nproc)"
   DESTDIR="$stage" cmake --install "$work/build" >/dev/null
   rm -rf "$stage/usr/include"          # 头文件只给开发用
+  install_nsh_settings "$stage"
   for bin in archtype-check archtype-show; do
     install -Dm755 "target/release/$bin" "$stage/usr/bin/$bin"
   done
