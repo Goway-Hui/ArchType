@@ -392,6 +392,47 @@ function SelectBox(props: {
       items={props.items}
       value={props.value}
       onChange={(e) => props.onChange(e.value ?? "")}
+      cover={false}
+      align="end"
+      offset={6}
+      popupStyle={{
+        backgroundColor: ui().card,
+        borderWidth: 1,
+        borderColor: ui().border,
+        borderRadius: 10,
+        padding: 4,
+        minWidth: 160,
+      }}
+      renderItem={(entry) => {
+        const chosen = entry.value === props.value;
+        return (
+          <View
+            style={{
+              flexDirection: "row",
+              alignItems: "center",
+              justifyContent: "space-between",
+              gap: 12,
+              paddingLeft: 10,
+              paddingRight: 10,
+              paddingTop: 8,
+              paddingBottom: 8,
+              borderRadius: 6,
+              backgroundColor: chosen ? ui().sidebar : ui().card,
+            }}
+          >
+            <Text
+              style={{
+                color: chosen ? ui().accent : ui().text,
+                fontSize: 13,
+                fontWeight: chosen ? "700" : "400",
+              }}
+            >
+              {entry.title}
+            </Text>
+            {chosen ? <Text style={{ color: ui().accent, fontSize: 12 }}>✓</Text> : null}
+          </View>
+        );
+      }}
       trigger={
         <View
           style={{
