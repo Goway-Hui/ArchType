@@ -355,7 +355,7 @@ function KeyChip(props: { label: string; count: number; max: number }) {
   return (
     <View
       style={{
-        width: 178,
+        maxWidth: 165,
         flexDirection: "row",
         alignItems: "center",
         gap: 6,
