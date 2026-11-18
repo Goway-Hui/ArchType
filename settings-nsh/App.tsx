@@ -29,6 +29,214 @@ const darkUi = {
 
 const ui = computed(() => (colorScheme() === "dark" ? darkUi : lightUi));
 
+const keySpecialNames: Record<string, string> = {
+  Escape: "Esc",
+  Backquote: "`",
+  Minus: "-",
+  Equal: "=",
+  BracketLeft: "[",
+  BracketRight: "]",
+  Backslash: "\\",
+  Semicolon: ";",
+  Quote: "'",
+  Comma: ",",
+  Period: ".",
+  Slash: "/",
+  Backspace: "Backspace",
+  Tab: "Tab",
+  CapsLock: "Caps Lock",
+  Enter: "Enter",
+  ShiftLeft: "Shift",
+  ShiftRight: "Shift",
+  ControlLeft: "Ctrl",
+  ControlRight: "Ctrl",
+  AltLeft: "Alt",
+  AltRight: "Alt",
+  MetaLeft: "Super",
+  MetaRight: "Super",
+  ContextMenu: "Menu",
+  Space: "Space",
+  ArrowLeft: "左箭头",
+  ArrowRight: "右箭头",
+  ArrowUp: "上箭头",
+  ArrowDown: "下箭头",
+  Home: "Home",
+  End: "End",
+  PageUp: "Page Up",
+  PageDown: "Page Down",
+  Insert: "Insert",
+  Delete: "Delete",
+  NumLock: "Num Lock",
+  NumpadEnter: "小键盘回车",
+  NumpadAdd: "小键盘 +",
+  NumpadSubtract: "小键盘 -",
+  NumpadMultiply: "小键盘 *",
+  NumpadDivide: "小键盘 /",
+  NumpadDecimal: "小键盘 .",
+  Fn: "Fn",
+  IntlBackslash: "ISO \\",
+  IntlRo: "ろ",
+  IntlYen: "¥",
+};
+
+function keyLabel(code: string): string {
+  if (code in keySpecialNames) return keySpecialNames[code];
+  if (code.length === 4 && code.startsWith("Key")) return code[3];
+  if (code.startsWith("Digit") && code.length === 6) return code[5];
+  if (code.startsWith("Numpad") && code.length === 7 && code[6] >= "0" && code[6] <= "9") {
+    return `小键盘 ${code[6]}`;
+  }
+  return code;
+}
+
+const kindNames: Record<string, string> = {
+  han: "汉字",
+  latin: "字母",
+  number: "数字",
+  punct: "标点",
+  emoji: "emoji",
+  other: "其他",
+};
+
+const sourceNames: Record<string, string> = {
+  quanpin: "全拼",
+  shuangpin: "双拼",
+  english: "英文",
+  translate: "互译",
+};
+
+const schemeNames: Record<string, string> = {
+  quanpin: "全拼",
+  shuangpin: "双拼",
+  ziranma: "自然码",
+  xiaohe: "小鹤双拼",
+  microsoft: "微软双拼",
+  sogou: "搜狗双拼",
+  abc: "智能 ABC",
+  ziguang: "紫光双拼",
+  pinyinjiajia: "拼音加加",
+};
+
+const keyboardRows: { code: string | null; label: string; weight: number }[][] = [
+  [
+    { code: "Escape", label: "Esc", weight: 1 },
+    { code: null, label: "", weight: 1 },
+    { code: "F1", label: "F1", weight: 1 },
+    { code: "F2", label: "F2", weight: 1 },
+    { code: "F3", label: "F3", weight: 1 },
+    { code: "F4", label: "F4", weight: 1 },
+    { code: null, label: "", weight: 0.5 },
+    { code: "F5", label: "F5", weight: 1 },
+    { code: "F6", label: "F6", weight: 1 },
+    { code: "F7", label: "F7", weight: 1 },
+    { code: "F8", label: "F8", weight: 1 },
+    { code: null, label: "", weight: 0.5 },
+    { code: "F9", label: "F9", weight: 1 },
+    { code: "F10", label: "F10", weight: 1 },
+    { code: "F11", label: "F11", weight: 1 },
+    { code: "F12", label: "F12", weight: 1 },
+  ],
+  [
+    { code: "Backquote", label: "`", weight: 1 },
+    { code: "Digit1", label: "1", weight: 1 },
+    { code: "Digit2", label: "2", weight: 1 },
+    { code: "Digit3", label: "3", weight: 1 },
+    { code: "Digit4", label: "4", weight: 1 },
+    { code: "Digit5", label: "5", weight: 1 },
+    { code: "Digit6", label: "6", weight: 1 },
+    { code: "Digit7", label: "7", weight: 1 },
+    { code: "Digit8", label: "8", weight: 1 },
+    { code: "Digit9", label: "9", weight: 1 },
+    { code: "Digit0", label: "0", weight: 1 },
+    { code: "Minus", label: "-", weight: 1 },
+    { code: "Equal", label: "=", weight: 1 },
+    { code: "Backspace", label: "Backspace", weight: 2 },
+  ],
+  [
+    { code: "Tab", label: "Tab", weight: 1.5 },
+    { code: "KeyQ", label: "Q", weight: 1 },
+    { code: "KeyW", label: "W", weight: 1 },
+    { code: "KeyE", label: "E", weight: 1 },
+    { code: "KeyR", label: "R", weight: 1 },
+    { code: "KeyT", label: "T", weight: 1 },
+    { code: "KeyY", label: "Y", weight: 1 },
+    { code: "KeyU", label: "U", weight: 1 },
+    { code: "KeyI", label: "I", weight: 1 },
+    { code: "KeyO", label: "O", weight: 1 },
+    { code: "KeyP", label: "P", weight: 1 },
+    { code: "BracketLeft", label: "[", weight: 1 },
+    { code: "BracketRight", label: "]", weight: 1 },
+    { code: "Backslash", label: "\\", weight: 1.5 },
+  ],
+  [
+    { code: "CapsLock", label: "Caps Lock", weight: 1.75 },
+    { code: "KeyA", label: "A", weight: 1 },
+    { code: "KeyS", label: "S", weight: 1 },
+    { code: "KeyD", label: "D", weight: 1 },
+    { code: "KeyF", label: "F", weight: 1 },
+    { code: "KeyG", label: "G", weight: 1 },
+    { code: "KeyH", label: "H", weight: 1 },
+    { code: "KeyJ", label: "J", weight: 1 },
+    { code: "KeyK", label: "K", weight: 1 },
+    { code: "KeyL", label: "L", weight: 1 },
+    { code: "Semicolon", label: ";", weight: 1 },
+    { code: "Quote", label: "'", weight: 1 },
+    { code: "Enter", label: "Enter", weight: 2.25 },
+  ],
+  [
+    { code: "ShiftLeft", label: "Shift", weight: 2.25 },
+    { code: "KeyZ", label: "Z", weight: 1 },
+    { code: "KeyX", label: "X", weight: 1 },
+    { code: "KeyC", label: "C", weight: 1 },
+    { code: "KeyV", label: "V", weight: 1 },
+    { code: "KeyB", label: "B", weight: 1 },
+    { code: "KeyN", label: "N", weight: 1 },
+    { code: "KeyM", label: "M", weight: 1 },
+    { code: "Comma", label: ",", weight: 1 },
+    { code: "Period", label: ".", weight: 1 },
+    { code: "Slash", label: "/", weight: 1 },
+    { code: "ShiftRight", label: "Shift", weight: 2.75 },
+  ],
+  [
+    { code: "ControlLeft", label: "Ctrl", weight: 1.25 },
+    { code: "MetaLeft", label: "Super", weight: 1.25 },
+    { code: "AltLeft", label: "Alt", weight: 1.25 },
+    { code: "Space", label: "Space", weight: 6.25 },
+    { code: "AltRight", label: "Alt", weight: 1.25 },
+    { code: "MetaRight", label: "Super", weight: 1.25 },
+    { code: "ContextMenu", label: "Menu", weight: 1.25 },
+    { code: "ControlRight", label: "Ctrl", weight: 1.25 },
+  ],
+];
+
+const keyboardCodes = new Set(
+  keyboardRows.flatMap((row) => row.map((key) => key.code).filter((code): code is string => code !== null)),
+);
+
+function maxKeyCount(keys: Record<string, number>): number {
+  return Math.max(1, ...Object.values(keys));
+}
+
+function otherKeys(keys: Record<string, number>): { label: string; count: number }[] {
+  return Object.entries(keys)
+    .filter(([code]) => !keyboardCodes.has(code))
+    .sort((a, b) => b[1] - a[1])
+    .map(([code, count]) => ({ label: keyLabel(code), count }));
+}
+
+function countRows(
+  counts: Record<string, number>,
+  names: Record<string, string>,
+): { label: string; count: number }[] {
+  return Object.entries(counts)
+    .sort((a, b) => b[1] - a[1])
+    .map(([key, count]) => ({ label: names[key] ?? key, count }));
+}
+
+function maxRecent(summary: StatsSummary): number {
+  return Math.max(1, ...summary.recent.map((day) => day.chars));
+}
+
 function SmallButton(props: {
   title: string;
   onPress: () => void;
@@ -94,6 +302,40 @@ function InputBox(props: {
         }}
         onChange={(event) => props.onChange(event.value)}
       />
+    </View>
+  );
+}
+
+function Metric(props: { title: string; value: string; unit?: string; note?: string }) {
+  return (
+    <View style={{ flex: 1, gap: 2, paddingTop: 6, paddingBottom: 6 }}>
+      <Text style={{ color: ui().muted, fontSize: 12 }}>{props.title}</Text>
+      <View style={{ flexDirection: "row", alignItems: "flex-end", gap: 4 }}>
+        <Text style={{ color: ui().text, fontSize: 24, fontWeight: "800" }}>{props.value}</Text>
+        {props.unit ? <Text style={{ color: ui().muted, fontSize: 12 }}>{props.unit}</Text> : null}
+      </View>
+      {props.note ? <Text style={{ color: ui().muted, fontSize: 11 }}>{props.note}</Text> : null}
+    </View>
+  );
+}
+
+function KeyCap(props: { label: string; weight: number; count: number; max: number }) {
+  const ratio = props.max > 0 ? props.count / props.max : 0;
+  const background = ratio <= 0 ? ui().page : `rgba(59, 130, 246, ${Math.min(0.85, 0.12 + ratio * 0.75)})`;
+  return (
+    <View
+      style={{
+        width: props.weight * 30 - 4,
+        height: 30,
+        borderRadius: 6,
+        borderWidth: 1,
+        borderColor: ui().border,
+        backgroundColor: background,
+        alignItems: "center",
+        justifyContent: "center",
+      }}
+    >
+      <Text style={{ color: ratio > 0.55 ? "white" : ui().text, fontSize: 11 }}>{props.label}</Text>
     </View>
   );
 }
@@ -330,6 +572,40 @@ interface StatsDay {
   keys?: Record<string, number>;
   sources?: Record<string, number>;
   schemes?: Record<string, number>;
+  kinds?: Record<string, number>;
+  selections?: number[];
+  beyond?: number;
+}
+
+interface StatsSummary {
+  todayChars: number;
+  totalChars: number;
+  todayActive: number;
+  totalActive: number;
+  todayReadable: number;
+  totalReadable: number;
+  todaySpeed: number;
+  avgSpeed: number;
+  bestChars: number;
+  bestDay: string;
+  fastestSpeed: number;
+  fastestDay: string;
+  streak: number;
+  longest: number;
+  recordedDays: number;
+  totalKeys: number;
+  keys: Record<string, number>;
+  kinds: Record<string, number>;
+  todayKinds: Record<string, number>;
+  sources: Record<string, number>;
+  todaySources: Record<string, number>;
+  schemes: Record<string, number>;
+  todaySchemes: Record<string, number>;
+  selections: number[];
+  todaySelections: number[];
+  beyond: number;
+  todayBeyond: number;
+  recent: { day: string; chars: number }[];
 }
 
 interface StatsFile {
@@ -348,6 +624,141 @@ function parseStats(text: string): StatsFile {
   } catch {
     return {};
   }
+}
+
+function addCounts(target: Record<string, number>, source?: Record<string, number>): void {
+  for (const [name, count] of Object.entries(source ?? {})) {
+    target[name] = (target[name] ?? 0) + count;
+  }
+}
+
+function readableOf(day: StatsDay | undefined): number {
+  const kinds = day?.kinds ?? {};
+  return (kinds.han ?? 0) + (kinds.latin ?? 0);
+}
+
+function shiftDay(key: string, offset: number): string {
+  const [year, month, day] = key.split("-").map(Number);
+  return dayKey(new Date(year, month - 1, day + offset));
+}
+
+function summarizeStats(days: Record<string, StatsDay>, today: string): StatsSummary {
+  const recorded = Object.keys(days).sort();
+  const day = days[today] ?? {};
+  const keys: Record<string, number> = {};
+  const kinds: Record<string, number> = {};
+  const sources: Record<string, number> = {};
+  const schemes: Record<string, number> = {};
+  const selections = [0, 0, 0, 0, 0, 0, 0, 0, 0];
+  let totalChars = 0;
+  let totalActive = 0;
+  let totalReadable = 0;
+  let totalKeys = 0;
+  let beyond = 0;
+  let bestChars = 0;
+  let bestDay = "";
+  let fastestSpeed = 0;
+  let fastestDay = "";
+  for (const key of recorded) {
+    const value = days[key] ?? {};
+    const chars = value.chars ?? 0;
+    const active = value.activeMs ?? 0;
+    const readable = readableOf(value);
+    totalChars += chars;
+    totalKeys += Object.values(value.keys ?? {}).reduce((sum, count) => sum + count, 0);
+    if (active > 0) {
+      totalActive += active;
+      totalReadable += readable;
+    }
+    if (chars > bestChars) {
+      bestChars = chars;
+      bestDay = key;
+    }
+    if (active >= 60000) {
+      const cpm = readable / (active / 60000);
+      if (cpm > fastestSpeed) {
+        fastestSpeed = cpm;
+        fastestDay = key;
+      }
+    }
+    addCounts(keys, value.keys);
+    addCounts(kinds, value.kinds);
+    addCounts(sources, value.sources);
+    addCounts(schemes, value.schemes);
+    (value.selections ?? []).forEach((count, index) => {
+      if (index < 9) selections[index] += count;
+    });
+    beyond += value.beyond ?? 0;
+  }
+  const present = new Set(recorded);
+  let cursor = present.has(today) ? today : shiftDay(today, -1);
+  let streak = 0;
+  while (present.has(cursor)) {
+    streak += 1;
+    cursor = shiftDay(cursor, -1);
+  }
+  let longest = 0;
+  let run = 0;
+  let previous = "";
+  for (const key of recorded) {
+    run = previous !== "" && shiftDay(previous, 1) === key ? run + 1 : 1;
+    longest = Math.max(longest, run);
+    previous = key;
+  }
+  const recent: { day: string; chars: number }[] = [];
+  for (let offset = 13; offset >= 0; offset -= 1) {
+    const key = shiftDay(today, -offset);
+    recent.push({ day: key, chars: days[key]?.chars ?? 0 });
+  }
+  const todayActive = day.activeMs ?? 0;
+  const todayReadable = readableOf(day);
+  const todayChars = day.chars ?? 0;
+  return {
+    todayChars,
+    totalChars,
+    todayActive,
+    totalActive,
+    todayReadable,
+    totalReadable,
+    todaySpeed: todayActive > 0 ? Math.round(todayReadable / (todayActive / 60000)) : 0,
+    avgSpeed: totalActive > 0 ? Math.round(totalReadable / (totalActive / 60000)) : 0,
+    bestChars,
+    bestDay,
+    fastestSpeed: Math.round(fastestSpeed),
+    fastestDay,
+    streak,
+    longest,
+    recordedDays: recorded.length,
+    totalKeys,
+    keys,
+    kinds,
+    todayKinds: day.kinds ?? {},
+    sources,
+    todaySources: day.sources ?? {},
+    schemes,
+    todaySchemes: day.schemes ?? {},
+    selections,
+    todaySelections: day.selections ?? [],
+    beyond,
+    todayBeyond: day.beyond ?? 0,
+    recent,
+  };
+}
+
+function formatNumber(value: number): string {
+  return Math.round(value)
+    .toString()
+    .replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+}
+
+function formatActive(milliseconds: number): string {
+  if (milliseconds <= 0) return "0 分";
+  const minutes = Math.floor(milliseconds / 60000);
+  if (minutes === 0) return `${Math.max(1, Math.round(milliseconds / 1000))} 秒`;
+  const hours = Math.floor(minutes / 60);
+  const rest = minutes % 60;
+  if (hours === 0) return `${rest} 分`;
+  return rest === 0 ? `${hours} 小时` : `${hours} 小时 ${rest} 分`;
 }
 
 function dayKey(date: Date): string {
@@ -418,28 +829,37 @@ function App() {
     }, 1000);
   }
 
-  const statsFile = parseStats(Config.stats());
-  const days = statsFile.days ?? {};
-  const today = days[dayKey(new Date())] ?? {};
-  const todayChars = today.chars ?? 0;
-  const todayMs = today.activeMs ?? 0;
-  const totalChars = Object.values(days).reduce((sum, day) => sum + (day.chars ?? 0), 0);
-  const totalKeys = Object.values(days).reduce(
-    (sum, day) => sum + Object.values(day.keys ?? {}).reduce((n, count) => n + count, 0),
-    0,
+  const statsRaw = signal(Config.stats());
+  const statsTab = signal("keys");
+  const typingStats = signal(boolOf(Config.get("TypingStats"), false));
+  const clearState = signal("");
+  const summary = computed(() =>
+    summarizeStats(parseStats(statsRaw()).days ?? {}, dayKey(new Date())),
   );
-  const sources = Object.values(days).reduce<Record<string, number>>((acc, day) => {
-    for (const [name, count] of Object.entries(day.sources ?? {})) {
-      acc[name] = (acc[name] ?? 0) + count;
-    }
-    return acc;
-  }, {});
-  const speed = todayMs > 0 ? Math.round(todayChars / (todayMs / 60000)) : 0;
 
   const keysMinus = signal(boolOf(Config.get("PageKeysMinusEqual"), true));
   const keysBracket = signal(boolOf(Config.get("PageKeysBracket"), false));
   const keysComma = signal(boolOf(Config.get("PageKeysCommaPeriod"), false));
   const keysTab = signal(boolOf(Config.get("PageKeysTab"), false));
+
+  const clearStats = () => {
+    if (clearState() !== "确认清除") {
+      clearState.set("确认清除");
+      return;
+    }
+    Config.statsClear();
+    statsRaw.set(Config.stats());
+    clearState.set("");
+  };
+
+  const statsTabs = [
+    { key: "keys", title: "按键" },
+    { key: "trend", title: "趋势" },
+    { key: "types", title: "类型" },
+    { key: "modes", title: "模式" },
+    { key: "schemes", title: "方案" },
+    { key: "candidates", title: "候选" },
+  ];
 
   const applyProvider = (value: string) => {
     translateProvider.set(Number(value));
@@ -781,21 +1201,237 @@ function App() {
             </>
           ) : current() === 6 ? (
             <>
-              <Text style={{ color: ui().muted, fontSize: 12 }}>打字统计</Text>
               <Card>
-                <Row title="今日输入" subtitle={`${todayChars} 字符`} />
-                <Row title="累计输入" subtitle={`${totalChars} 字符`} />
-                <Row title="今日活跃" subtitle={`${Math.round(todayMs / 60000)} 分钟`} />
-                <Row title="今日速度" subtitle={`${speed} 字/分钟`} />
-                <Row title="累计按键" subtitle={`${totalKeys} 次`} />
+                <Row title="记录打字统计" subtitle="只在本机按天记计数，不记打的字">
+                  <Toggle
+                    checked={typingStats()}
+                    onChange={(on) => {
+                      typingStats.set(on);
+                      save("TypingStats", on ? "True" : "False");
+                    }}
+                  />
+                </Row>
+                <Row title="清除统计" subtitle="删掉已经记下的全部计数">
+                  <SmallButton title={clearState() || "清除"} onPress={clearStats} />
+                </Row>
               </Card>
-              <Text style={{ color: ui().muted, fontSize: 12 }}>输入来源</Text>
+
               <Card>
-                <Row title="全拼" subtitle={`${sources.quanpin ?? 0} 次`} />
-                <Row title="双拼" subtitle={`${sources.shuangpin ?? 0} 次`} />
-                <Row title="英文" subtitle={`${sources.english ?? 0} 次`} />
-                <Row title="互译" subtitle={`${sources.translate ?? 0} 次`} />
+                <View style={{ flexDirection: "row", gap: 16 }}>
+                  <Metric
+                    title="今日输入"
+                    value={formatNumber(summary().todayChars)}
+                    unit="字符"
+                    note={
+                      summary().bestDay
+                        ? `单日最多 ${formatNumber(summary().bestChars)} 字符 · ${summary().bestDay}`
+                        : "还没有记录"
+                    }
+                  />
+                  <Metric
+                    title="累计输入"
+                    value={formatNumber(summary().totalChars)}
+                    unit="字符"
+                    note={`日均 ${formatNumber(
+                      summary().recordedDays ? summary().totalChars / summary().recordedDays : 0,
+                    )} 字符 · ${summary().recordedDays} 天有记录`}
+                  />
+                  <Metric
+                    title="今日活跃"
+                    value={formatActive(summary().todayActive)}
+                    note={`累计 ${formatActive(summary().totalActive)}`}
+                  />
+                </View>
+                <View style={{ flexDirection: "row", gap: 16 }}>
+                  <Metric
+                    title="今日速度"
+                    value={`${summary().todaySpeed}`}
+                    unit="字/分钟"
+                    note={
+                      summary().fastestDay
+                        ? `单日最快 ${summary().fastestSpeed} 字/分钟 · ${summary().fastestDay}`
+                        : ""
+                    }
+                  />
+                  <Metric
+                    title="平均速度"
+                    value={`${summary().avgSpeed}`}
+                    unit="字/分钟"
+                    note="汉字与字母 ÷ 活跃时间"
+                  />
+                  <Metric
+                    title="连续天数"
+                    value={`${summary().streak}`}
+                    unit="天"
+                    note={`最长 ${summary().longest} 天`}
+                  />
+                </View>
               </Card>
+
+              <View
+                style={{
+                  flexDirection: "row",
+                  backgroundColor: ui().sidebar,
+                  borderRadius: 8,
+                  padding: 3,
+                  gap: 2,
+                }}
+              >
+                {statsTabs.map((tab) => (
+                  <View
+                    onPress={() => statsTab.set(tab.key)}
+                    style={{
+                      flex: 1,
+                      alignItems: "center",
+                      paddingTop: 6,
+                      paddingBottom: 6,
+                      borderRadius: 6,
+                      backgroundColor: statsTab() === tab.key ? ui().card : "transparent",
+                    }}
+                  >
+                    <Text
+                      style={{
+                        color: statsTab() === tab.key ? ui().text : ui().muted,
+                        fontSize: 13,
+                      }}
+                    >
+                      {tab.title}
+                    </Text>
+                  </View>
+                ))}
+              </View>
+
+              {statsTab() === "keys" ? (
+                <>
+                  <Card>
+                    <Text style={{ color: ui().muted, fontSize: 12 }}>
+                      按键热力图 · 累计（共 {formatNumber(summary().totalKeys)} 次）
+                    </Text>
+                    <View style={{ gap: 4, paddingTop: 8, paddingBottom: 8 }}>
+                      {keyboardRows.map((row) => (
+                        <View style={{ flexDirection: "row", gap: 4 }}>
+                          {row.map((key) =>
+                            key.code ? (
+                              <KeyCap
+                                label={key.label}
+                                weight={key.weight}
+                                count={summary().keys[key.code] ?? 0}
+                                max={maxKeyCount(summary().keys)}
+                              />
+                            ) : (
+                              <View style={{ width: key.weight * 30 }} />
+                            ),
+                          )}
+                        </View>
+                      ))}
+                    </View>
+                    <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+                      <Text style={{ color: ui().muted, fontSize: 11 }}>少</Text>
+                      {[0, 0.2, 0.4, 0.6, 0.8].map((ratio) => (
+                        <View
+                          style={{
+                            width: 16,
+                            height: 10,
+                            borderRadius: 2,
+                            backgroundColor:
+                              ratio <= 0 ? ui().page : `rgba(59, 130, 246, ${0.12 + ratio * 0.75})`,
+                          }}
+                        />
+                      ))}
+                      <Text style={{ color: ui().muted, fontSize: 11 }}>多</Text>
+                    </View>
+                  </Card>
+                  <Card>
+                    <Text style={{ color: ui().muted, fontSize: 12 }}>其他键</Text>
+                    {otherKeys(summary().keys)
+                      .slice(0, 24)
+                      .map((key) => (
+                        <Row title={key.label} subtitle={`${formatNumber(key.count)} 次`} />
+                      ))}
+                  </Card>
+                </>
+              ) : statsTab() === "trend" ? (
+                <Card>
+                  <Text style={{ color: ui().muted, fontSize: 12 }}>最近 14 天</Text>
+                  {summary().recent.map((day) => (
+                    <View
+                      style={{
+                        flexDirection: "row",
+                        alignItems: "center",
+                        gap: 10,
+                        paddingTop: 3,
+                        paddingBottom: 3,
+                      }}
+                    >
+                      <Text style={{ color: ui().muted, fontSize: 12, width: 70 }}>{day.day.slice(5)}</Text>
+                      <View style={{ flex: 1, height: 8, borderRadius: 4, backgroundColor: ui().page }}>
+                        <View
+                          style={{
+                            width: `${Math.round((day.chars / maxRecent(summary())) * 100)}%`,
+                            height: 8,
+                            borderRadius: 4,
+                            backgroundColor: ui().accent,
+                          }}
+                        />
+                      </View>
+                      <Text
+                        style={{
+                          color: ui().text,
+                          fontSize: 12,
+                          width: 60,
+                          textAlign: "right",
+                        }}
+                      >
+                        {formatNumber(day.chars)}
+                      </Text>
+                    </View>
+                  ))}
+                </Card>
+              ) : statsTab() === "types" ? (
+                <Card>
+                  <Text style={{ color: ui().muted, fontSize: 12 }}>字符类型 · 累计</Text>
+                  {countRows(summary().kinds, kindNames).map((row) => (
+                    <Row title={row.label} subtitle={`${formatNumber(row.count)} 次`} />
+                  ))}
+                </Card>
+              ) : statsTab() === "modes" ? (
+                <Card>
+                  <Text style={{ color: ui().muted, fontSize: 12 }}>输入模式 · 累计</Text>
+                  {countRows(summary().sources, sourceNames).map((row) => (
+                    <Row title={row.label} subtitle={`${formatNumber(row.count)} 字符`} />
+                  ))}
+                </Card>
+              ) : statsTab() === "schemes" ? (
+                <Card>
+                  <Text style={{ color: ui().muted, fontSize: 12 }}>方案 · 累计</Text>
+                  {countRows(summary().schemes, schemeNames).map((row) => (
+                    <Row title={row.label} subtitle={`${formatNumber(row.count)} 字符`} />
+                  ))}
+                </Card>
+              ) : (
+                <>
+                  <Card>
+                    <Text style={{ color: ui().muted, fontSize: 12 }}>候选位置 · 累计</Text>
+                    {summary().selections.map((count, index) => (
+                      <Row title={`第 ${index + 1} 个候选`} subtitle={`${formatNumber(count)} 次`} />
+                    ))}
+                    <Row title="超过候选数" subtitle={`${formatNumber(summary().beyond)} 次`} />
+                  </Card>
+                  <Card>
+                    <Text style={{ color: ui().muted, fontSize: 12 }}>候选位置 · 今日</Text>
+                    {(summary().todaySelections.length > 0
+                      ? summary().todaySelections
+                      : [0, 0, 0, 0, 0, 0, 0, 0, 0]
+                    ).map((count, index) => (
+                      <Row title={`第 ${index + 1} 个候选`} subtitle={`${formatNumber(count)} 次`} />
+                    ))}
+                  </Card>
+                </>
+              )}
+
+              <Text style={{ color: ui().muted, fontSize: 12 }}>
+                速度统计汉字与字母；两次上屏间隔超过 10 秒算休息，不计入活跃时长。统计只在本机，清除后输入法会丢掉攒着的旧计数。
+              </Text>
             </>
           ) : current() === 3 ? (
             <>

@@ -720,6 +720,21 @@ impl Config {
         fs::set_permissions(&path, fs::Permissions::from_mode(0o600)).is_ok()
     }
 
+    /// 清除统计：stats.clear 计数加一（输入法据此丢掉旧计数），删掉 stats.json 和 .bad。
+    pub fn stats_clear() -> bool {
+        let dir = Config::data_dir();
+        let clear_path = format!("{dir}/stats.clear");
+        let count = read(&clear_path).trim().parse::<u64>().unwrap_or(0) + 1;
+        let count = if count >= u64::MAX { 1 } else { count };
+        if !atomic_write(&clear_path, &format!("{count}\n")) {
+            return false;
+        }
+        let stats = format!("{dir}/stats.json");
+        let _ = fs::remove_file(&stats);
+        let _ = fs::remove_file(format!("{stats}.bad"));
+        true
+    }
+
     /// 用系统默认程序打开链接。
     pub fn open_url(url: String) -> bool {
         std::process::Command::new("xdg-open")
