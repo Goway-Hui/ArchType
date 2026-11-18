@@ -487,7 +487,7 @@ cargo run --release -p archtype-core --bin archtype-lmbuild -- \
 
 **文件**：`~/.local/share/archtype/stats.json`（`$XDG_DATA_HOME/archtype/`；macOS 是 `~/Library/Application Support/ArchType/stats.json`），
 权限 0600。只有输入法写：按键和上屏只改内存，攒够 20 次上屏或 30 秒、切出输入框、退出时交给后台线程，
-后台线程读文件、加上这批、去掉 400 天以前的、原子写回，打字的线程不碰文件。设置界面只读。
+后台线程读文件、加上这批、原子写回，打字的线程不碰文件。设置界面只读。
 文件坏了或超过 16 MB 时挪到 `stats.json.bad`，从空的重新记。
 
 **清除**：「统计」页的「清除统计」（关着时也能点）。它把旁边 `stats.clear` 里的整数加一，再删掉 `stats.json`（和 `stats.json.bad`）。

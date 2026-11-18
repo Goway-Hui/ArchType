@@ -11,7 +11,7 @@
 //! 关着时 [`Recorder`] 什么都不做：不计数、不起线程、不碰文件。
 //!
 //! 文件只有输入法进程（这里的写文件线程）写。按键和上屏只改内存里的一份，攒够了交给写文件线程：
-//! 它读文件、加上这批、去掉 [`KEEP_DAYS`] 天以前的、原子写回（0600）。按键的线程不读写文件。
+//! 它读文件、加上这批、原子写回（0600）。按键的线程不读写文件。
 //!
 //! 清空：设置界面调 [`clear`]（或照它的做法）——旁边的 `stats.clear` 里的整数加一，再删掉
 //! `stats.json`。写文件线程每次写之前看这个数：和攒这批时看到的不一样，说明这批里有清空之前打的，
@@ -33,10 +33,8 @@ pub const ACTIVE_GAP_MS: i64 = 10_000;
 /// 攒够这么久（或 [`FLUSH_COMMITS`] 次上屏）交给写文件线程一次。
 const FLUSH_INTERVAL_MS: i64 = 30_000;
 const FLUSH_COMMITS: u32 = 20;
-/// 只留最近这么多天；更早的写的时候删掉。
-pub const KEEP_DAYS: i64 = 400;
 /// 文件大小上限。超过的（不是我们写的）挪到 `stats.json.bad`，从空的重新记；
-/// 我们自己写的超过时从最早的一天开始删到写得下（留 400 天、键名有限，正常到不了）。
+/// 我们自己写的超过时从最早的一天开始删到写得下（键名有限，正常到不了）。
 pub const MAX_FILE_BYTES: usize = 16 * 1024 * 1024;
 const MAX_COUNT: u64 = 9_000_000_000_000_000;
 const DAY_MS: i64 = 24 * 60 * 60 * 1000;
@@ -263,15 +261,6 @@ impl Document {
         for (day, value) in days {
             self.days.entry(day.clone()).or_default().merge(value);
         }
-    }
-
-    /// 去掉 [`KEEP_DAYS`] 天以前的。
-    pub fn prune(&mut self, now_ms: i64) {
-        let cutoff = local_day(now_ms.saturating_sub(KEEP_DAYS * DAY_MS));
-        if cutoff.is_empty() {
-            return;
-        }
-        self.days.retain(|day, _| day.as_str() >= cutoff.as_str());
     }
 
     /// 排成要写的字节；超过 [`MAX_FILE_BYTES`] 时从最早的一天删起。
@@ -677,7 +666,7 @@ struct WriterState {
 }
 
 impl WriterState {
-    fn write(&mut self, batch: &Days, now_ms: i64) -> Result<(), String> {
+    fn write(&mut self, batch: &Days, _now_ms: i64) -> Result<(), String> {
         let marker = read_clear_marker(&self.path);
         let known = *self.known_clear.get_or_insert(marker);
         if known != marker {
@@ -707,7 +696,6 @@ impl WriterState {
         }
         document.cleared = marker;
         document.merge(batch);
-        document.prune(now_ms);
         let bytes = document.to_bytes_capped();
         write_private(&self.path, &bytes)?;
         if read_clear_marker(&self.path) != marker {

@@ -370,22 +370,6 @@ fn clear_while_switched_off_still_deletes() {
 }
 
 #[test]
-fn old_days_are_pruned() {
-    let path = temp_path("prune");
-    let now = local_ms(2026, 11, 14, 10, 0, 0);
-    let mut document = Document::default();
-    document.days.insert("2020-01-01".to_string(), Day { chars: 5, ..Day::default() });
-    document.days.insert(local_day(now - 10 * DAY_MS), Day { chars: 7, ..Day::default() });
-    fs::write(&path, document.to_bytes()).unwrap();
-    let mut recorder = recorder(&path, now);
-    recorder.commit("字", "quanpin", "", 0, 0, now);
-    let saved = saved(&mut recorder, &path, now);
-    assert!(!saved.days.contains_key("2020-01-01"));
-    assert_eq!(saved.days[&local_day(now - 10 * DAY_MS)].chars, 7);
-    assert_eq!(saved.days.len(), 2);
-}
-
-#[test]
 fn damaged_or_oversized_file_is_moved_aside() {
     let path = temp_path("bad");
     let now = local_ms(2026, 11, 14, 10, 0, 0);
