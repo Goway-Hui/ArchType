@@ -337,10 +337,8 @@ function KeyCap(props: { label: string; weight: number; count: number; max: numb
     <View
       style={{
         width: props.weight * 30 - 4,
-        height: 30,
-        borderRadius: 6,
-        borderWidth: 1,
-        borderColor: ui().border,
+        height: 26,
+        borderRadius: 5,
         backgroundColor: background,
         alignItems: "center",
         justifyContent: "center",
@@ -1394,7 +1392,7 @@ function App() {
                       按键热力图 · 累计
                       共 {formatNumber(summary().totalKeys)} 次按键，颜色越深按得越多
                     </Text>
-                    <View style={{ alignItems: "center", gap: 6, paddingTop: 14, paddingBottom: 14 }}>
+                    <View style={{ alignItems: "center", gap: 4, paddingTop: 10, paddingBottom: 10 }}>
                       {keyboardRows.map((row) => (
                         <View style={{ flexDirection: "row", gap: 4 }}>
                           {row.map((key) =>
@@ -1412,7 +1410,7 @@ function App() {
                         </View>
                       ))}
                     </View>
-                    <View style={{ flexDirection: "row", justifyContent: "center", alignItems: "center", gap: 6, marginTop: 14 }}>
+                    <View style={{ flexDirection: "row", justifyContent: "center", alignItems: "center", gap: 6, marginTop: 10 }}>
                       <Text style={{ color: ui().muted, fontSize: 11 }}>少</Text>
                       {[0, 1, 2, 3, 4].map((level) => (
                         <View
