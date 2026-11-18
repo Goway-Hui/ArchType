@@ -1,0 +1,7 @@
+{
+  "name": "ArchType 设置",
+  "id": "com.example.archtype",
+  "version": "1.0.0",
+  "build": 1,
+  "rust": "."
+}

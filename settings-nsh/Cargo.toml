@@ -1,0 +1,12 @@
+[package]
+name = "nsh-app-archtype"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+[workspace]
+
+[dependencies]
+nsh-core = "0.6.0"
+nsh-base = "0.6.0"
+serde_json = "1"
