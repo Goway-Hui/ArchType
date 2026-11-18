@@ -391,10 +391,10 @@ function Card(props: { children: JSX.Element }) {
         borderRadius: 12,
         borderWidth: 1,
         borderColor: ui().border,
-        paddingLeft: 16,
-        paddingRight: 16,
-        paddingTop: 2,
-        paddingBottom: 2,
+        paddingLeft: 20,
+        paddingRight: 20,
+        paddingTop: 18,
+        paddingBottom: 18,
       }}
     >
       {props.children}
@@ -1388,11 +1388,13 @@ function App() {
               {statsTab() === "keys" ? (
                 <>
                   <Card>
-                    <Text style={{ color: ui().muted, fontSize: 12 }}>
+                    <Text style={{ color: ui().text, fontSize: 14, fontWeight: "800" }}>
                       按键热力图 · 累计
+                    </Text>
+                    <Text style={{ color: ui().muted, fontSize: 12 }}>
                       共 {formatNumber(summary().totalKeys)} 次按键，颜色越深按得越多
                     </Text>
-                    <View style={{ alignItems: "center", gap: 4, paddingTop: 16, paddingBottom: 10 }}>
+                    <View style={{ alignItems: "center", gap: 4, paddingTop: 12, paddingBottom: 8 }}>
                       {keyboardRows.map((row) => (
                         <View style={{ flexDirection: "row", gap: 4 }}>
                           {row.map((key) =>
