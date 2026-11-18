@@ -1991,12 +1991,14 @@ impl Engine {
             .map(|p| p.score)
             .fold(f64::NEG_INFINITY, f64::max);
 
-        let nnlm = self.nnlm_scores(&paths);
-        let candidates: Vec<Candidate> = paths
+        let as_typed: Vec<Option<usize>> = paths.iter().map(typed_reading_typos).collect();
+        let nnlm = self.nnlm_scores(&paths, &as_typed);
+        let mut candidates: Vec<Candidate> = paths
             .into_iter()
             .zip(nnlm)
             .map(|(path, nnlm)| self.make_candidate(path, best_score, at_ms, nnlm))
             .collect();
+        typed_reading_first(&mut candidates, &as_typed);
 
         let mut deduped = dedupe_by_text(candidates);
         deduped.sort_by(|a, b| {
@@ -2013,7 +2015,12 @@ impl Engine {
     ///
     /// 只算束搜索分数最高的 `nnlm_rerank` 条（模型一步约 1 ms，同一前缀会缓存）；
     /// 其余的给比算过的最差那条还低一点的值。没有模型时全是 0。
-    fn nnlm_scores(&self, paths: &[BeamPath]) -> Vec<f32> {
+    ///
+    /// 「最好的那条」只在纠错最少的「照着打的字母读」的路径里挑（`typed`，见 [`typed_reading_typos`]）：
+    /// 接着「我本地」打 `cehao`，模型觉得「的好」比「测好」顺得多，拿「的好」当基准的话，
+    /// 「测好」这些没纠错的整句全被扣掉十几分，反倒输给没让模型打分的生僻词。
+    /// 比基准还顺的纠错路径记 0，不加分。
+    fn nnlm_scores(&self, paths: &[BeamPath], typed: &[Option<usize>]) -> Vec<f32> {
         let mut out = vec![0.0f32; paths.len()];
         let limit = self.config.nnlm_rerank;
         if limit == 0 || paths.len() < 2 {
@@ -2046,10 +2053,22 @@ impl Engine {
             .iter()
             .map(|&i| (i, model.score(&context, &paths[i].text)))
             .collect();
-        let best = scored.iter().map(|s| s.1).fold(f64::NEG_INFINITY, f64::max);
+        let max_of = |it: &mut dyn Iterator<Item = f64>| it.fold(f64::NEG_INFINITY, f64::max);
+        let fewest = typed.iter().flatten().copied().min();
+        let typed_best = max_of(
+            &mut scored
+                .iter()
+                .filter(|s| fewest.is_some() && typed.get(s.0).copied().flatten() == fewest)
+                .map(|s| s.1),
+        );
+        let best = if typed_best.is_finite() {
+            typed_best
+        } else {
+            max_of(&mut scored.iter().map(|s| s.1))
+        };
         let worst = scored.iter().map(|s| s.1).fold(f64::INFINITY, f64::min);
         for &(i, s) in &scored {
-            out[i] = (s - best).max(-NNLM_FLOOR) as f32;
+            out[i] = (s - best).clamp(-NNLM_FLOOR, 0.0) as f32;
         }
         let rest = ((worst - best) - 2.0).max(-NNLM_FLOOR) as f32;
         for &i in order.iter().skip(picked.len()) {
@@ -2348,6 +2367,69 @@ fn nnlm_picks(paths: &[BeamPath], order: &[usize], limit: usize) -> Vec<usize> {
         texts.push(text);
     }
     picked
+}
+
+/// 这条路径是不是「照着打的字母读」：每个词词库里都有，只打了声母、补全出来的音节只在最后一个词里
+/// （还没打完的那个音节）。是的话返回它纠了几处错，不是返回 None。
+///
+/// 中间夹着只打了声母的音节的（zh r ge、shen m r）不算：那多半是按错键以后硬解出来的。
+fn typed_reading_typos(path: &BeamPath) -> Option<usize> {
+    let (last, head) = path.words.split_last()?;
+    let solid = |w: &BeamWord| w.known && !w.text.is_empty();
+    if !head
+        .iter()
+        .all(|w| solid(w) && w.abbrev == 0 && w.completion == 0 && !w.jianpin)
+    {
+        return None;
+    }
+    if !solid(last) || last.abbrev > 1 || (last.abbrev == 1 && !last.ends_abbrev) {
+        return None;
+    }
+    Some(path.typos)
+}
+
+/// 纠错多的候选不能排到纠错少的「照着打的字母读」的候选前面。
+///
+/// 最常见的是一处都不用纠：`cehaohou` 每个音节都打对了，就该出「测好后」；把 c 当成按错的 d
+/// 得到的「的好后」「得好后」只能排在后面。纠错的罚分是固定的，「的」「得」这种字的词频、
+/// 神经语言模型给的分却可以高出很多，光靠分数拦不住（接着「我本地」打 `cehao` 第一个是「的好」，
+/// 「测好」和 `ce` 的单字整个不见了）。所以这里不比分数，直接按纠错处数压。
+///
+/// 同理，只需要纠一处就读得通时（`cehaohoi`），纠两处的不能排到它前面。
+///
+/// 只和音节数不比它多的读法比：`jintiam` 照字母读是 jin | ti | a | m 四个音节，纠一处的
+/// 「今天」两个音节就读完了，纠错把输入解释得更省，不压。
+/// `typed[i]` 是 [`typed_reading_typos`] 对第 i 条路径的结果。
+fn typed_reading_first(candidates: &mut [Candidate], typed: &[Option<usize>]) {
+    let syllables = |c: &Candidate| c.pinyin.split_whitespace().count();
+    // (纠错处数, 音节数) -> 这样的「照着读」的候选里最高的分数；种类很少
+    let mut readings: Vec<(usize, usize, f64)> = Vec::new();
+    for (c, t) in candidates.iter().zip(typed) {
+        let Some(typos) = *t else { continue };
+        let n = syllables(c);
+        match readings.iter_mut().find(|r| r.0 == typos && r.1 == n) {
+            Some(r) => r.2 = r.2.max(c.score),
+            None => readings.push((typos, n, c.score)),
+        }
+    }
+    if readings.is_empty() {
+        return;
+    }
+    for c in candidates.iter_mut() {
+        let typos = c.features.typo_count as usize;
+        if typos == 0 {
+            continue;
+        }
+        let n = syllables(c);
+        let best = readings
+            .iter()
+            .filter(|r| r.0 < typos && r.1 <= n)
+            .map(|r| r.2)
+            .fold(f64::NEG_INFINITY, f64::max);
+        if best.is_finite() && c.score >= best {
+            c.score = best - 1e-3;
+        }
+    }
 }
 
 /// 一条路径里「不实在」的音节数：只打了声母的音节，加上纠错出来的、词库不认识的词的全部音节。
@@ -5152,6 +5234,96 @@ mod tests {
         // 词库不认识的段整段算
         let raw = beam_path(&[("qwer", "q w e r", 0, 0, false), ("你", "ni", 0, 0, true)]);
         assert_eq!(weak_syllables(&raw), 4);
+    }
+
+    #[test]
+    fn typed_reading_is_what_the_letters_say() {
+        // 每个音节都打全了、词库里都有：照着读的，没纠错
+        let typed = beam_path(&[("测", "ce", 0, 0, true), ("好", "hao", 0, 0, true)]);
+        assert_eq!(typed_reading_typos(&typed), Some(0));
+        // c 当成按错的 d：也是「照着读」的形状，但纠了一处
+        let mut corrected = beam_path(&[("的", "de", 0, 1, true), ("好", "hao", 0, 0, true)]);
+        corrected.typos = 1;
+        assert_eq!(typed_reading_typos(&corrected), Some(1));
+        // 中间夹着只打了声母的音节（zh r ge）、词库不认识的段：不算
+        let abbrev = beam_path(&[("主人", "zh r", 2, 0, true), ("个", "ge", 0, 0, true)]);
+        assert_eq!(typed_reading_typos(&abbrev), None);
+        let raw = beam_path(&[("qw", "q w", 0, 0, false), ("你", "ni", 0, 0, true)]);
+        assert_eq!(typed_reading_typos(&raw), None);
+        // 最后一个音节还没打完（ce hao h）：算
+        let mut tail = beam_path(&[("测", "ce", 0, 0, true), ("好好", "hao h", 1, 0, true)]);
+        tail.words[1].ends_abbrev = true;
+        assert_eq!(typed_reading_typos(&tail), Some(0));
+    }
+
+    #[test]
+    fn corrected_candidates_never_outrank_the_typed_reading() {
+        let cand = |text: &str, pinyin: &str, score: f64, typos: f32| Candidate {
+            text: text.into(),
+            pinyin: pinyin.into(),
+            score,
+            features: Feature {
+                typo_count: typos,
+                typo: if typos > 0.0 { 1.0 } else { 0.0 },
+                ..Feature::default()
+            },
+            words: Vec::new(),
+            consumed: 0,
+        };
+        // cehao：纠错出来的「的好」分数高得多（词频、神经语言模型），也只能排在「测好」后面
+        let mut list = vec![
+            cand("的好", "de hao", -18.0, 1.0),
+            cand("测好", "ce hao", -30.0, 0.0),
+            cand("得好", "de hao", -32.0, 1.0),
+        ];
+        typed_reading_first(&mut list, &[Some(1), Some(0), Some(1)]);
+        assert!(list[0].score < list[1].score, "{:?}", list[0].score);
+        assert_eq!(list[1].score, -30.0);
+        assert_eq!(list[2].score, -32.0, "本来就在后面的不动");
+
+        // jintiam：照字母读要四个音节（jin ti a m），纠一处的「今天」两个音节就读完了，不压
+        let mut list = vec![
+            cand("今天", "jin tian", -17.0, 1.0),
+            cand("金提阿玛", "jin ti a m", -50.0, 0.0),
+        ];
+        typed_reading_first(&mut list, &[Some(1), Some(0)]);
+        assert_eq!(list[0].score, -17.0);
+
+        // cehaohoi：纠一处就读得通（测好后），纠两处的（的好后）不能排到它前面
+        let mut list = vec![
+            cand("的好后", "de hao hou", -20.0, 2.0),
+            cand("测好后", "ce hao hou", -35.0, 1.0),
+        ];
+        typed_reading_first(&mut list, &[Some(2), Some(1)]);
+        assert!(list[0].score < list[1].score);
+
+        // 没有照着读的读法（shijain、zhrge）：纠错的照常排第一
+        let mut list = vec![cand("时间", "shi jian", -10.0, 1.0)];
+        typed_reading_first(&mut list, &[None]);
+        assert_eq!(list[0].score, -10.0);
+    }
+
+    #[test]
+    fn typed_syllables_win_over_a_frequent_neighbour_key() {
+        // d 就在 c 上面：「的」「得好」的词频比「测」高几个数量级，打的是 ce 就该出 ce 的字
+        let e = engine(concat!(
+            "de\t的\t90000000\n",
+            "de\t得\t9000000\n",
+            "de hao\t得好\t800000\n",
+            "ce\t测\t20000\n",
+            "ce\t侧\t15000\n",
+            "hao\t好\t5000000\n",
+            "hou\t后\t4000000\n",
+        ));
+        e.set_context("我本地");
+        for (input, want) in [("cehao", "测好"), ("cehaohou", "测好后")] {
+            let texts: Vec<String> = e.input(input).into_iter().map(|c| c.text).collect();
+            assert_eq!(texts[0], want, "{input}: {texts:?}");
+            // 按的那个音节的单字都要选得到
+            for single in ["测", "侧"] {
+                assert!(texts.iter().any(|t| t == single), "{input} 没有「{single}」：{texts:?}");
+            }
+        }
     }
 
     #[test]

@@ -243,7 +243,19 @@ pub fn beam_search(
     // 终点不按末词去重：保留多样性，最后按整句文本去重
     let mut finals = std::mem::take(&mut buckets[n]);
     finals.sort_by(|a, b| b.score.total_cmp(&a.score));
-    finals.truncate(final_cap);
+    // 截断时纠错最少的整句也至少留几条（同 prune）
+    let fewest = finals.iter().map(|s| s.typos).min().unwrap_or(0);
+    let mut typed = 0usize;
+    let mut kept = 0usize;
+    finals.retain(|node| {
+        let is_typed = node.typos == fewest;
+        let keep = kept < final_cap || (is_typed && typed < TYPED_RESERVE);
+        if keep {
+            kept += 1;
+            typed += usize::from(is_typed);
+        }
+        keep
+    });
 
     let mut best_by_text: HashMap<String, BeamPath> = HashMap::new();
     for node in finals {
@@ -595,23 +607,40 @@ fn pinyin_of(keys: &[SyllableQuery]) -> String {
         .join(" ")
 }
 
-/// 同一位置内剪枝：同一个末词只留最好的一条（二元模型下它们后续完全等价），再取前 beam_size。
+/// 纠错最少的状态在每个位置至少留这么多个，不管分数排第几（见 [`prune`]）。
+const TYPED_RESERVE: usize = 4;
+
+/// 同一位置内剪枝：末词相同、纠错处数也相同的只留最好的一条（二元模型下它们后续完全等价），再取前 beam_size。
+///
+/// 纠错处数不同的不能并成一条：`cehaohou` 走到 hao 后面时，「的 | 好」（c 当成按错的 d，「的」词频高）
+/// 和「测 | 好」末词都是「好」，以前只留分数高的「的 | 好」，没纠错的读法到这里就断了，
+/// 最后只剩「的好后」「得好后」两个候选，连 `ce` 的单字都选不到。
+///
+/// 另外，这个位置上纠错最少的那些状态至少留 [`TYPED_RESERVE`] 个，哪怕分数排在 beam_size 以外：
+/// 「照着打的字母读」的路径必须能走到底，排不排第一由后面的排序决定。
 fn prune<'a, F>(mut states: Vec<Node>, beam_size: usize, last_word: F) -> Vec<Node>
 where
     F: Fn(&Node) -> Option<&'a str>,
 {
     states.sort_by(|a, b| b.score.total_cmp(&a.score));
-    let mut seen: HashMap<&'a str, ()> = HashMap::new();
-    let mut out = Vec::with_capacity(beam_size);
+    let fewest = states.iter().map(|s| s.typos).min().unwrap_or(0);
+    let mut seen: HashMap<(&'a str, usize), ()> = HashMap::new();
+    let mut out = Vec::with_capacity(beam_size + TYPED_RESERVE);
+    let mut typed = 0usize;
     for state in states {
-        let key = last_word(&state).unwrap_or("");
+        let full = out.len() >= beam_size;
+        if full && (state.typos != fewest || typed >= TYPED_RESERVE) {
+            if typed >= TYPED_RESERVE {
+                break;
+            }
+            continue;
+        }
+        let key = (last_word(&state).unwrap_or(""), state.typos);
         if seen.insert(key, ()).is_some() {
             continue;
         }
+        typed += usize::from(state.typos == fewest);
         out.push(state);
-        if out.len() >= beam_size {
-            break;
-        }
     }
     out
 }

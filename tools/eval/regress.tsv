@@ -16,6 +16,10 @@ qingyuan	情愿
 mingyuan	名媛
 shishi	事实
 fangan	方案
+# 每个音节都打对了：不把 c 当成按错的 d（的、得的词频高得多），接着上文打也一样
+cehao	测好
+cehaohou	测好后	我本地
+cehao	测好	我本地
 # 三个音节以上的同音词排在拼凑出来的整句前面
 qidongqi	启动器
 qianhouduan	前后端

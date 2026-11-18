@@ -3,6 +3,7 @@
 //!
 //! ```
 //! archtype-show (--data <目录> | --lexicon lexicon.tsv) [--lm words.lm | --no-lm] [--english english.txt | --no-english]
+//!               [--nnlm nnlm.bin]
 //!              [--max 1000] [--show 18] [--context 文本] [--shuangpin 方案] [--scores] [--legacy] 拼音...
 //! ```
 //!
@@ -31,6 +32,7 @@ fn main() {
     let mut lexicon_path = String::new();
     let mut english_path = String::new();
     let mut lm_path = String::new();
+    let mut nnlm_path = String::new();
     let mut context = String::new();
     let mut max_candidates: Option<usize> = None;
     let mut show = 18usize;
@@ -57,6 +59,7 @@ fn main() {
             "--english" => english_path = take(&mut i),
             "--no-english" => no_english = true,
             "--lm" => lm_path = take(&mut i),
+            "--nnlm" => nnlm_path = take(&mut i),
             "--no-lm" => no_lm = true,
             "--context" => context = take(&mut i),
             "--max" => max_candidates = take(&mut i).parse().ok(),
@@ -126,6 +129,11 @@ fn main() {
         engine
             .load_english(&english_path)
             .unwrap_or_else(|e| fail(&format!("英文词表载入失败: {e:#}")));
+    }
+    if !nnlm_path.is_empty() {
+        engine
+            .load_nnlm(&nnlm_path)
+            .unwrap_or_else(|e| fail(&format!("神经语言模型载入失败: {e:#}")));
     }
     engine.set_context(if legacy {
         context.as_str()
