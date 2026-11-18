@@ -205,23 +205,22 @@ fn index_prompt(text: &str, target: &str, formal: bool) -> String {
 }
 
 fn strip_think(content: &str) -> String {
-    let mut text = content.trim().to_string();
-    while let Some(start) = text.find("```") {
-        let Some(end) = text[start + 3..].find("```") else {
-            break;
-        };
-        text.replace_range(start..start + 3 + end + 3, "");
-        text = text.trim().to_string();
+    // 和 Python 的 strip_think 一样：去掉 <think ...>…</think ...>，没闭合就截到开头。
+    let mut text = content.to_string();
+    while let Some(start) = text.find("<think") {
+        let open_end = text[start..].find('>').map(|p| start + p + 1);
+        let end = open_end.and_then(|after_open| {
+            text[after_open..]
+                .find("</think")
+                .map(|p| after_open + p)
+                .and_then(|close| text[close..].find('>').map(|q| close + q + 1))
+        });
+        match end {
+            Some(end) => text.replace_range(start..end, ""),
+            None => text.truncate(start),
+        }
     }
-    text.lines()
-        .filter(|line| {
-            let line = line.trim_start();
-            !line.starts_with("Thinking") && !line.starts_with("思考")
-        })
-        .collect::<Vec<_>>()
-        .join("\n")
-        .trim()
-        .to_string()
+    text.trim().to_string()
 }
 
 fn newer_version(candidate: &str, current: &str) -> bool {
@@ -641,7 +640,8 @@ impl Config {
         if !write_custom_lines(&path, &lines) {
             return false;
         }
-        Config::restart_fcitx()
+        Config::restart_fcitx();
+        true
     }
 
     /// 删一个自定义词；写完重启 fcitx5。词不存在也返回 true。
@@ -654,7 +654,8 @@ impl Config {
         if !write_custom_lines(&path, &lines) {
             return false;
         }
-        Config::restart_fcitx()
+        Config::restart_fcitx();
+        true
     }
 
     /// 删除语音模型目录。
@@ -726,5 +727,40 @@ impl Config {
             .status()
             .map(|status| status.success())
             .unwrap_or(false)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn compares_versions() {
+        assert!(newer_version("0.6.1", "0.6.0"));
+        assert!(newer_version("0.7.0", "0.6.9"));
+        assert!(!newer_version("0.6.0", "0.6.0"));
+        assert!(!newer_version("0.5.9", "0.6.0"));
+    }
+
+    #[test]
+    fn strips_thinking_blocks() {
+        assert_eq!(strip_think("你好"), "你好");
+        assert_eq!(strip_think("<think >思考</think >你好"), "你好");
+        assert_eq!(strip_think("你好<think 思考"), "你好");
+    }
+
+    #[test]
+    fn maps_language_names() {
+        assert_eq!(language_english("ja"), "Japanese");
+        assert_eq!(language_chinese("ja"), "日语");
+        assert_eq!(language_chinese("xx"), "英语");
+    }
+
+    #[test]
+    fn builds_index_prompt() {
+        let prompt = index_prompt("你好", "ja", false);
+        assert!(prompt.contains("日语"));
+        assert!(prompt.contains("你好"));
+        assert!(prompt.contains("随意"));
     }
 }
