@@ -361,10 +361,10 @@ function KeyChip(props: { label: string; count: number; max: number }) {
         borderWidth: 1,
         borderColor: ui().border,
         borderRadius: 6,
-        paddingLeft: 8,
-        paddingRight: 8,
-        paddingTop: 5,
-        paddingBottom: 5,
+        paddingLeft: 7,
+        paddingRight: 7,
+        paddingTop: 3,
+        paddingBottom: 3,
       }}
     >
       <View
