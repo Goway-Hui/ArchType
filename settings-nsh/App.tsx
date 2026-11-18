@@ -355,7 +355,7 @@ function KeyChip(props: { label: string; count: number; max: number }) {
   return (
     <View
       style={{
-        flex: 1,
+        width: 178,
         flexDirection: "row",
         alignItems: "center",
         gap: 6,
@@ -366,7 +366,6 @@ function KeyChip(props: { label: string; count: number; max: number }) {
         paddingRight: 8,
         paddingTop: 5,
         paddingBottom: 5,
-        minWidth: 150,
       }}
     >
       <View
