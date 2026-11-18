@@ -627,13 +627,13 @@ ENUMS = {
     "TranslateTarget": tuple(code for _label, code, _english in TRANSLATE_LANGUAGES),
 }
 
-# 设置窗口的样式（照微信输入法：薄荷绿渐变侧栏、绿色选中块、白色圆角卡片）
+# 设置窗口的样式（照微信输入法：浅蓝渐变侧栏、蓝色选中块、白色圆角卡片）
 GREEN = "#0EAF76"
 STYLE_LIGHT = """
 .wt-sidebar { background-image: linear-gradient(180deg, #E2ECFC 0%, #EFF5FE 40%, #F8FBFF 100%); }
 .wt-sidebar label, .wt-sidebar image { color: #2a332f; }
 .wt-sidebar headerbar { background: transparent; box-shadow: none; }
-.wt-brand { margin: 4px 22px 18px 22px; }
+.wt-brand { margin: 10px 16px 10px 16px; }
 .wt-brand-name { font-weight: 800; font-size: 15pt; }
 .wt-nav, .wt-nav row { background: transparent; }
 .wt-nav row { border-radius: 10px; margin: 2px 12px; padding: 9px 12px; }
@@ -641,6 +641,9 @@ STYLE_LIGHT = """
 .wt-nav row:selected { background: #2F6FED; color: white; }
 .wt-nav row:selected image, .wt-nav row:selected label { color: white; }
 .wt-content, .wt-content headerbar { background: #f5f7f6; box-shadow: none; }
+@define-color headerbar_fg_color #1f2724;
+.wt-content headerbar .wt-header-title,
+.wt-content .wt-header-title { color: #1f2724; font-weight: 700; font-size: 11pt; }
 /* 顶栏的菜单、最小化/最大化/关闭图标：浅色下用深色，别继承系统深色主题的浅灰 */
 .wt-content headerbar image,
 .wt-sidebar headerbar image,
@@ -781,7 +784,7 @@ STYLE_DARK = """
 .wt-sidebar { background-image: linear-gradient(180deg, #151F33 0%, #1A263D 45%, #202A3A 100%); }
 .wt-sidebar label, .wt-sidebar image { color: #e6ece9; }
 .wt-sidebar headerbar { background: transparent; box-shadow: none; }
-.wt-brand { margin: 4px 22px 18px 22px; }
+.wt-brand { margin: 10px 16px 10px 16px; }
 .wt-brand-name { font-weight: 800; font-size: 15pt; }
 .wt-nav, .wt-nav row { background: transparent; }
 .wt-nav row { border-radius: 10px; margin: 2px 12px; padding: 9px 12px; }
@@ -789,6 +792,9 @@ STYLE_DARK = """
 .wt-nav row:selected { background: #2F6FED; color: white; }
 .wt-nav row:selected image, .wt-nav row:selected label { color: white; }
 .wt-content, .wt-content headerbar { background: #1d201f; box-shadow: none; }
+@define-color headerbar_fg_color #e6ece9;
+.wt-content headerbar .wt-header-title,
+.wt-content .wt-header-title { color: #e6ece9; font-weight: 700; font-size: 11pt; }
 .wt-page-title { font-weight: 800; font-size: 20pt; margin: -14px 0 -8px 0; color: #e6ece9; }
 .wt-content preferencespage label,
 .wt-content preferencespage .title,
@@ -899,7 +905,7 @@ button.suggested-action:focus,
 button.suggested-action label,
 button.suggested-action image { color: #ffffff; }
 """
-# 开关、单选框、主按钮换成 ArchType 绿（旧版 libadwaita 用命名颜色，1.6 起用 CSS 变量）
+# 开关、单选框、主按钮换成 ArchType 蓝（旧版 libadwaita 用命名颜色，1.6 起用 CSS 变量）
 STYLE_ACCENT = """
 @define-color accent_bg_color #2F6FED;
 @define-color accent_color %s;
@@ -2594,7 +2600,7 @@ def apply_gnome_theme(on):
 
 
 def init_default_theme():
-    """第一次用 ArchType 时把绿色主题打开（只做一次，之后听用户的）。
+    """第一次用 ArchType 时把蓝色主题打开（只做一次，之后听用户的）。
 
     不覆盖用户自己选的别的 fcitx5 主题；GNOME 上用户关过这个扩展的也不动。
     fcitx5 还没起来时什么都不做，下次再试。
@@ -5971,7 +5977,7 @@ class SettingsWindow(Adw.ApplicationWindow):
         self.look_row.connect("notify::selected", self.on_look_changed)
         look.add(self.look_row)
         self.theme_row = SwitchRow(
-            title="ArchType 绿色主题", subtitle="选中的词是 ArchType 绿，深色模式自动换深色版")
+            title="ArchType 蓝色主题", subtitle="选中的词是 ArchType 蓝，深色模式自动换深色版")
         self.theme_row.set_sensitive(False)  # 读到 fcitx5 的当前主题再打开
         self.theme_handler = self.theme_row.connect("notify::active", self.on_theme_toggled)
         look.add(self.theme_row)
