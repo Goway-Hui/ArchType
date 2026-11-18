@@ -443,11 +443,22 @@ fn collect_spans(
             ca.total_cmp(&cb)
                 .then_with(|| a.word.text.cmp(&b.word.text))
         });
-        // 同一个词可能经由不同切分到达，留代价最低的那个
-        let mut seen: HashMap<String, ()> = HashMap::new();
-        group.retain(|s| seen.insert(s.word.text.clone(), ()).is_none());
-        group.truncate(per_span);
-        out.extend(group);
+        // 同一个词可能经由不同切分到达，留代价最低的那个。上面已经
+        // 按代价排序；只在最多 `per_span` 个保留项里做线性比较，避免
+        // 为每个候选克隆 String 并重新计算哈希。
+        let mut unique = Vec::with_capacity(per_span.min(group.len()));
+        for span in group {
+            if unique
+                .iter()
+                .all(|kept: &Span| kept.word.text != span.word.text)
+            {
+                unique.push(span);
+                if unique.len() >= per_span {
+                    break;
+                }
+            }
+        }
+        out.extend(unique);
     }
 
     // 未知音节兜底：每条精确边都允许直接当作一个未登录词，保证任何合法输入都能走到底。

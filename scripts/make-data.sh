@@ -218,7 +218,8 @@ DATE=$(git -C "$RIME" log -1 --format=%cs 2>/dev/null || date +%F)
 # 5：默认融进 Tatoeba 语料词频（data/tatoeba-freq.tsv）；数据压缩包里加上五笔码表。
 # 6：数据文件带版本标记（archtype-data），多了 DATA-MANIFEST；VERSION 全用点分隔（2026.11.14.6）。
 # 7：占位词频换成语料词频（data/placeholder-freq.tsv）。
-REV=7
+# 8：热词表加词（箱唛，#232）。
+REV=8
 VERSION="${DATE//-/.}.$REV"
 echo "$VERSION" > "$OUT/VERSION"
 # 版本标记：插在第一行注释后面（插件和设置界面按它认用户目录里的旧副本，见 docs/DATA.md）

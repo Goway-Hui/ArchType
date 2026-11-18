@@ -26,7 +26,7 @@ import struct
 import sys
 
 KEY = "archtype-data:"
-# 上游 WowType 发布的数据文件（nnlm.bin 等）里还是旧标记，读的时候也认
+# 上游 ArchType 发布的数据文件（nnlm.bin 等）里还是旧标记，读的时候也认
 LEGACY_KEYS = ("wowtype-data:",)
 SCAN_BYTES = 4096
 MANIFEST = "DATA-MANIFEST"

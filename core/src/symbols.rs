@@ -108,6 +108,32 @@ pub fn fullwidth_punct(ascii: char) -> Option<&'static str> {
     Some(text)
 }
 
+/// 自动配对：左标点的 ASCII 键给出的 `(左半边, 右半边)`，和 [`fullwidth_punct`] 一致。
+pub fn auto_pair(ascii: char) -> Option<(char, char)> {
+    Some(match ascii {
+        '(' => ('（', '）'),
+        '[' => ('【', '】'),
+        '<' => ('《', '》'),
+        '{' => ('「', '」'),
+        '"' => ('“', '”'),
+        '\'' => ('‘', '’'),
+        _ => return None,
+    })
+}
+
+/// 自动配对：右标点的 ASCII 键对应的右半边（跳过补好的那个时比对）。引号左右是同一个键。
+pub fn closing_punct(ascii: char) -> Option<char> {
+    Some(match ascii {
+        ')' => '）',
+        ']' => '】',
+        '>' => '》',
+        '}' => '」',
+        '"' => '”',
+        '\'' => '’',
+        _ => return None,
+    })
+}
+
 /// 标点样式：全角（中文标点）或半角（ASCII 原样上屏）。
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum PunctStyle {

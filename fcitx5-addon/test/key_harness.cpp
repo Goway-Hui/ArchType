@@ -82,10 +82,16 @@ public:
     const char *frontend() const override { return "archtype-harness"; }
     void commitStringImpl(const std::string &text) override { committed += text; }
     void deleteSurroundingTextImpl(int, unsigned int) override {}
-    void forwardKeyImpl(const ForwardKeyEvent &) override {}
+    void forwardKeyImpl(const ForwardKeyEvent &event) override {
+        if (!event.isRelease()) {
+            forwarded += Key::keySymToString(event.rawKey().sym()) + " ";
+        }
+    }
     void updatePreeditImpl() override {}
 
     std::string committed;
+    /// 输入法发给应用的键（按下的那一下），空格隔开
+    std::string forwarded;
     /// 输入法没接的键（直接交给应用的）
     std::string passed;
 };
@@ -183,6 +189,7 @@ void fresh(HarnessInputContext *ic) {
     type(ic, "<esc>");
     ic->committed.clear();
     ic->passed.clear();
+    ic->forwarded.clear();
 }
 
 /// 单按一个修饰键（按下 + 松开），比如单按 Shift 切中英文。
@@ -1629,15 +1636,18 @@ void runCases(Instance &instance) {
           "默认（都用来选词）左键不动编辑区的光标：@" + std::to_string(ic->inputPanel().preedit().cursor()));
     fresh(ic.get());
 
-    // 单按 Shift 切英文（#28）：右 Shift 不是 fcitx 默认的临时切换键，走的是 ArchType 自己的英文模式
+    // 单按 Shift 切英文（#28）：右 Shift 不是 fcitx 默认的临时切换键，走的是 ArchType 自己的英文模式。
+    // 按下、松开都不接受（照常交给应用）：外壳只在没接受时才把键转给应用，吞掉松开的 Shift，
+    // Wayland 上的应用会以为它一直按着（#225）
     const auto tapShift = [&](KeySym sym) {
         KeyEvent press(ic.get(), Key(sym), false);
-        ic->keyEvent(press);
+        const bool pressTaken = ic->keyEvent(press);
         KeyEvent release(ic.get(), Key(sym, KeyState::Shift), true);
-        return ic->keyEvent(release);
+        const bool releaseTaken = ic->keyEvent(release);
+        return !pressTaken && !releaseTaken;
     };
     check(instance.inputMethodLabel(ic.get()) == "中", "中文时提示「中」：" + instance.inputMethodLabel(ic.get()));
-    check(tapShift(FcitxKey_Shift_R), "单按右 Shift 被接住");
+    check(tapShift(FcitxKey_Shift_R), "单按右 Shift 切英文，按下和松开都交给应用（#225）");
     check(instance.inputMethodLabel(ic.get()) == "英", "英文时提示「英」：" + instance.inputMethodLabel(ic.get()));
     type(ic.get(), "nihao,");
     check(ic->committed.empty() && ic->passed == "nihao," && preedit(ic.get()).empty(),
@@ -1654,11 +1664,13 @@ void runCases(Instance &instance) {
     fresh(ic.get());
     {
         // Shift 按着打了别的键（大写字母）就不算单按
+        const std::string before = instance.inputMethodLabel(ic.get());
         KeyEvent press(ic.get(), Key(FcitxKey_Shift_R), false);
         ic->keyEvent(press);
         send(ic.get(), Key(FcitxKey_A, KeyState::Shift));
         KeyEvent release(ic.get(), Key(FcitxKey_Shift_R, KeyState::Shift), true);
-        check(!ic->keyEvent(release), "Shift+字母后松开 Shift 不切换");
+        check(!ic->keyEvent(release) && instance.inputMethodLabel(ic.get()) == before,
+              "Shift+字母后松开 Shift 不切换");
         type(ic.get(), "<esc>nihao<sp>");
         check(ic->committed == "你好", "仍是中文：" + ic->committed);
     }
@@ -1713,10 +1725,12 @@ void runCases(Instance &instance) {
             return ascii;
         };
         const auto tapCoded = [&](Key down, Key up) {
+            const std::string before = instance.inputMethodLabel(ic.get());
             KeyEvent press(ic.get(), down, false);
             ic->keyEvent(press);
             KeyEvent release(ic.get(), up, true);
-            return ic->keyEvent(release);
+            ic->keyEvent(release);
+            return instance.inputMethodLabel(ic.get()) != before;
         };
         check(tapCoded(Key(FcitxKey_Shift_L, KeyStates(), 50),
                        Key(FcitxKey_ISO_Next_Group, KeyState::Shift, 50)) &&
@@ -1739,7 +1753,10 @@ void runCases(Instance &instance) {
             KeyEvent repeat(ic.get(), Key(FcitxKey_Shift_R, KeyState::Repeat, 62), false);
             ic->keyEvent(repeat);
             KeyEvent release(ic.get(), Key(FcitxKey_Shift_R, KeyState::Shift, 62), true);
-            check(ic->keyEvent(release) && english(), "按住 Shift 有自动重复也算单按");
+            const std::string before = instance.inputMethodLabel(ic.get());
+            ic->keyEvent(release);
+            check(instance.inputMethodLabel(ic.get()) != before && english(),
+                  "按住 Shift 有自动重复也算单按");
             tapShift(FcitxKey_Shift_R);
             check(!english(), "再按一下回中文");
         }
@@ -1763,6 +1780,19 @@ void runCases(Instance &instance) {
         check(tapShift(FcitxKey_Shift_R) && english(), "清掉以后右 Shift 又归 ArchType");
         tapShift(FcitxKey_Shift_R);
         check(!english(), "回中文");
+    }
+    {
+        // #225：Wayland 上 KWin 把键交给输入法，外壳（fcitx5）只在没接受的时候才经虚拟键盘
+        // 把键转给应用。单按 Shift 切了模式也不能吞掉松开的 Shift：应用收不到松开，会以为
+        // Shift 还按着——之后 shift+单击开新窗口、滚轮变横向、快捷键错乱。
+        // Shift 单独按下、松开不出字，交给应用没有副作用。
+        KeyEvent press(ic.get(), Key(FcitxKey_Shift_R), false);
+        check(!ic->keyEvent(press), "#225：Shift 按下交给应用");
+        KeyEvent release(ic.get(), Key(FcitxKey_Shift_R, KeyState::Shift), true);
+        check(!ic->keyEvent(release), "#225：单按 Shift 切了模式，松开的 Shift 也交给应用");
+        check(instance.inputMethodLabel(ic.get()) == "英", "#225：这一下仍然切到了英文");
+        tapShift(FcitxKey_Shift_R);
+        check(instance.inputMethodLabel(ic.get()) == "中", "#225：再单按一下回到中文");
     }
     fresh(ic.get());
 
@@ -2193,6 +2223,151 @@ void runCases(Instance &instance) {
     addon->reloadConfig();
     ic->setCapabilityFlags(CapabilityFlags{});
     fresh(ic.get());
+
+    // 中文标点自动配对（AutoPairPunct）：上屏「（）」后发一下左键把光标放中间（等上屏落到应用，最晚在下一个键
+    // 之前；这里没跑事件循环，是在松开的那一下发的），跳过补好的右括号发右键，空的一对退格吃掉、按顺序发 Delete 和退格
+    {
+        std::ofstream(configDir + "/archtype.conf") << "AutoPairPunct=True\nEmojiSuggest=False\n";
+    }
+    addon->reloadConfig();
+    // 换个焦点：清掉配对和「刚给应用发过键」的记号
+    const auto pairFresh = [&ic] {
+        ic->focusOut();
+        ic->focusIn();
+        fresh(ic.get());
+    };
+    const auto pairReport = [&ic] {
+        return "上屏「" + ic->committed + "」交给应用「" + ic->passed + "」发的键「" + ic->forwarded + "」";
+    };
+    pairFresh();
+    type(ic.get(), "(");
+    check(ic->committed == "（）" && ic->forwarded == "Left ", "( 上屏（），再发左键：" + pairReport());
+    type(ic.get(), "3)");
+    check(ic->committed == "（）" && ic->passed == "3" && ic->forwarded == "Left Right ",
+          "( 3 ) 是（3）：左键在 3 之前发，) 跳过补好的右括号：" + pairReport());
+    pairFresh();
+    type(ic.get(), "(<sp>)");
+    check(ic->committed == "（）" && ic->passed == " " && ic->forwarded == "Left Right ",
+          "( 空格 ) 是（ ）：" + pairReport());
+    pairFresh();
+    type(ic.get(), "(nihao)");
+    check(ic->committed == "（）你好" && ic->forwarded == "Left Right ",
+          "( nihao ) 上屏你好再跳过右括号：" + pairReport());
+    pairFresh();
+    type(ic.get(), "((");
+    check(ic->committed == "（）（）" && ic->forwarded == "Left Left ", "连着两个 (：" + pairReport());
+    type(ic.get(), "))");
+    check(ic->forwarded == "Left Left Right Right ", "套着的两层都跳过：" + pairReport());
+    pairFresh();
+    type(ic.get(), "(");
+    const bool tookBackspace = send(ic.get(), Key(FcitxKey_BackSpace));
+    check(tookBackspace && ic->forwarded == "Left Delete BackSpace ",
+          "空的一对退格：吃掉退格，按顺序发左键、Delete、退格：" + pairReport());
+    pairFresh();
+    type(ic.get(), "(1<bs>");
+    check(ic->passed == "1" && ic->forwarded == "Left ", "里面有字时退格照常交给应用：" + pairReport());
+    // 应用因为发的左键重置了输入法（GTK 挪光标时会）：不算点了别处，) 照样跳过
+    pairFresh();
+    type(ic.get(), "(1");
+    ic->reset();
+    type(ic.get(), ")");
+    check(ic->forwarded == "Left Right ", "自己发的左键引起的重置不打断配对：" + pairReport());
+    // 方向键、失去焦点以后不跳了
+    pairFresh();
+    type(ic.get(), "(<left>)");
+    check(ic->committed == "（））" && ic->forwarded == "Left ", "按了方向键以后 ) 照常上屏：" + pairReport());
+    pairFresh();
+    type(ic.get(), "(1");
+    ic->focusOut();
+    ic->focusIn();
+    type(ic.get(), ")");
+    check(ic->committed == "（））" && ic->passed == "1" && ic->forwarded == "Left ",
+          "失去焦点以后 ) 照常上屏：" + pairReport());
+    // 读得到周围文字：光标后面不是补好的右括号（点到了别处）就不跳
+    ic->setCapabilityFlags(CapabilityFlag::SurroundingText);
+    pairFresh();
+    ic->surroundingText().setText("", 0, 0);
+    type(ic.get(), "(1");
+    ic->surroundingText().setText("（1）", 2, 2);
+    type(ic.get(), ")");
+    check(ic->forwarded == "Left Right ", "光标后面是补好的右括号：跳过：" + pairReport());
+    pairFresh();
+    ic->surroundingText().setText("", 0, 0);
+    type(ic.get(), "(1");
+    ic->surroundingText().setText("别的字", 1, 1);
+    type(ic.get(), ")");
+    check(ic->committed == "（））" && ic->passed == "1" && ic->forwarded == "Left ",
+          "光标后面不是补好的右括号：不跳：" + pairReport());
+    ic->surroundingText().invalidate();
+    ic->setCapabilityFlags(CapabilityFlags{});
+    std::filesystem::remove(configDir + "/archtype.conf");
+    addon->reloadConfig();
+    pairFresh();
+    type(ic.get(), "(");
+    check(ic->committed == "（" && ic->forwarded.empty(), "默认不配对：" + pairReport());
+    pairFresh();
+
+    // 打字统计（TypingStats）：默认关，打了字、失焦也不建 stats.json；打开以后只记计数（不记打的字），
+    // 密码框里的上屏不算；写文件在核心的后台线程，这里等一会儿再看
+    {
+        const std::string statsDir = std::string(std::getenv("XDG_DATA_HOME")) + "/archtype";
+        const std::string statsFile = statsDir + "/stats.json";
+        const auto readStats = [&]() {
+            std::ifstream in(statsFile);
+            return std::string(std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>());
+        };
+        const auto waitFor = [&](const std::function<bool()> &done) {
+            for (int i = 0; i < 60 && !done(); ++i) {
+                std::this_thread::sleep_for(std::chrono::milliseconds(50));
+            }
+            return done();
+        };
+        std::filesystem::remove(statsFile);
+        type(ic.get(), "nihao<sp>");
+        check(ic->committed == "你好", "统计关着时照常打字：[" + ic->committed + "]");
+        ic->focusOut();
+        ic->focusIn();
+        std::this_thread::sleep_for(std::chrono::milliseconds(300));
+        check(!std::filesystem::exists(statsFile) && !std::filesystem::exists(statsDir + "/stats.clear"),
+              "统计默认关：不建 stats.json");
+        {
+            std::ofstream(configDir + "/archtype.conf") << "TypingStats=True\n";
+        }
+        addon->reloadConfig();
+        fresh(ic.get());
+        type(ic.get(), "nihao<sp>");
+        check(ic->committed == "你好", "统计开着时照常打字：[" + ic->committed + "]");
+        fresh(ic.get());
+        for (const auto flag : {CapabilityFlag::Password, CapabilityFlag::Sensitive}) {
+            ic->setCapabilityFlags(CapabilityFlags{flag});
+            type(ic.get(), "mima<sp>");
+            // Password 框里字母原样交给应用，Sensitive 框里照常打中文；两种都不算进统计
+            check(!ic->committed.empty() || !ic->passed.empty(),
+                  "密码框里照常打字：上屏[" + ic->committed + "] 交给应用[" + ic->passed + "]");
+            fresh(ic.get());
+        }
+        ic->setCapabilityFlags(CapabilityFlags{});
+        ic->focusOut();
+        ic->focusIn();
+        const bool written = waitFor([&] { return readStats().find("\"chars\": 2") != std::string::npos; });
+        const std::string stats = readStats();
+        check(written, "统计打开后失焦写进 stats.json，密码框里打的不算：" + stats.substr(0, 200));
+        check(stats.find("你好") == std::string::npos && stats.find("ni") == std::string::npos &&
+                  stats.find("mima") == std::string::npos && stats.find("密码") == std::string::npos &&
+                  stats.find("lastCommitMs") == std::string::npos,
+              "stats.json 里没有打的字、拼音和时刻");
+        // 关掉以后打的不再记
+        std::filesystem::remove(configDir + "/archtype.conf");
+        addon->reloadConfig();
+        fresh(ic.get());
+        type(ic.get(), "shijie<sp>");
+        ic->focusOut();
+        ic->focusIn();
+        std::this_thread::sleep_for(std::chrono::milliseconds(300));
+        check(readStats() == stats, "统计关掉以后不再写");
+        std::filesystem::remove(statsFile);
+        fresh(ic.get());
+    }
 
     // 换词库（设置里切到万象就是写 Lexicon=）：reloadConfig 后在后台换，换好前按键照常进编辑区
     {

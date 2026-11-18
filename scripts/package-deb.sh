@@ -206,7 +206,7 @@ EOF
   shlibs=$(cd "$work" && dpkg-shlibdeps -O "${elfs[@]}" 2>/dev/null | sed -n 's/^shlibs:Depends=//p')
   # 设置界面（PyGObject + GTK 4 + libadwaita）是硬依赖：缺了的话应用菜单里点「ArchType 设置」没反应，
   # 插件在后台叫的 archtype-config --startup（检查更新、默认主题、提醒重启输入法）也跑不了
-  depends="${shlibs:+$shlibs, }fcitx5, python3-gi, gir1.2-gtk-4.0, gir1.2-adw-1"
+  depends="${shlibs:+$shlibs, }fcitx5, python3-gi, python3-gi-cairo, gir1.2-gtk-4.0, gir1.2-adw-1"
 
   # emoji 要彩色 emoji 字体才画得出来（桌面版系统一般都装了）；互译用 curl 发请求
   RECOMMENDS="fonts-noto-color-emoji, curl" \

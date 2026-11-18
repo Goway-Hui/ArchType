@@ -25,7 +25,6 @@
 //! 加标记以前发布的 lm-2026.11.09 没有这个词，按字节数认（[`crate::datamark::LEGACY_OFFICIAL_LM`]）。
 //! 训练完用 [`set_data_marker`] 加标记（`tools/datamark.py stamp` 是同样的做法）。
 
-use std::collections::HashMap;
 use std::path::Path;
 
 use anyhow::{bail, Context, Result};
@@ -41,9 +40,12 @@ pub const BOS: &str = "<s>";
 /// 实测（rime-ice + words.lm）：不设下限时中低频词 top1 82.5%、整句 84.8%，−1.5 时 87.8%、86.2%；
 /// 再高（−0.5）中低频 88.8%，但整句回落到 84.8%、简拼也降。设成 0 以前出过「分崩离兮」。
 pub const OOV_FLOOR: f64 = -1.5;
+const EMPTY_SLOT: u32 = 0;
 
 pub struct WordLm {
-    ids: HashMap<String, u32>,
+    /// 词 -> 编号的开放寻址表：存「编号 + 1」，0 是空位。和词本身分开放，
+    /// 束搜索每次查词不用为 String 分配内存、算 SipHash（#227）
+    slots: Vec<u32>,
     words: Vec<String>,
     backoff: Vec<f32>,
     starts: Vec<u32>,
@@ -71,7 +73,6 @@ impl WordLm {
         let n = r.u32()? as usize;
         let m = r.u32()? as usize;
         let mut words = Vec::with_capacity(n);
-        let mut ids = HashMap::with_capacity(n);
         let mut marker = None;
         for i in 0..n {
             let len = r.take(1)?[0] as usize;
@@ -79,12 +80,31 @@ impl WordLm {
                 .context("词表不是 UTF-8")?
                 .to_string();
             if i == 1 && w.starts_with(datamark::KEY) {
-                // 版本标记：不当词查
+                // 版本标记：不当词查（下面建查找表时跳过它）
                 marker = DataMarker::parse(&w);
-            } else {
-                ids.insert(w.clone(), i as u32);
             }
             words.push(w);
+        }
+        let mut slot_count = 1usize;
+        while slot_count < n.saturating_mul(2).max(2) {
+            slot_count = slot_count.checked_mul(2).context("词表太大")?;
+        }
+        let mut slots = vec![EMPTY_SLOT; slot_count];
+        for (id, word) in words.iter().enumerate() {
+            // 版本标记留在 words 里（搭配的编号不变），但不进查找表
+            if id == 1 && word.starts_with(datamark::KEY) {
+                continue;
+            }
+            let mut slot = hash_word(word) as usize & (slot_count - 1);
+            loop {
+                let stored = slots[slot];
+                // 空位放下；同一个词出现两次时用后面的编号（和原来 HashMap::insert 一样）
+                if stored == EMPTY_SLOT || words[stored as usize - 1] == *word {
+                    slots[slot] = id as u32 + 1;
+                    break;
+                }
+                slot = (slot + 1) & (slot_count - 1);
+            }
         }
         let backoff = r.f32s(n)?;
         let starts = r.u32s(n + 1)?;
@@ -97,7 +117,7 @@ impl WordLm {
             bail!("文件末尾多了 {} 字节", data.len() - r.at);
         }
         Ok(Self {
-            ids,
+            slots,
             words,
             backoff,
             starts,
@@ -128,12 +148,37 @@ impl WordLm {
         let row = &self.curs[a..b];
         row.binary_search(&cur).ok().map(|i| self.scores[a + i])
     }
+
+    fn id(&self, word: &str) -> Option<u32> {
+        let mask = self.slots.len() - 1;
+        let mut slot = hash_word(word) as usize & mask;
+        loop {
+            let stored = self.slots[slot];
+            if stored == EMPTY_SLOT {
+                return None;
+            }
+            let id = stored - 1;
+            if self.words[id as usize].as_bytes() == word.as_bytes() {
+                return Some(id);
+            }
+            slot = (slot + 1) & mask;
+        }
+    }
+}
+
+fn hash_word(word: &str) -> u64 {
+    let mut hash = 0xcbf2_9ce4_8422_2325u64;
+    for byte in word.as_bytes() {
+        hash ^= u64::from(*byte);
+        hash = hash.wrapping_mul(0x1000_0000_01b3);
+    }
+    hash
 }
 
 impl LanguageModel for WordLm {
     fn score(&self, prev: Option<&str>, cur: &str) -> f64 {
         // 前一个词不在模型里：没有可用的信息，给 0
-        let Some(&p) = self.ids.get(prev.unwrap_or(BOS)) else {
+        let Some(p) = self.id(prev.unwrap_or(BOS)) else {
             return 0.0;
         };
         // 当前词不在模型里（语料里太少见、被裁掉了）：按「没见过的搭配」给回退分（≤ 0），
@@ -143,7 +188,7 @@ impl LanguageModel for WordLm {
         // 不再额外罚分：实测再罚会把这类词所在的整句挤出前几名（日常句 90.6% -> 87.7%）。
         // 回退分再设个下限 OOV_FLOOR：句首的回退分低到 −4.2，热词表里补的新词（大模型、黑神话、
         // 永远的神）都不在模型里，30000 的词频实际只顶 450 用。
-        let Some(&c) = self.ids.get(cur) else {
+        let Some(c) = self.id(cur) else {
             return (self.backoff[p as usize] as f64).max(OOV_FLOOR);
         };
         match self.pair(p, c) {
@@ -153,18 +198,18 @@ impl LanguageModel for WordLm {
     }
 
     fn knows_word(&self, word: &str) -> Option<bool> {
-        Some(self.ids.contains_key(word))
+        Some(self.id(word).is_some())
     }
 
     fn has_bigram(&self, prev: &str, cur: &str) -> bool {
-        match (self.ids.get(prev), self.ids.get(cur)) {
-            (Some(&p), Some(&c)) => self.pair(p, c).is_some(),
+        match (self.id(prev), self.id(cur)) {
+            (Some(p), Some(c)) => self.pair(p, c).is_some(),
             _ => false,
         }
     }
 
     fn top_next(&self, prev: &str, limit: usize) -> Vec<(String, f64)> {
-        let Some(&p) = self.ids.get(prev) else {
+        let Some(p) = self.id(prev) else {
             return Vec::new();
         };
         let (a, b) = (

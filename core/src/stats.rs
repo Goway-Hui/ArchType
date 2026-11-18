@@ -1,32 +1,55 @@
-//! 打字统计：只记本机的聚合计数（每天多少字、每一类多少、每个键按了几次），
-//! 不保存输入内容、按键顺序或上下文。设置界面读同一个 JSON 画统计页。
+//! 打字统计：默认关，打开以后只在本机记每天的聚合计数，不保存输入内容。
 //!
-//! 口径（和设置页的说明一致）：
-//! - 速度只算汉字与字母（`han + latin`），数字、标点、表情不算；
-//! - 两次上屏间隔超过 [`ACTIVE_GAP_MS`]（10 秒）视为休息，不计入活跃时长；
-//! - 连续天数以最后一个有记录的日子为准，今天还没输入时从昨天起算；
-//! - 长按只算一次，密码框里的按键不计。
+//! 记什么（stats.json 里只有这些）：每天上屏的字符数、按类别（汉字 / 字母 / 数字 / 标点 / 表情 /
+//! 其他）的字符数、活跃毫秒数、每个物理键当天按下的次数、按输入模式和双拼方案分的字符数、
+//! 候选位置 1–9 和「第 10 个以后」的次数。
 //!
-//! 文件由输入法进程写、设置界面只读（清空/开关除外），写入走临时文件 + rename，
-//! 读到的永远是完整文件。清空会换一个 `generation`，输入法攒着没写的旧计数发现代号变了就丢掉，
-//! 不会在清空之后又写回来。
+//! 不记什么：上屏的文字、词、拼音、按键顺序、每次按键或上屏的时刻（算活跃时长用的上一次上屏时刻
+//! 只在内存里）、哪个应用。密码框（外壳传 [`SENSITIVE`]）里的按键和上屏整个不算。
+//!
+//! 开关在 archtype.conf 的 `TypingStats`（默认 False），外壳读到以后调 [`Recorder::set_enabled`]。
+//! 关着时 [`Recorder`] 什么都不做：不计数、不起线程、不碰文件。
+//!
+//! 文件只有输入法进程（这里的写文件线程）写。按键和上屏只改内存里的一份，攒够了交给写文件线程：
+//! 它读文件、加上这批、去掉 [`KEEP_DAYS`] 天以前的、原子写回（0600）。按键的线程不读写文件。
+//!
+//! 清空：设置界面调 [`clear`]（或照它的做法）——旁边的 `stats.clear` 里的整数加一，再删掉
+//! `stats.json`。写文件线程每次写之前看这个数：和攒这批时看到的不一样，说明这批里有清空之前打的，
+//! 整批丢掉；文件里记的 `cleared` 和它不一样（清空的同时正好写回了旧数据），文件当成空的。
+//! 设置界面显示时也一样：`cleared` 和 `stats.clear` 对不上就当没有记录。
 
 use std::collections::BTreeMap;
 use std::fs;
 use std::io::Write;
 use std::path::{Path, PathBuf};
+use std::sync::mpsc;
+use std::thread::JoinHandle;
+use std::time::Duration;
 
 use serde_json::{json, Map, Value};
 
 /// 两次上屏间隔不超过这个值，这段间隔算作活跃输入时间。
 pub const ACTIVE_GAP_MS: i64 = 10_000;
-/// 攒够这么久（或 [`FLUSH_COMMITS`] 次上屏）写一次文件。
+/// 攒够这么久（或 [`FLUSH_COMMITS`] 次上屏）交给写文件线程一次。
 const FLUSH_INTERVAL_MS: i64 = 30_000;
 const FLUSH_COMMITS: u32 = 20;
-/// 读文件的上限：损坏或恶意文件不能整个读进内存。
-const MAX_FILE_BYTES: u64 = 16 * 1024 * 1024;
+/// 只留最近这么多天；更早的写的时候删掉。
+pub const KEEP_DAYS: i64 = 400;
+/// 文件大小上限。超过的（不是我们写的）挪到 `stats.json.bad`，从空的重新记；
+/// 我们自己写的超过时从最早的一天开始删到写得下（留 400 天、键名有限，正常到不了）。
+pub const MAX_FILE_BYTES: usize = 16 * 1024 * 1024;
 const MAX_COUNT: u64 = 9_000_000_000_000_000;
-const VERSION: u32 = 1;
+const DAY_MS: i64 = 24 * 60 * 60 * 1000;
+/// 一张计数表（键位、模式、方案）最多这么多项，名字最长这么多字节（只认字母、数字、下划线）。
+const MAX_MAP_ENTRIES: usize = 256;
+const MAX_NAME_BYTES: usize = 32;
+const VERSION: u32 = 2;
+
+/// 外壳传的标志：这是密码框（或别的敏感输入框），这次按键 / 上屏不算。
+pub const SENSITIVE: u32 = 1;
+
+/// 认的输入模式名（上屏来源）；别的名字不记。
+const SOURCES: [&str; 5] = ["quanpin", "shuangpin", "wubi", "english", "translate"];
 
 /// 一天里的字符分类。
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
@@ -49,7 +72,7 @@ impl Kinds {
             Kind::Emoji => &mut self.emoji,
             Kind::Other => &mut self.other,
         };
-        *slot = slot.saturating_add(amount).min(MAX_COUNT);
+        *slot = add_count(*slot, amount);
     }
 
     pub fn readable(&self) -> u64 {
@@ -57,12 +80,12 @@ impl Kinds {
     }
 
     fn merge(&mut self, other: &Self) {
-        self.han = self.han.saturating_add(other.han).min(MAX_COUNT);
-        self.latin = self.latin.saturating_add(other.latin).min(MAX_COUNT);
-        self.number = self.number.saturating_add(other.number).min(MAX_COUNT);
-        self.punct = self.punct.saturating_add(other.punct).min(MAX_COUNT);
-        self.emoji = self.emoji.saturating_add(other.emoji).min(MAX_COUNT);
-        self.other = self.other.saturating_add(other.other).min(MAX_COUNT);
+        self.han = add_count(self.han, other.han);
+        self.latin = add_count(self.latin, other.latin);
+        self.number = add_count(self.number, other.number);
+        self.punct = add_count(self.punct, other.punct);
+        self.emoji = add_count(self.emoji, other.emoji);
+        self.other = add_count(self.other, other.other);
     }
 
     fn to_json(&self) -> Value {
@@ -77,17 +100,17 @@ impl Kinds {
     }
 
     fn from_json(value: Option<&Value>) -> Self {
-        let mut out = Self::default();
         let Some(map) = value.and_then(Value::as_object) else {
-            return out;
+            return Self::default();
         };
-        out.han = number_of(map.get("han"));
-        out.latin = number_of(map.get("latin"));
-        out.number = number_of(map.get("number"));
-        out.punct = number_of(map.get("punct"));
-        out.emoji = number_of(map.get("emoji"));
-        out.other = number_of(map.get("other"));
-        out
+        Self {
+            han: number_of(map.get("han")),
+            latin: number_of(map.get("latin")),
+            number: number_of(map.get("number")),
+            punct: number_of(map.get("punct")),
+            emoji: number_of(map.get("emoji")),
+            other: number_of(map.get("other")),
+        }
     }
 }
 
@@ -97,9 +120,9 @@ pub struct Day {
     pub chars: u64,
     pub kinds: Kinds,
     pub active_ms: u64,
-    /// 键位 id（W3C `KeyboardEvent.code`）→ 按下次数。
+    /// 键位 id（W3C `KeyboardEvent.code`）→ 当天按下的次数。
     pub keys: BTreeMap<String, u64>,
-    /// 上屏来源（拼音、英文、互译……）→ 字符数。
+    /// 输入模式（[`SOURCES`]）→ 字符数。
     pub sources: BTreeMap<String, u64>,
     /// 双拼方案 → 字符数。
     pub schemes: BTreeMap<String, u64>,
@@ -111,40 +134,27 @@ pub struct Day {
 
 impl Day {
     fn merge(&mut self, other: &Self) {
-        self.chars = self.chars.saturating_add(other.chars).min(MAX_COUNT);
+        self.chars = add_count(self.chars, other.chars);
         self.kinds.merge(&other.kinds);
-        self.active_ms = self
-            .active_ms
-            .saturating_add(other.active_ms)
-            .min(24 * 60 * 60 * 1000);
-        for (key, count) in &other.keys {
-            let slot = self.keys.entry(key.clone()).or_default();
-            *slot = slot.saturating_add(*count).min(MAX_COUNT);
-        }
-        for (key, count) in &other.sources {
-            let slot = self.sources.entry(key.clone()).or_default();
-            *slot = slot.saturating_add(*count).min(MAX_COUNT);
-        }
-        for (key, count) in &other.schemes {
-            let slot = self.schemes.entry(key.clone()).or_default();
-            *slot = slot.saturating_add(*count).min(MAX_COUNT);
-        }
+        self.active_ms = self.active_ms.saturating_add(other.active_ms).min(DAY_MS as u64);
+        merge_map(&mut self.keys, &other.keys);
+        merge_map(&mut self.sources, &other.sources);
+        merge_map(&mut self.schemes, &other.schemes);
         for (slot, count) in self.selections.iter_mut().zip(other.selections) {
-            *slot = slot.saturating_add(count).min(MAX_COUNT);
+            *slot = add_count(*slot, count);
         }
-        self.beyond = self.beyond.saturating_add(other.beyond).min(MAX_COUNT);
+        self.beyond = add_count(self.beyond, other.beyond);
     }
 
     fn to_json(&self) -> Value {
-        let selections: Vec<u64> = self.selections.to_vec();
         json!({
             "chars": self.chars,
             "kinds": self.kinds.to_json(),
             "activeMs": self.active_ms,
-            "keys": string_map_json(&self.keys),
-            "sources": string_map_json(&self.sources),
-            "schemes": string_map_json(&self.schemes),
-            "selections": selections,
+            "keys": map_json(&self.keys),
+            "sources": map_json(&self.sources),
+            "schemes": map_json(&self.schemes),
+            "selections": self.selections.to_vec(),
             "beyond": self.beyond,
         })
     }
@@ -156,7 +166,7 @@ impl Day {
         let mut out = Self {
             chars: number_of(map.get("chars")),
             kinds: Kinds::from_json(map.get("kinds")),
-            active_ms: number_of(map.get("activeMs")),
+            active_ms: number_of(map.get("activeMs")).min(DAY_MS as u64),
             keys: map_of_numbers(map.get("keys")),
             sources: map_of_numbers(map.get("sources")),
             schemes: map_of_numbers(map.get("schemes")),
@@ -172,70 +182,65 @@ impl Day {
     }
 }
 
+/// 按天的计数（内存里攒着的一批，或整份文件）。
+pub type Days = BTreeMap<String, Day>;
+
 /// 整份统计文件。
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Document {
-    /// 用户有没有打开统计。文件不存在时默认打开。
-    pub enabled: bool,
-    /// 清空代号：每次清空换一个随机数，输入法据此丢掉清空之前攒着的计数。
-    pub generation: u64,
-    /// 上一次计入统计的上屏时刻（Unix 毫秒），用来算两次上屏的间隔。
-    pub last_commit_ms: i64,
-    pub days: BTreeMap<String, Day>,
+    /// 写这份文件时 `stats.clear` 里的数；和现在的对不上，说明之后清空过，整份不算。
+    pub cleared: u64,
+    pub days: Days,
 }
 
-impl Default for Document {
-    fn default() -> Self {
-        Self {
-            enabled: true,
-            generation: 0,
-            last_commit_ms: 0,
-            days: BTreeMap::new(),
-        }
-    }
+/// 读统计文件出的错。
+#[derive(Debug)]
+pub enum LoadError {
+    /// 读不了（权限、不是普通文件……）：不动它，这次不写。
+    Io(String),
+    /// 内容坏了或太大：挪开，从空的重新记。
+    Bad(String),
 }
 
 impl Document {
-    /// 读统计文件；不存在时是默认文档。JSON 坏了返回错误，不覆盖原文件。
-    pub fn load(path: &Path) -> Result<Self, String> {
+    /// 读统计文件；不存在时是空的。
+    pub fn load(path: &Path) -> Result<Self, LoadError> {
         let metadata = match fs::metadata(path) {
             Ok(metadata) => metadata,
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
                 return Ok(Self::default());
             }
-            Err(error) => return Err(format!("读统计文件失败：{error}")),
+            Err(error) => return Err(LoadError::Io(format!("读统计文件失败：{error}"))),
         };
         if !metadata.is_file() {
-            return Err("统计文件不是普通文件".to_string());
+            return Err(LoadError::Io("统计文件不是普通文件".to_string()));
         }
-        if metadata.len() > MAX_FILE_BYTES {
-            return Err("统计文件太大".to_string());
+        if metadata.len() > MAX_FILE_BYTES as u64 {
+            return Err(LoadError::Bad("统计文件超过 16 MB".to_string()));
         }
-        let bytes = fs::read(path).map_err(|error| format!("读统计文件失败：{error}"))?;
-        Self::from_bytes(&bytes)
+        let bytes = fs::read(path).map_err(|error| LoadError::Io(format!("读统计文件失败：{error}")))?;
+        Self::from_bytes(&bytes).map_err(LoadError::Bad)
     }
 
     pub fn from_bytes(bytes: &[u8]) -> Result<Self, String> {
-        let value: Value = serde_json::from_slice(bytes).map_err(|_| "统计文件不是合法 JSON".to_string())?;
+        if bytes.len() > MAX_FILE_BYTES {
+            return Err("统计文件超过 16 MB".to_string());
+        }
+        let value: Value =
+            serde_json::from_slice(bytes).map_err(|_| "统计文件不是合法 JSON".to_string())?;
         let Some(map) = value.as_object() else {
             return Err("统计文件不是对象".to_string());
         };
-        let mut days = BTreeMap::new();
+        let mut days = Days::new();
         if let Some(entries) = map.get("days").and_then(Value::as_object) {
             for (day, value) in entries {
-                if !is_valid_day(day) {
-                    continue;
+                if is_valid_day(day) {
+                    days.insert(day.clone(), Day::from_json(value));
                 }
-                days.insert(day.clone(), Day::from_json(value));
             }
         }
         Ok(Self {
-            enabled: map.get("enabled").and_then(Value::as_bool).unwrap_or(true),
-            generation: number_of(map.get("generation")),
-            last_commit_ms: map
-                .get("lastCommitMs")
-                .and_then(Value::as_i64)
-                .unwrap_or(0),
+            cleared: map.get("cleared").and_then(Value::as_u64).unwrap_or(0),
             days,
         })
     }
@@ -248,184 +253,242 @@ impl Document {
             .collect();
         let document = json!({
             "version": VERSION,
-            "enabled": self.enabled,
-            "generation": self.generation,
-            "lastCommitMs": self.last_commit_ms,
+            "cleared": self.cleared,
             "days": days,
         });
         serde_json::to_vec_pretty(&document).unwrap_or_default()
     }
 
-    pub fn save(&self, path: &Path) -> Result<(), String> {
-        let bytes = self.to_bytes();
-        write_atomic(path, &bytes)
-    }
-
-    fn merge(&mut self, other: &Self) {
-        for (day, value) in &other.days {
+    fn merge(&mut self, days: &Days) {
+        for (day, value) in days {
             self.days.entry(day.clone()).or_default().merge(value);
         }
-        if other.last_commit_ms > 0 {
-            self.last_commit_ms = other.last_commit_ms;
+    }
+
+    /// 去掉 [`KEEP_DAYS`] 天以前的。
+    pub fn prune(&mut self, now_ms: i64) {
+        let cutoff = local_day(now_ms.saturating_sub(KEEP_DAYS * DAY_MS));
+        if cutoff.is_empty() {
+            return;
+        }
+        self.days.retain(|day, _| day.as_str() >= cutoff.as_str());
+    }
+
+    /// 排成要写的字节；超过 [`MAX_FILE_BYTES`] 时从最早的一天删起。
+    fn to_bytes_capped(&mut self) -> Vec<u8> {
+        loop {
+            let bytes = self.to_bytes();
+            if bytes.len() <= MAX_FILE_BYTES || self.days.is_empty() {
+                return bytes;
+            }
+            // 按超出的比例一次删掉最早的几天（至少一天），再排一次
+            let over = (bytes.len() - MAX_FILE_BYTES) as f64 / bytes.len() as f64;
+            let drop = ((self.days.len() as f64 * over).ceil() as usize).max(1);
+            match self.days.keys().nth(drop).cloned() {
+                Some(first_kept) => self.days = self.days.split_off(&first_kept),
+                None => self.days.clear(),
+            }
         }
     }
 }
 
-/// 输入法进程里的记录器：按键与上屏先攒在内存，再按节流合并进文件。
+/// `stats.json` 旁边的清空计数文件（`stats.clear`）。
+pub fn clear_marker_path(path: &Path) -> PathBuf {
+    path.with_extension("clear")
+}
+
+/// 坏了的统计文件挪到这里（`stats.json.bad`），只留最近的一份。
+pub fn bad_path(path: &Path) -> PathBuf {
+    let mut name = path.file_name().map(|n| n.to_os_string()).unwrap_or_default();
+    name.push(".bad");
+    path.with_file_name(name)
+}
+
+/// 读清空计数；没有文件、读不出数时是 0。
+pub fn read_clear_marker(path: &Path) -> u64 {
+    fs::read_to_string(clear_marker_path(path))
+        .ok()
+        .and_then(|text| text.trim().parse::<u64>().ok())
+        .unwrap_or(0)
+}
+
+/// 清空统计（设置界面用，输入法开着关着都行）：清空计数加一，再删掉统计文件。
+///
+/// 先加计数：输入法这时正好在写的话，写完会发现计数变了、自己删掉；攒着没写的那批下次写时丢掉。
+pub fn clear(path: &Path) -> Result<(), String> {
+    let next = read_clear_marker(path).wrapping_add(1).max(1);
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent).map_err(|error| format!("建统计目录失败：{error}"))?;
+    }
+    write_private(&clear_marker_path(path), format!("{next}\n").as_bytes())?;
+    for file in [path.to_path_buf(), bad_path(path)] {
+        match fs::remove_file(&file) {
+            Ok(()) => {}
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+            Err(error) => return Err(format!("删统计文件失败：{error}")),
+        }
+    }
+    Ok(())
+}
+
+/// 设置界面读统计用：读文件，清空过（`cleared` 对不上）或读不出来时是空的。
+pub fn load_current(path: &Path) -> Document {
+    let marker = read_clear_marker(path);
+    match Document::load(path) {
+        Ok(document) if document.cleared == marker => document,
+        _ => Document::default(),
+    }
+}
+
+// ---------------- 输入法进程里的记录器
+
+/// X11 键码（0..512）按下没松开的位图：长按的自动重复只算一次。
+#[derive(Clone, Debug, Default)]
+struct HeldKeys([u64; 8]);
+
+impl HeldKeys {
+    const LIMIT: u32 = 8 * 64;
+
+    fn slot(code: u32) -> Option<(usize, u64)> {
+        (code < Self::LIMIT).then(|| ((code / 64) as usize, 1_u64 << (code % 64)))
+    }
+
+    /// 记下按下；原来就按着时返回 false。
+    fn press(&mut self, code: u32) -> bool {
+        let Some((word, bit)) = Self::slot(code) else {
+            return false;
+        };
+        let fresh = self.0[word] & bit == 0;
+        self.0[word] |= bit;
+        fresh
+    }
+
+    fn release(&mut self, code: u32) {
+        if let Some((word, bit)) = Self::slot(code) {
+            self.0[word] &= !bit;
+        }
+    }
+
+    fn clear(&mut self) {
+        self.0 = [0; 8];
+    }
+
+    #[cfg(test)]
+    fn is_empty(&self) -> bool {
+        self.0.iter().all(|word| *word == 0)
+    }
+}
+
+/// 输入法进程里的记录器：按键与上屏只改内存，攒够了交给写文件线程。
+///
+/// 新建时是关着的：什么都不记、不起线程、不碰文件，外壳读到 `TypingStats=True` 才打开。
 pub struct Recorder {
-    path: PathBuf,
     enabled: bool,
-    generation: u64,
-    last_commit_ms: i64,
-    pending: Document,
-    has_pending: bool,
+    pending: Days,
     pending_commits: u32,
-    last_write_ms: i64,
-    last_refresh_ms: i64,
-    /// 按下的键（长按只算一次）：[0] 是 X11 键码，[1] 是 macOS 虚拟键码。
-    held: [u64; 8],
-    /// 上一次松开的键，用来识破 X11 没有 detectable-repeat 时合成的「松开+按下」。
-    last_release: Option<(u32, u32, i64)>,
+    last_submit_ms: i64,
+    /// 上一次上屏的时刻，只用来算活跃时长，不落盘；关掉统计时清零。
+    last_commit_ms: i64,
+    held: HeldKeys,
+    /// 上一次松开的 X11 键和时刻，用来识破没有 detectable-repeat 时合成的「松开 + 按下」。只在内存里。
+    last_release: Option<(u32, i64)>,
+    writer: Writer,
 }
 
 impl Recorder {
-    /// 打开一个统计文件；读不出来时按默认文档处理，下一次写会建立文件。
+    /// 建一个记录器（关着）。不读文件、不建文件。
     pub fn new(path: impl Into<PathBuf>) -> Self {
-        let path = path.into();
-        let mut recorder = Self {
-            path,
-            enabled: true,
-            generation: 0,
-            last_commit_ms: 0,
-            pending: Document::default(),
-            has_pending: false,
+        Self {
+            enabled: false,
+            pending: Days::new(),
             pending_commits: 0,
-            last_write_ms: 0,
-            last_refresh_ms: 0,
-            held: [0; 8],
+            last_submit_ms: 0,
+            last_commit_ms: 0,
+            held: HeldKeys::default(),
             last_release: None,
-        };
-        recorder.refresh(0);
-        recorder
+            writer: Writer::new(path.into()),
+        }
     }
 
     pub fn path(&self) -> &Path {
-        &self.path
+        &self.writer.path
     }
 
     pub fn enabled(&self) -> bool {
         self.enabled
     }
 
-    /// 重读文件里的开关、清空代号和上一次上屏时刻。统计关着时丢掉攒着的计数。
-    pub fn refresh(&mut self, now_ms: i64) {
-        self.last_refresh_ms = now_ms;
-        let Ok(document) = Document::load(&self.path) else {
-            return;
-        };
-        self.enabled = document.enabled;
-        if document.generation != self.generation {
-            // 设置界面清空过：攒着的这批是清空之前打的，丢掉。
-            self.generation = document.generation;
-            self.pending = Document::default();
-            self.has_pending = false;
-            self.pending_commits = 0;
-            self.last_commit_ms = document.last_commit_ms;
+    /// 打开或关上统计。关上时丢掉内存里攒着、还没交出去的计数，以后什么都不记。
+    pub fn set_enabled(&mut self, enabled: bool, now_ms: i64) {
+        if enabled == self.enabled {
             return;
         }
-        if !self.enabled {
-            self.pending = Document::default();
-            self.has_pending = false;
-            self.pending_commits = 0;
-        }
-        if document.last_commit_ms > 0 {
-            self.last_commit_ms = document.last_commit_ms;
+        self.reset_memory();
+        self.enabled = enabled;
+        if enabled {
+            // 写文件线程记下现在的清空计数：之后清空过，这之后攒的第一批也要丢
+            self.writer.send(Message::Start);
+            self.last_submit_ms = now_ms;
         }
     }
 
-    fn maybe_refresh(&mut self, now_ms: i64) {
-        if now_ms - self.last_refresh_ms >= FLUSH_INTERVAL_MS {
-            self.refresh(now_ms);
-        }
+    fn reset_memory(&mut self) {
+        self.pending.clear();
+        self.pending_commits = 0;
+        self.last_commit_ms = 0;
+        self.held.clear();
+        self.last_release = None;
     }
 
     /// 一次物理按键。`down` 为假时只松开（用来识别长按和合成重复）。
     ///
     /// `platform`：0 = X11/fcitx5（`code` 是 XKB 键码，内部减 8 成 evdev），1 = macOS（`NSEvent.keyCode`）。
-    pub fn key(&mut self, platform: i32, code: u32, down: bool, now_ms: i64) {
-        self.maybe_refresh(now_ms);
-        if platform != 0 && platform != 1 {
+    /// `flags` 带 [`SENSITIVE`]（密码框）时不算。
+    pub fn key(&mut self, platform: i32, code: u32, down: bool, flags: u32, now_ms: i64) {
+        if !self.enabled {
             return;
         }
-        // macOS 的 InputMethodKit 只送按下（没有松开），自动重复由外壳的 `isARepeat` 挡掉，
-        // 所以这里不做长按去重；松开事件对 macOS 没有意义。
-        if platform == 1 {
-            if !down || !self.enabled {
-                return;
+        match platform {
+            0 => {
+                if !down {
+                    self.held.release(code);
+                    self.last_release = Some((code, now_ms));
+                    return;
+                }
+                // 长按的自动重复；键码超出范围（不是物理键）也在这里挡掉
+                if !self.held.press(code) {
+                    return;
+                }
+                if let Some((released, at)) = self.last_release {
+                    if released == code && now_ms >= at && now_ms - at <= 2 {
+                        return; // X11 合成的一次重复
+                    }
+                }
             }
-            let Some(id) = key_id(1, code) else {
-                return;
-            };
-            let day = local_day(now_ms);
-            if day.is_empty() {
-                return;
-            }
-            *self
-                .pending
-                .days
-                .entry(day)
-                .or_default()
-                .keys
-                .entry(id.to_string())
-                .or_default() += 1;
-            self.has_pending = true;
-            return;
+            // macOS 的 InputMethodKit 只送按下（没有松开），自动重复由外壳的 `isARepeat` 挡掉
+            1 if down => {}
+            _ => return,
         }
-        let slot = platform as usize;
-        if code >= 512 {
+        if flags & SENSITIVE != 0 {
             return;
         }
         let Some(id) = key_id(platform, code) else {
             return;
         };
-        if !down {
-            self.held[slot] &= !(1_u64 << code);
-            self.last_release = Some((slot as u32, code, now_ms));
-            return;
-        }
-        if !self.enabled {
-            return;
-        }
-        if self.held[slot] & (1_u64 << code) != 0 {
-            return; // 长按的自动重复
-        }
-        self.held[slot] |= 1_u64 << code;
-        if let Some((released_slot, released_code, at)) = self.last_release {
-            if released_slot == slot as u32
-                && released_code == code
-                && now_ms >= at
-                && now_ms - at <= 2
-            {
-                return; // X11 合成的一次重复
-            }
-        }
         let day = local_day(now_ms);
         if day.is_empty() {
             return;
         }
-        *self
-            .pending
-            .days
-            .entry(day)
-            .or_default()
-            .keys
-            .entry(id.to_string())
-            .or_default() += 1;
-        self.has_pending = true;
+        let slot = self.pending.entry(day).or_default().keys.entry(id.to_string()).or_default();
+        *slot = add_count(*slot, 1);
+        if now_ms - self.last_submit_ms >= FLUSH_INTERVAL_MS {
+            self.flush(now_ms);
+        }
     }
 
-    /// 一次上屏。`text` 只用来分类计数，不落盘。
+    /// 一次上屏。`text` 只在这里数一数各类字符有几个，不留下。
     ///
+    /// `source` 是输入模式（[`SOURCES`] 之一，别的不记），`scheme` 是双拼方案名（只认字母数字）。
     /// `cand_index` 是候选在列表里的位置（1 起）；不是选候选上屏时为 0。
     pub fn commit(
         &mut self,
@@ -433,10 +496,10 @@ impl Recorder {
         source: &str,
         scheme: &str,
         cand_index: u32,
+        flags: u32,
         now_ms: i64,
     ) {
-        self.maybe_refresh(now_ms);
-        if !self.enabled {
+        if !self.enabled || flags & SENSITIVE != 0 {
             return;
         }
         let (chars, kinds) = classify(text);
@@ -447,94 +510,212 @@ impl Recorder {
         if day.is_empty() {
             return;
         }
-        let entry = self.pending.days.entry(day).or_default();
-        entry.chars = entry.chars.saturating_add(chars).min(MAX_COUNT);
+        let entry = self.pending.entry(day).or_default();
+        entry.chars = add_count(entry.chars, chars);
         entry.kinds.merge(&kinds);
-        if !source.is_empty() {
+        if SOURCES.contains(&source) {
             let slot = entry.sources.entry(source.to_string()).or_default();
-            *slot = slot.saturating_add(chars).min(MAX_COUNT);
+            *slot = add_count(*slot, chars);
         }
-        if !scheme.is_empty() {
-            let slot = entry.schemes.entry(scheme.to_string()).or_default();
-            *slot = slot.saturating_add(chars).min(MAX_COUNT);
+        let scheme = scheme.to_ascii_lowercase();
+        if is_plain_name(&scheme) {
+            let slot = entry.schemes.entry(scheme).or_default();
+            *slot = add_count(*slot, chars);
         }
         match cand_index {
             1..=9 => {
                 let slot = &mut entry.selections[cand_index as usize - 1];
-                *slot = slot.saturating_add(1).min(MAX_COUNT);
+                *slot = add_count(*slot, 1);
             }
-            10.. => {
-                entry.beyond = entry.beyond.saturating_add(1).min(MAX_COUNT);
-            }
+            10.. => entry.beyond = add_count(entry.beyond, 1),
             _ => {}
         }
         let gap = now_ms - self.last_commit_ms;
         if self.last_commit_ms > 0 && gap > 0 && gap <= ACTIVE_GAP_MS {
-            entry.active_ms = entry
-                .active_ms
-                .saturating_add(gap as u64)
-                .min(24 * 60 * 60 * 1000);
+            entry.active_ms = entry.active_ms.saturating_add(gap as u64).min(DAY_MS as u64);
         }
         self.last_commit_ms = now_ms;
-        self.pending.last_commit_ms = now_ms;
-        self.has_pending = true;
         self.pending_commits += 1;
-        if self.pending_commits >= FLUSH_COMMITS
-            || now_ms - self.last_write_ms >= FLUSH_INTERVAL_MS
-        {
-            let _ = self.flush(now_ms);
+        if self.pending_commits >= FLUSH_COMMITS || now_ms - self.last_submit_ms >= FLUSH_INTERVAL_MS {
+            self.flush(now_ms);
         }
     }
 
-    /// 把攒着的计数合并进文件。文件被清空过（代号变了）或统计关着时整批丢掉。
-    pub fn flush(&mut self, now_ms: i64) -> Result<(), String> {
-        self.last_refresh_ms = now_ms;
-        let mut document = Document::load(&self.path)?;
-        self.enabled = document.enabled;
-        if document.generation != self.generation {
-            self.generation = document.generation;
-            self.pending = Document::default();
-            self.has_pending = false;
-            self.pending_commits = 0;
-            self.last_commit_ms = document.last_commit_ms;
-            return Ok(());
-        }
-        if !self.has_pending {
-            return Ok(());
-        }
-        if !document.enabled {
-            self.pending = Document::default();
-            self.has_pending = false;
-            self.pending_commits = 0;
-            return Ok(());
-        }
-        document.merge(&self.pending);
-        document.save(&self.path)?;
-        self.last_commit_ms = document.last_commit_ms;
-        self.pending = Document::default();
-        self.has_pending = false;
+    /// 把攒着的计数交给写文件线程（不等它写）。关着、没有攒着的时什么都不做。
+    pub fn flush(&mut self, now_ms: i64) {
+        self.last_submit_ms = now_ms;
         self.pending_commits = 0;
-        self.last_write_ms = now_ms;
+        if !self.enabled || self.pending.is_empty() {
+            return;
+        }
+        let batch = std::mem::take(&mut self.pending);
+        self.writer.send(Message::Write(batch, now_ms));
+    }
+
+    /// 等交出去的都写完。返回这期间写失败的原因；`timeout` 是 None 时一直等。
+    pub fn wait(&mut self, timeout: Option<Duration>) -> Result<(), String> {
+        self.writer.wait(timeout)
+    }
+}
+
+impl Drop for Recorder {
+    fn drop(&mut self) {
+        // 关着时 pending 是空的，flush 什么都不做；开着时把最后这批交出去，Writer 被 drop 时等它写完
+        self.flush(now_ms());
+    }
+}
+
+// ---------------- 写文件线程
+
+enum Message {
+    /// 统计刚打开：记下现在的清空计数。
+    Start,
+    /// 一批计数和交出来的时刻（删旧数据按它算今天）。
+    Write(Days, i64),
+    /// 等前面的都写完，回报这期间的错误。
+    Sync(mpsc::Sender<Option<String>>),
+}
+
+struct Writer {
+    path: PathBuf,
+    sender: Option<mpsc::Sender<Message>>,
+    handle: Option<JoinHandle<()>>,
+}
+
+impl Writer {
+    fn new(path: PathBuf) -> Self {
+        Self {
+            path,
+            sender: None,
+            handle: None,
+        }
+    }
+
+    /// 交给写文件线程；第一次交时才起线程。起不了线程时这批丢掉（统计不要紧，不在按键线程上写）。
+    fn send(&mut self, message: Message) {
+        if self.sender.is_none() {
+            let (sender, receiver) = mpsc::channel();
+            let path = self.path.clone();
+            match std::thread::Builder::new()
+                .name("archtype-stats".into())
+                .spawn(move || run_writer(path, receiver))
+            {
+                Ok(handle) => {
+                    self.sender = Some(sender);
+                    self.handle = Some(handle);
+                }
+                Err(error) => {
+                    eprintln!("archtype: 起不了写打字统计的线程：{error}");
+                    return;
+                }
+            }
+        }
+        if let Some(sender) = &self.sender {
+            let _ = sender.send(message);
+        }
+    }
+
+    fn wait(&mut self, timeout: Option<Duration>) -> Result<(), String> {
+        let Some(sender) = &self.sender else {
+            return Ok(());
+        };
+        let (reply, answer) = mpsc::channel();
+        if sender.send(Message::Sync(reply)).is_err() {
+            return Err("写打字统计的线程已经退出".to_string());
+        }
+        let result = match timeout {
+            None => answer.recv().map_err(|_| "写打字统计的线程已经退出".to_string()),
+            Some(timeout) => answer
+                .recv_timeout(timeout)
+                .map_err(|_| "等写打字统计超时".to_string()),
+        };
+        match result? {
+            None => Ok(()),
+            Some(error) => Err(error),
+        }
+    }
+}
+
+impl Drop for Writer {
+    fn drop(&mut self) {
+        // 关掉发送端，线程把排着的写完就退
+        self.sender = None;
+        if let Some(handle) = self.handle.take() {
+            let _ = handle.join();
+        }
+    }
+}
+
+fn run_writer(path: PathBuf, receiver: mpsc::Receiver<Message>) {
+    let mut state = WriterState {
+        path,
+        known_clear: None,
+        errors: Vec::new(),
+    };
+    while let Ok(message) = receiver.recv() {
+        match message {
+            Message::Start => state.known_clear = Some(read_clear_marker(&state.path)),
+            Message::Write(batch, now_ms) => {
+                if let Err(error) = state.write(&batch, now_ms) {
+                    eprintln!("archtype: 打字统计写入失败：{error}");
+                    state.errors.push(error);
+                }
+            }
+            Message::Sync(reply) => {
+                let errors = std::mem::take(&mut state.errors);
+                let _ = reply.send((!errors.is_empty()).then(|| errors.join("；")));
+            }
+        }
+    }
+}
+
+struct WriterState {
+    path: PathBuf,
+    /// 开始攒这批时的清空计数。
+    known_clear: Option<u64>,
+    errors: Vec<String>,
+}
+
+impl WriterState {
+    fn write(&mut self, batch: &Days, now_ms: i64) -> Result<(), String> {
+        let marker = read_clear_marker(&self.path);
+        let known = *self.known_clear.get_or_insert(marker);
+        if known != marker {
+            // 攒这批的时候清空过：这批里有清空之前打的，整批丢掉；清空时正好写回去的旧数据也删掉
+            self.known_clear = Some(marker);
+            if matches!(Document::load(&self.path), Ok(document) if document.cleared != marker) {
+                let _ = fs::remove_file(&self.path);
+            }
+            return Ok(());
+        }
+        if batch.is_empty() {
+            return Ok(());
+        }
+        let mut document = match Document::load(&self.path) {
+            Ok(document) => document,
+            Err(LoadError::Io(error)) => return Err(error),
+            Err(LoadError::Bad(reason)) => {
+                // 坏了、太大（不是我们写的）：挪开留一份，从空的重新记
+                let bad = bad_path(&self.path);
+                eprintln!("archtype: {reason}，挪到 {} 重新记", bad.display());
+                fs::rename(&self.path, &bad).map_err(|error| format!("挪开坏的统计文件失败：{error}"))?;
+                Document::default()
+            }
+        };
+        if document.cleared != marker {
+            document = Document::default();
+        }
+        document.cleared = marker;
+        document.merge(batch);
+        document.prune(now_ms);
+        let bytes = document.to_bytes_capped();
+        write_private(&self.path, &bytes)?;
+        if read_clear_marker(&self.path) != marker {
+            // 写的时候正好清空了：刚写回去的有清空之前的，删掉（下一批也会因为计数变了丢掉）
+            let _ = fs::remove_file(&self.path);
+        }
         Ok(())
     }
-}
-
-/// 设置界面用：把清空请求写进文件（保留开关，换一个新代号）。
-///
-/// 输入法下一次写文件时看到代号变了，丢掉清空之前攒着的计数。
-pub fn clear_file(path: &Path, generation: u64) -> Result<(), String> {
-    let mut document = Document::load(path).unwrap_or_default();
-    document.generation = generation;
-    document.days.clear();
-    document.last_commit_ms = 0;
-    document.save(path)
-}
-
-/// 设置界面用：改开关。
-pub fn set_enabled(path: &Path, enabled: bool) -> Result<(), String> {
-    let mut document = Document::load(path).unwrap_or_default();
-    document.enabled = enabled;
-    document.save(path)
 }
 
 // ---------------- 字符分类
@@ -654,7 +835,7 @@ fn is_emoji(ch: char) -> bool {
 pub fn key_id(platform: i32, code: u32) -> Option<&'static str> {
     match platform {
         0 => x11_key_id(code.checked_sub(8)?),
-        1 => macos_key_id(code as u16),
+        1 => macos_key_id(u16::try_from(code).ok()?),
         _ => None,
     }
 }
@@ -899,12 +1080,7 @@ pub fn local_day(now_ms: i64) -> String {
     if unsafe { libc::localtime_r(&time, &mut tm) }.is_null() {
         return String::new();
     }
-    format!(
-        "{:04}-{:02}-{:02}",
-        tm.tm_year + 1900,
-        tm.tm_mon + 1,
-        tm.tm_mday
-    )
+    format!("{:04}-{:02}-{:02}", tm.tm_year + 1900, tm.tm_mon + 1, tm.tm_mday)
 }
 
 pub fn now_ms() -> i64 {
@@ -925,11 +1101,29 @@ fn is_valid_day(day: &str) -> bool {
         && bytes[8..].iter().all(u8::is_ascii_digit)
 }
 
+/// 计数表里的名字（键位 id、模式、方案）：只认字母、数字、下划线，不长。
+fn is_plain_name(name: &str) -> bool {
+    !name.is_empty()
+        && name.len() <= MAX_NAME_BYTES
+        && name.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'_')
+}
+
+fn add_count(count: u64, amount: u64) -> u64 {
+    count.saturating_add(amount).min(MAX_COUNT)
+}
+
+fn merge_map(into: &mut BTreeMap<String, u64>, from: &BTreeMap<String, u64>) {
+    for (key, count) in from {
+        if into.len() >= MAX_MAP_ENTRIES && !into.contains_key(key) {
+            continue;
+        }
+        let slot = into.entry(key.clone()).or_default();
+        *slot = add_count(*slot, *count);
+    }
+}
+
 fn number_of(value: Option<&Value>) -> u64 {
-    value
-        .and_then(Value::as_u64)
-        .unwrap_or(0)
-        .min(MAX_COUNT)
+    value.and_then(Value::as_u64).unwrap_or(0).min(MAX_COUNT)
 }
 
 fn map_of_numbers(value: Option<&Value>) -> BTreeMap<String, u64> {
@@ -938,33 +1132,29 @@ fn map_of_numbers(value: Option<&Value>) -> BTreeMap<String, u64> {
         return out;
     };
     for (key, value) in map {
+        if out.len() >= MAX_MAP_ENTRIES {
+            break;
+        }
         let count = number_of(Some(value));
-        if count > 0 {
+        if count > 0 && is_plain_name(key) {
             out.insert(key.clone(), count);
         }
     }
     out
 }
 
-fn string_map_json(map: &BTreeMap<String, u64>) -> Value {
-    let mut out = Map::new();
-    for (key, value) in map {
-        out.insert(key.clone(), json!(value));
-    }
-    Value::Object(out)
+fn map_json(map: &BTreeMap<String, u64>) -> Value {
+    Value::Object(map.iter().map(|(key, value)| (key.clone(), json!(value))).collect())
 }
 
-/// 原子写：同目录临时文件写完后 rename，读到的永远是完整文件。
-fn write_atomic(path: &Path, bytes: &[u8]) -> Result<(), String> {
+/// 原子写，文件只给自己读写（0600）：同目录临时文件写完、刷到盘上再 rename。
+fn write_private(path: &Path, bytes: &[u8]) -> Result<(), String> {
     let Some(parent) = path.parent() else {
         return Err("统计文件没有目录".to_string());
     };
     fs::create_dir_all(parent).map_err(|error| format!("建统计目录失败：{error}"))?;
-    let name = path
-        .file_name()
-        .and_then(|name| name.to_str())
-        .unwrap_or("stats.json");
-    let temporary = parent.join(format!(".{name}.tmp.{}", std::process::id()));
+    let name = path.file_name().and_then(|name| name.to_str()).unwrap_or("stats.json");
+    let temporary = parent.join(format!(".{name}.{}.tmp", std::process::id()));
     let result = (|| -> std::io::Result<()> {
         let mut file = {
             #[cfg(unix)]

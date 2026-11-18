@@ -1,0 +1,7 @@
+{
+	"InstallScripts" : 
+	[
+		"/home/ahui/DevCode/WowType/build-test/cmake_install.cmake"
+	],
+	"Parallel" : false
+}

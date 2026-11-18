@@ -8,6 +8,7 @@
 原生的 Adw 对话框画在设置窗口里面，这里只检查打得开。
 """
 
+import json
 import os
 import runpy
 import sys
@@ -18,6 +19,30 @@ import traceback
 sys.stdout.reconfigure(line_buffering=True)
 errors = []
 sys.excepthook = lambda t, v, tb: errors.append("".join(traceback.format_exception(t, v, tb)))
+
+# 会切主题、改字号、开关 GNOME 扩展、调 fcitx5 的 SetConfig：只许在私有的会话总线上跑
+# （CI：dbus-run-session -- xvfb-run -a python3 scripts/test-settings-gui.py）。在桌面上直接跑会改掉
+# 正在用的 fcitx5 主题和字号；gsettings 读的是临时 HOME 里的空库、写的却是本机的 dconf，
+# GNOME 已启用的扩展会被清空。所以 gsettings 一律放内存里，总线上有 fcitx5 就不跑。
+os.environ["GSETTINGS_BACKEND"] = "memory"
+
+
+def _fcitx5_on_bus():
+    from gi.repository import Gio
+    try:
+        bus = Gio.bus_get_sync(Gio.BusType.SESSION, None)
+        reply = bus.call_sync("org.freedesktop.DBus", "/org/freedesktop/DBus", "org.freedesktop.DBus",
+                              "NameHasOwner", __import__("gi").repository.GLib.Variant("(s)", ("org.fcitx.Fcitx5",)),
+                              None, Gio.DBusCallFlags.NONE, 3000, None)
+        return reply.unpack()[0]
+    except Exception:  # noqa: BLE001  连不上总线：反正碰不到正在用的 fcitx5
+        return False
+
+
+if _fcitx5_on_bus():
+    print("会话总线上有正在跑的 fcitx5：这个测试会改它的设置。请在私有总线上跑：\n"
+          "  dbus-run-session -- xvfb-run -a python3 scripts/test-settings-gui.py")
+    sys.exit(2)
 
 # 会改设置、加自定义词：放到临时目录里，不动本机的
 home = tempfile.mkdtemp(prefix="archtype-gui-test-")
@@ -152,6 +177,34 @@ def run(app):
         check(win.scheme_checks["Wubi86"].is_sensitive(), "有码表时五笔该能选")
     step("输入方案", input_scheme)
 
+    def stats_page():
+        # 打字统计默认关：只有开关、清除和说明；打开后画概览和各标签；清除删掉文件、计数加一
+        stats_file, clear_file = ns["STATS_FILE"], ns["STATS_CLEAR_FILE"]
+        check(win.values["TypingStats"] == "False", "打字统计该默认关")
+        win.show_page("stats")
+        pump()
+        check(win.stats_box.get_first_child() is not None, "关着时没有说明")
+        os.makedirs(os.path.dirname(stats_file), exist_ok=True)
+        day = {"chars": 5, "kinds": {"han": 5}, "activeMs": 60000, "keys": {"KeyA": 3, "F13": 1},
+               "sources": {"quanpin": 5}, "schemes": {"xiaohe": 5},
+               "selections": [1, 2, 0, 0, 0, 0, 0, 0, 0], "beyond": 1}
+        with open(stats_file, "w", encoding="utf-8") as f:
+            json.dump({"version": 2, "cleared": 0, "days": {time.strftime("%Y-%m-%d"): day}}, f)
+        win.stats_row.set_active(True)
+        check(pump_until(lambda: win.values["TypingStats"] == "True"), "打开统计没存上")
+        check(pump_until(lambda: win.stats_box.get_first_child() is not win.stats_box.get_last_child()), "打开统计后没画概览")
+        for tab in ("keys", "trend", "kind", "mode", "scheme", "ranks"):
+            win.stats_stack.set_visible_child_name(tab)
+            pump(0.05)
+        check(win.stats_clear_row.get_sensitive(), "有记录时清除该能点")
+        win.on_stats_clear(None, "clear")
+        check(not os.path.exists(stats_file), "清除没删掉 stats.json")
+        with open(clear_file, encoding="utf-8") as f:
+            check(f.read().strip() == "1", "清除计数没加一")
+        win.stats_row.set_active(False)
+        check(pump_until(lambda: win.values["TypingStats"] == "False"), "关掉统计没存上")
+    step("打字统计", stats_page)
+
     def switches():
         win.theme_row.set_active(True)
         win.theme_row.set_active(False)
@@ -195,6 +248,55 @@ def run(app):
         check(("ce shi", "测试") in win.words, "回车没加上自定义词")
     step("输入框", entries)
 
+    def translate_engine():
+        # 翻译引擎三选一：本地 / 哔哩哔哩 / 自定义。选哪个写哪个的键，下面只出现它的设置
+        engine = win.engine_row
+        check(engine.get_selected() == 0, "默认不是本地翻译")
+        check(win.local_group.get_visible() and not win.bili_group.get_visible()
+              and not win.service_group.get_visible(), "本地翻译时出现了别的设置")
+        engine.set_selected(2)
+        win.url_row.set_text("https://api.example.com/v1")
+        win.tmodel_row.set_text("my-model")
+        check(win.values["TranslateLocal"] == "False", "选自定义没写 TranslateLocal=False")
+        check(win.values["TranslateBaseUrl"] == "https://api.example.com/v1", "自定义地址没存上")
+        check(win.service_group.get_visible() and not win.bili_group.get_visible(), "自定义时没出现填接口的地方")
+        check(pump_until(lambda: ns["read_translate_key"]() == "sk-test"), "Key 没存上")
+        engine.set_selected(1)
+        check(win.values["TranslateBaseUrl"] == ns["BILIBILI_URL"], "选哔哩哔哩没写它的地址")
+        check(win.values["TranslateModel"] == ns["BILIBILI_DEFAULT_MODEL"], "哔哩哔哩的模型不是 2B")
+        check(win.bili_group.get_visible() and not win.service_group.get_visible()
+              and not win.local_group.get_visible(), "选哔哩哔哩时显示的设置不对")
+        check(win.translate_ready(), "哔哩哔哩不用 Key 也该算配好了")
+        check("哔哩哔哩的服务器" in (win.bili_group.get_description() or ""), "没写隐私说明")
+        check(win.url_row.get_text() == "https://api.example.com/v1", "自定义框里的地址被改了")
+        win.bili_model_row.set_selected(1)
+        check(win.values["TranslateModel"] == "Index-Translate-9B", "哔哩哔哩的模型没存上")
+        config = ns["CONFIG_FILE"]
+        check(pump_until(lambda: os.path.exists(config) and "Index-Translate-9B" in open(config, encoding="utf-8").read()),
+              "哔哩哔哩没存盘")
+        check(ns["translate_engine"](ns["read_config"]()[0]) == 1, "读回来不是哔哩哔哩")
+        check(ns["read_translate_key"]() == "sk-test", "选哔哩哔哩把 Key 删了")
+        # 测试连接：不联网，换成假的 test_translate，看发给谁、带没带 Key
+        calls = []
+        scope = win.on_test_translate.__func__.__globals__
+        real = scope["test_translate"]
+        scope["test_translate"] = lambda base, key, model, target="en", text="你好", formal=False: (
+            calls.append((base, key, model)) or ("Hello", 0.3))
+        try:
+            win.bili_test_button.emit("clicked")
+            check(pump_until(lambda: "Hello" in (win.bili_test_row.get_subtitle() or "")),
+                  f"测试连接没出结果：{win.bili_test_row.get_subtitle()}")
+        finally:
+            scope["test_translate"] = real
+        check(calls == [(ns["BILIBILI_URL"], "", "Index-Translate-9B")], f"测试连接发的不对：{calls}")
+        # 换回自定义：框里的地址、模型照原样写回
+        engine.set_selected(2)
+        check(win.values["TranslateBaseUrl"] == "https://api.example.com/v1"
+              and win.values["TranslateModel"] == "my-model", "换回自定义没写回原来的地址和模型")
+        engine.set_selected(0)
+        check(win.values["TranslateLocal"] == "True", "换回本地没写 TranslateLocal=True")
+    step("翻译引擎", translate_engine)
+
     def dialog(name, action, answer=None):
         def go():
             for w in new_windows(win, action):
@@ -206,6 +308,7 @@ def run(app):
                     w.close()
         step(name, go)
     dialog("关于", win.on_about)
+    dialog("清除打字统计（取消）", lambda: win.stats_clear(None))
     dialog("删语音模型（取消）", lambda: win.on_voice_delete(None))
     dialog("下载离线翻译模型（取消）", lambda: win.on_local_download(None))
     dialog("恢复默认设置（确定）", win.on_reset, answer=1)

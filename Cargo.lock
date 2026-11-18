@@ -41,7 +41,7 @@ checksum = "330a5ed07fa54e4702c9d6c4174f74427fc0ef6e214bbd677ae50a5099946470"
 
 [[package]]
 name = "archtype-core"
-version = "0.5.1"
+version = "0.6.0"
 dependencies = [
  "anyhow",
  "archtype-voice",
@@ -51,7 +51,7 @@ dependencies = [
 
 [[package]]
 name = "archtype-voice"
-version = "0.5.1"
+version = "0.6.0"
 dependencies = [
  "anyhow",
  "cpal",
@@ -59,7 +59,7 @@ dependencies = [
 
 [[package]]
 name = "archtype-voiced"
-version = "0.5.1"
+version = "0.6.0"
 dependencies = [
  "anyhow",
  "archtype-voice",

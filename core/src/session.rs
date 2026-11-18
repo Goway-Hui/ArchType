@@ -123,6 +123,9 @@ pub struct Key {
     pub repeat: bool,
     /// 按键时刻（毫秒，单调递增的任意起点），不知道是 0。单按 Shift 看按住多久。
     pub time_ms: u64,
+    /// 应用里光标后一个字符，读不到是 None（带 [`key_hints::NEXT_CHAR`] 时是光标后没有字）。
+    /// 自动配对跳过右标点、成对删之前拿它核对右边确实是补好的那个。
+    pub next_char: Option<char>,
 }
 
 /// 外壳告诉会话的输入框情况（[`Key::hints`]）。
@@ -139,6 +142,8 @@ pub mod key_hints {
     /// 和 NO_TRANSLATE 分开：macOS 只知道系统全局的「安全输入」开没开（终端开了安全键盘输入时所有输入框都算），
     /// 拿它判断会让学习在所有地方静默停掉。
     pub const NO_LEARN: u32 = 1 << 4;
+    /// 应用告诉了光标后面的字：[`Key::next_char`] 是 None 时光标后确实没有字。有选区时外壳别带。
+    pub const NEXT_CHAR: u32 = 1 << 5;
 }
 
 /// 互译用的翻译器（[`crate::translate::Translator`]，或外壳自己的实现）。都不阻塞。
@@ -364,6 +369,12 @@ pub struct Frame {
     pub wake_after_ms: u32,
     /// 候选框上方的提示（工具栏、表情面板），没有是空串。
     pub aux: String,
+    /// 上屏以后（commit 落到应用以后）让外壳把应用里的光标挪几格：负数左移、正数右移，0 不动。
+    /// 自动配对上屏「（）」后是 -1（光标放到中间），跳过补好的右标点是 +1（这时可能还带着先上屏的候选）。
+    pub cursor_delta: i32,
+    /// 退格成对删：这次的退格没接（handled 为 false），外壳除了让应用删光标前的左标点，
+    /// 还要删光标后的右标点（一个 Delete）。两下按顺序发，别和挪光标的键乱了先后。
+    pub delete_next: bool,
 }
 
 /// 候选框的样子。
@@ -533,6 +544,10 @@ pub struct Config {
     /// 上屏以后的联想：选词上屏、整句上屏以后给出一页常跟在后面的词（[`Engine::associate`]）。
     /// 设置里默认开；这里默认关（外壳不认识联想就画不出来，C 接口里旧外壳没给这一项时也是关）。
     pub association: bool,
+    /// 中文标点自动配对：全角标点下打 `( [ < { " '` 上屏成对的（）【】《》「」“”‘’、光标放中间
+    /// （[`Frame::cursor_delta`]），在里面打完再按右半边跳过补好的那个，空的一对按退格两个一起删
+    /// （[`Frame::delete_next`]）。默认关（外壳要会挪光标才开，设置里也是默认关）。
+    pub auto_pair_punct: bool,
 }
 
 impl Default for Config {
@@ -560,6 +575,7 @@ impl Default for Config {
             wubi_auto_commit: true,
             wubi_hint: true,
             association: false,
+            auto_pair_punct: false,
         }
     }
 }
@@ -648,6 +664,8 @@ pub struct Session<'e> {
     pending: Option<String>,
     /// 这次调用上屏的字是选哪个候选来的；原样上屏输入时是 None。
     last_choice: Option<Candidate>,
+    /// 这个候选在列表里的位置（1 起）；没选候选时是 0。
+    last_choice_index: usize,
     /// 这次调用忘掉了学过的词（frame 取走）。
     forgot: bool,
     /// 这次调用上屏的里有学到的选词（frame 取走）。
@@ -682,7 +700,29 @@ pub struct Session<'e> {
     association: Option<Association>,
     /// 这次调用选词上屏了（后面没再上屏标点之类）：调用结束时出联想。
     association_due: bool,
+    /// 应用里光标后的字（这次按键时外壳给的，带 [`key_hints::NEXT_CHAR`] 时才算数）。
+    next_char: Option<char>,
+    /// 自动配对补上、还没跳过的右标点，外面的在前（可以套着：（“”））。光标一直在最后一个的右半边前面；
+    /// 光标可能挪走了（方向键、回车、快捷键、失去焦点、重置）就清空。
+    pairs: Vec<Pair>,
+    /// 这次调用以后外壳要挪的应用光标（frame 取走）。
+    cursor_delta: i32,
+    /// 这次的退格要外壳连光标后的右标点一起删（frame 取走）。
+    delete_next: bool,
 }
+
+/// 自动配对补上的一对标点（[`Config::auto_pair_punct`]）。
+#[derive(Clone, Copy, Debug)]
+struct Pair {
+    open: char,
+    close: char,
+    /// 左半边和光标之间有几个字：上屏的、交给应用的字和空格，里面跳过了的一对整个算上。
+    /// 退格减一；是 0 时左半边就在光标前，退格两个一起删。
+    inner: usize,
+}
+
+/// 最多记几层配对（再多就丢掉最外面的）。
+const MAX_PAIRS: usize = 32;
 
 impl Default for Session<'_> {
     fn default() -> Self {
@@ -703,6 +743,7 @@ impl Default for Session<'_> {
             grid_cursor: 0,
             pending: None,
             last_choice: None,
+            last_choice_index: 0,
             forgot: false,
             learned: false,
             quotes: [false; 2],
@@ -721,6 +762,10 @@ impl Default for Session<'_> {
             commit_start: None,
             association: None,
             association_due: false,
+            next_char: None,
+            pairs: Vec::new(),
+            cursor_delta: 0,
+            delete_next: false,
         }
     }
 }
@@ -776,6 +821,9 @@ impl<'e> Session<'e> {
             if !self.config.association {
                 self.close_association();
             }
+            if !self.config.auto_pair_punct {
+                self.pairs.clear();
+            }
         }
     }
 
@@ -797,6 +845,7 @@ impl<'e> Session<'e> {
     /// 处理一次按键。
     pub fn key(&mut self, key: &Key) -> Frame {
         self.last_choice = None;
+        self.last_choice_index = 0;
         if key.time_ms != 0 {
             self.now_ms = key.time_ms;
         }
@@ -810,6 +859,7 @@ impl<'e> Session<'e> {
             return self.frame(false);
         }
         self.prev_char = key.prev_char;
+        self.next_char = key.next_char;
         self.hints = key.hints;
         if !is_modifier_keysym(key.keysym) {
             // 上屏后紧接着按退格（编辑区空着，退格要交给应用删字）：刚才那次上屏是打错了，
@@ -840,6 +890,7 @@ impl<'e> Session<'e> {
             if !self.composing() {
                 self.set_context("");
             }
+            self.pair_key_passed(key);
         }
         self.settle_association();
         self.frame(handled)
@@ -1714,6 +1765,10 @@ impl<'e> Session<'e> {
         if mode == self.mode {
             return;
         }
+        if self.mode == Mode::Translate || mode == Mode::Translate {
+            // 「译」里打的字进原文，上屏的是译文：数不清配对里有几个字。中 ↔ 英照旧（括号里打英文）
+            self.pairs.clear();
+        }
         self.close_association();
         if self.mode == Mode::Translate {
             // 离开「译」：攒着的原文原样上屏，正在打的拼音留着接着打
@@ -1843,6 +1898,9 @@ impl<'e> Session<'e> {
                 self.commit_current();
             }
             let prev = self.last_char;
+            if self.auto_pair_key(c, prev) {
+                return true;
+            }
             let text = self.punct_text(c, prev).unwrap_or_else(|| c.to_string());
             self.emit(&text);
             return true;
@@ -1861,6 +1919,9 @@ impl<'e> Session<'e> {
             self.last_char = Some(c);
             return false;
         }
+        if self.auto_pair_key(c, self.last_char) {
+            return true;
+        }
         match self.punct_text(c, self.last_char) {
             Some(text) => {
                 self.emit(&text);
@@ -1870,6 +1931,113 @@ impl<'e> Session<'e> {
                 self.last_char = Some(c);
                 false
             }
+        }
+    }
+
+    /// 自动配对（[`Config::auto_pair_punct`]，全角标点、不在「译」里）。处理了返回 true。
+    ///
+    /// - 右标点正好是最里面那一对的右半边：不上屏，光标右移跳过补好的那个。不管前面是什么字，
+    ///   数字后面也跳（（3）），应用说光标后面不是它时（光标早挪走了）配对作废、照常上屏
+    /// - 左标点（数字后面的照常是半角，不配对）：上屏成对的，光标左移一格放到中间
+    fn auto_pair_key(&mut self, c: char, prev: Option<char>) -> bool {
+        if !self.config.auto_pair_punct || self.config.punct_style != PunctStyle::Fullwidth || self.translating() {
+            return false;
+        }
+        if let Some(top) = self.pairs.last().copied() {
+            if crate::symbols::closing_punct(c) == Some(top.close) {
+                if self.hints & key_hints::NEXT_CHAR == 0 || self.next_char == Some(top.close) {
+                    self.skip_pair(top);
+                    return true;
+                }
+                self.pairs.clear();
+            }
+        }
+        if prev.is_some_and(|p| p.is_ascii_digit()) {
+            return false;
+        }
+        let Some((open, close)) = crate::symbols::auto_pair(c) else {
+            return false;
+        };
+        self.emit(&format!("{open}{close}"));
+        // 光标在两个中间：光标前的字、上文是左半边；右半边不算进外面那一对（跳过它时才算）
+        self.context.pop();
+        self.prev_char = Some(open);
+        self.last_char = Some(open);
+        if let Some(outer) = self.pairs.last_mut() {
+            outer.inner = outer.inner.saturating_sub(1);
+        }
+        if self.pairs.len() >= MAX_PAIRS {
+            self.pairs.remove(0);
+        }
+        self.pairs.push(Pair { open, close, inner: 0 });
+        self.cursor_delta -= 1;
+        true
+    }
+
+    /// 跳过最里面那一对补好的右半边 top（光标右移一格）。
+    fn skip_pair(&mut self, top: Pair) {
+        self.pairs.pop();
+        if let Some(outer) = self.pairs.last_mut() {
+            outer.inner += top.inner + 1;
+        }
+        self.cursor_delta += 1;
+        self.prev_char = Some(top.close);
+        self.last_char = Some(top.close);
+        self.context = char_tail(&format!("{}{}", self.context, top.close), CONTEXT_CHARS);
+        self.fresh = false;
+        // 和上屏了一个标点一样：退格不再撤销刚学的词，联想也不出了
+        self.undo_commit = None;
+        self.association_due = false;
+        self.close_association();
+    }
+
+    /// 上屏了 n 个字（光标前多了 n 个字）：算进最里面那一对。
+    fn pair_typed(&mut self, n: usize) {
+        if let Some(top) = self.pairs.last_mut() {
+            top.inner += n;
+        }
+    }
+
+    /// 交给应用的键对配对的影响。打的字、空格算进最里面那一对；退格少算一个字，空的一对两个一起删
+    /// （[`Frame::delete_next`]）；Esc 不动光标；别的键（方向键、Home、End、翻页、回车、Tab、Delete、
+    /// 带 Ctrl、Alt 的快捷键……）光标可能挪走了、右半边可能没了，配对作废。
+    fn pair_key_passed(&mut self, key: &Key) {
+        if self.pairs.is_empty() {
+            return;
+        }
+        let mods = key.modifiers & !(modifier::CAPS | modifier::NUMLOCK);
+        let plain = key.action == KeyAction::None && mods & (modifier::CTRL | modifier::ALT | modifier::SUPER) == 0;
+        if plain && typed_key(key.keysym) {
+            self.pair_typed(1);
+        } else if plain && mods == 0 && key.keysym == keysym::BACKSPACE && !self.composing() && self.tool.is_none() {
+            self.pair_backspace(key);
+        } else if !(plain && key.keysym == keysym::ESCAPE) {
+            self.pairs.clear();
+        }
+    }
+
+    /// 交给应用的退格：最里面那一对是空的（左半边就在光标前）就两个一起删，不然少算一个字。
+    /// 应用告诉了光标两边的字时先核对，对不上是光标早挪走了，配对作废。
+    fn pair_backspace(&mut self, key: &Key) {
+        let Some(&top) = self.pairs.last() else {
+            return;
+        };
+        let after_ok = key.hints & key_hints::NEXT_CHAR == 0 || key.next_char == Some(top.close);
+        if !after_ok {
+            self.pairs.clear();
+        } else if top.inner > 0 {
+            if let Some(top) = self.pairs.last_mut() {
+                top.inner -= 1;
+            }
+        } else if key.hints & key_hints::SURROUNDING == 0 || key.prev_char == Some(top.open) {
+            self.pairs.pop();
+            // 外面那一对少了这个左半边
+            if let Some(outer) = self.pairs.last_mut() {
+                outer.inner = outer.inner.saturating_sub(1);
+            }
+            self.delete_next = true;
+        } else {
+            self.pairs.clear();
         }
     }
 
@@ -1909,6 +2077,7 @@ impl<'e> Session<'e> {
         } else {
             text.to_owned()
         };
+        self.pair_typed(spaced.chars().count());
         self.pending.get_or_insert_with(String::new).push_str(&spaced);
         self.remember(text);
     }
@@ -1930,6 +2099,7 @@ impl<'e> Session<'e> {
         self.undo_commit = None;
         self.association_due = false;
         self.close_association();
+        self.pair_typed(text.chars().count());
         self.pending.get_or_insert_with(String::new).push_str(text);
         self.remember(text);
     }
@@ -2344,6 +2514,7 @@ impl<'e> Session<'e> {
             String::new()
         };
         self.last_choice = None;
+        self.last_choice_index = 0;
         if chosen.consumed < self.remaining().len() {
             let mark = self.learn_mark();
             self.push_selection(Selection {
@@ -2462,7 +2633,10 @@ impl<'e> Session<'e> {
     /// 上文也不算数了（回来时光标可能在别处）。互译攒着的原文不动，要丢掉用 [`Session::clear_translation`]。
     pub fn reset(&mut self, commit_pending: bool) -> Frame {
         self.last_choice = None;
+        // 切走输入法、失去焦点、点鼠标挪了光标（应用会重置输入法）：会话看不到之后光标去了哪
+        self.pairs.clear();
         self.close_association();
+        self.last_choice_index = 0;
         if commit_pending && self.composing() {
             self.commit_input_now();
         } else {
@@ -2504,6 +2678,8 @@ impl<'e> Session<'e> {
             aux: String::new(),
             preedit_cursor,
             preedit,
+            cursor_delta: std::mem::take(&mut self.cursor_delta),
+            delete_next: std::mem::take(&mut self.delete_next),
             ..Frame::default()
         };
         if self.tool.is_some() {
@@ -2601,6 +2777,16 @@ impl<'e> Session<'e> {
     /// 上一次调用上屏的字是选哪个候选来的；原样上屏输入、没上屏是 None。
     pub fn last_choice(&self) -> Option<&Candidate> {
         self.last_choice.as_ref()
+    }
+
+    /// 上一次上屏的候选在列表里的位置（1 起）；不是选候选上屏时为 0。
+    pub fn last_choice_index(&self) -> usize {
+        self.last_choice_index
+    }
+
+    fn set_last_choice(&mut self, chosen: Candidate, index: usize) {
+        self.last_choice = Some(chosen);
+        self.last_choice_index = index.saturating_add(1);
     }
 
     /// 放弃编辑区（Esc、删光、失去焦点）：已选的句首词学到的东西也退回去（选错了才会放弃）。
@@ -2977,6 +3163,7 @@ impl<'e> Session<'e> {
     /// 序号不对时什么也不做（handled = false）。过渡：外壳的鼠标点候选、展开面板点一行用。
     pub fn choose(&mut self, index: usize) -> Frame {
         self.last_choice = None;
+        self.last_choice_index = 0;
         if self.tool.is_some() {
             let ok = self.tool.as_ref().is_some_and(|t| index < t.items.len());
             if ok {
@@ -2998,6 +3185,7 @@ impl<'e> Session<'e> {
     /// 选候选框里显示的第 index 个（一页，或展开面板的一屏），见 [`Session::choose`]。
     pub fn select(&mut self, index: usize) -> Frame {
         self.last_choice = None;
+        self.last_choice_index = 0;
         if self.tool.is_some() {
             let shown = self.frame(false);
             return self.choose(shown.cand_start + index);
@@ -3028,12 +3216,12 @@ impl<'e> Session<'e> {
                 self.finish(text);
                 // 打字推荐的 emoji：记进最近用过（表情面板里排最前）
                 crate::recent_emoji::remember(&chosen.emoji);
-                self.last_choice = Some(chosen);
+                self.set_last_choice(chosen, index);
             }
             CandidateKind::Plain if chosen.consumed >= remaining => {
                 let text = self.selected_text() + &chosen.text;
                 self.finish(text);
-                self.last_choice = Some(chosen);
+                self.set_last_choice(chosen, index);
             }
             _ if chosen.consumed < remaining => {
                 // 句首词：先放进已选栈，剩下的拼音继续选。学到的记下区间：退格退回、Esc 放弃时撤销
@@ -3052,7 +3240,7 @@ impl<'e> Session<'e> {
                 self.commit_with(&chosen.text, &chosen.pinyin);
                 // 选了引擎的词上屏（不是原样上屏的字母、英文）：出联想
                 self.association_due = !chosen.pinyin.is_empty();
-                self.last_choice = Some(chosen);
+                self.set_last_choice(chosen, index);
             }
         }
         true
@@ -3061,6 +3249,7 @@ impl<'e> Session<'e> {
     /// 上屏已选的词 + 还没选的原始输入（和回车、`reset(true)` 一样）。原始字母串不记选词。
     pub fn commit_input(&mut self) -> Frame {
         self.last_choice = None;
+        self.last_choice_index = 0;
         self.commit_input_now();
         self.frame(true)
     }
@@ -3283,6 +3472,16 @@ fn is_modifier_keysym(sym: u32) -> bool {
 }
 
 /// 字母、空格以外的可见 ASCII 字符（标点、符号、数字）。
+/// 交给应用后会打出一个字的键：可见 ASCII 字符、空格、小键盘的数字和运算符。
+fn typed_key(sym: u32) -> bool {
+    char::from_u32(sym).is_some_and(|c| c == ' ' || c.is_ascii_graphic())
+        || (keysym::KP_0..=keysym::KP_9).contains(&sym)
+        || matches!(
+            sym,
+            keysym::KP_MULTIPLY | keysym::KP_ADD | keysym::KP_SUBTRACT | keysym::KP_DECIMAL | keysym::KP_DIVIDE
+        )
+}
+
 fn visible_symbol(sym: u32) -> Option<char> {
     let c = char::from_u32(sym).filter(|c| c.is_ascii_graphic())?;
     (!c.is_ascii_alphabetic()).then_some(c)

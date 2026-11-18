@@ -31,7 +31,7 @@ use std::path::Path;
 
 /// 标记的开头。
 pub const KEY: &str = "archtype-data:";
-/// 上游 WowType 发布的数据文件（nnlm.bin 等）里还是旧标记，读的时候也认。
+/// 上游 ArchType 发布的数据文件（nnlm.bin 等）里还是旧标记，读的时候也认。
 pub const LEGACY_KEY: &str = "wowtype-data:";
 /// 只在文件的前这么多字节里找标记。
 pub const SCAN_BYTES: usize = 4096;

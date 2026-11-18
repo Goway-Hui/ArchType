@@ -3424,3 +3424,288 @@ fn association_engine_with_wubi() -> &'static Engine {
     engine.set_wubi(wubi_table());
     engine
 }
+
+#[test]
+fn auto_pair_punct_pairs_skips_and_deletes() {
+    let mut session = with(engine());
+    session.configure(Config {
+        auto_pair_punct: true,
+        ..Config::default()
+    });
+
+    // 1. 输入左标点自动补全并左移一格，支持嵌套与跳过右标点
+    let f = type_keys(&mut session, "(");
+    assert!(f.handled);
+    assert_eq!(f.commit.as_deref(), Some("（）"));
+    assert_eq!(f.cursor_delta, -1);
+
+    let f = type_keys(&mut session, "\"");
+    assert_eq!(f.commit.as_deref(), Some("“”"));
+    assert_eq!(f.cursor_delta, -1);
+
+    // 跳过内层右引号
+    let f = type_keys(&mut session, "\"");
+    assert!(f.handled);
+    assert_eq!(f.commit, None);
+    assert_eq!(f.cursor_delta, 1);
+
+    // 跳过外层右括号
+    let f = type_keys(&mut session, ")");
+    assert!(f.handled);
+    assert_eq!(f.commit, None);
+    assert_eq!(f.cursor_delta, 1);
+
+    // 栈已空，再次按 ) 正常上屏右括号
+    let f = type_keys(&mut session, ")");
+    assert_eq!(f.commit.as_deref(), Some("）"));
+    assert_eq!(f.cursor_delta, 0);
+
+    // 2. 括号内打字后直接按右括号：上屏候选同时跳过右括号；以词定字不冲突
+    let f = type_keys(&mut session, "(");
+    assert_eq!(f.commit.as_deref(), Some("（）"));
+    assert_eq!(f.cursor_delta, -1);
+    type_keys(&mut session, "nihao");
+    let f = type_keys(&mut session, ")");
+    assert!(f.handled);
+    assert_eq!(f.commit.as_deref(), Some("你好"));
+    assert_eq!(f.cursor_delta, 1);
+
+    let f = type_keys(&mut session, "[");
+    assert_eq!(f.commit.as_deref(), Some("【】"));
+    assert_eq!(f.cursor_delta, -1);
+    type_keys(&mut session, "nihao<sp>");
+    let f = type_keys(&mut session, "]");
+    assert!(f.handled);
+    assert_eq!(f.commit, None);
+    assert_eq!(f.cursor_delta, 1);
+
+    // 3. 刚补全后紧接着按退格：成对删除（delete_next=true，放行 BackSpace）
+    let f = session.key(&Key::press(u32::from('<')));
+    assert_eq!(f.commit.as_deref(), Some("《》"));
+    assert_eq!(f.cursor_delta, -1);
+    let f = type_keys(&mut session, "<bs>");
+    assert!(!f.handled);
+    assert!(f.delete_next);
+    // 已被退格删掉，再按 > 正常上屏
+    let f = session.key(&Key::press(u32::from('>')));
+    assert_eq!(f.commit.as_deref(), Some("》"));
+    assert_eq!(f.cursor_delta, 0);
+
+    // 4. 里面打过字再按退格：退格交给应用删「好」，不成对删；配对还在，右半边照样跳过
+    type_keys(&mut session, "{nihao<sp>");
+    let f = type_keys(&mut session, "<bs>");
+    assert!(!f.handled);
+    assert!(!f.delete_next);
+    let f = type_keys(&mut session, "}");
+    assert!(f.handled);
+    assert_eq!(f.commit, None);
+    assert_eq!(f.cursor_delta, 1);
+
+    // 5. 移动光标后清空配对栈
+    type_keys(&mut session, "{");
+    let f = type_keys(&mut session, "<left>");
+    assert!(!f.handled);
+    let f = type_keys(&mut session, "}");
+    assert_eq!(f.commit.as_deref(), Some("」"));
+    assert_eq!(f.cursor_delta, 0);
+
+    // 6. 数字后面保持 ASCII，不触发配对
+    let f = type_keys(&mut session, "3(");
+    assert!(!f.handled);
+    assert_eq!(f.commit, None);
+    assert_eq!(f.cursor_delta, 0);
+}
+
+fn auto_pair_session() -> Session<'static> {
+    let mut session = with(engine());
+    session.configure(Config {
+        auto_pair_punct: true,
+        ..Config::default()
+    });
+    session
+}
+
+#[test]
+fn auto_pair_skips_close_after_digit() {
+    // ( 3 ) 是（3），不是（3)）：数字后面的右括号也跳过补好的那个
+    let mut session = auto_pair_session();
+    let f = type_keys(&mut session, "(");
+    assert_eq!(f.commit.as_deref(), Some("（）"));
+    let f = type_keys(&mut session, "3");
+    assert!(!f.handled, "数字照常交给应用");
+    let f = type_keys(&mut session, ")");
+    assert!(f.handled);
+    assert_eq!(f.commit, None);
+    assert_eq!(f.cursor_delta, 1);
+    // 跳过以后没有配对了：再按 ) 时前面是右括号，照常上屏中文右括号
+    let f = type_keys(&mut session, ")");
+    assert_eq!(f.commit.as_deref(), Some("）"));
+    assert_eq!(f.cursor_delta, 0);
+
+    // 数字后面的左括号照常是半角、不配对，后面的右括号也照常（3(1) 原样）
+    let mut session = auto_pair_session();
+    for c in ["3", "(", "1", ")"] {
+        let f = type_keys(&mut session, c);
+        assert!(!f.handled, "{c} 交给应用");
+        assert_eq!(f.commit, None);
+        assert_eq!(f.cursor_delta, 0);
+    }
+
+    // 套着的：（“3”）
+    let mut session = auto_pair_session();
+    type_keys(&mut session, "(\"3");
+    let f = type_keys(&mut session, "\"");
+    assert_eq!((f.commit, f.cursor_delta), (None, 1));
+    let f = type_keys(&mut session, ")");
+    assert_eq!((f.commit, f.cursor_delta), (None, 1));
+}
+
+#[test]
+fn auto_pair_survives_typing_and_space() {
+    // 里面打空格、数字、上屏的字都不打断配对：（ ）不是（ ））
+    let mut session = auto_pair_session();
+    type_keys(&mut session, "(");
+    let f = type_keys(&mut session, "<sp>");
+    assert!(!f.handled, "空格交给应用");
+    let f = type_keys(&mut session, ")");
+    assert_eq!((f.commit, f.cursor_delta), (None, 1));
+
+    let mut session = auto_pair_session();
+    type_keys(&mut session, "(nihao<sp><sp>12");
+    let f = type_keys(&mut session, ")");
+    assert_eq!((f.commit, f.cursor_delta), (None, 1));
+
+    // Esc 不挪光标：配对还在
+    let mut session = auto_pair_session();
+    type_keys(&mut session, "(<esc>");
+    let f = type_keys(&mut session, ")");
+    assert_eq!((f.commit, f.cursor_delta), (None, 1));
+}
+
+#[test]
+fn auto_pair_backspace_counts_inner_chars() {
+    // 里面打了两个字：前两下退格删这两个字，第三下左半边就在光标前，两个一起删
+    let mut session = auto_pair_session();
+    type_keys(&mut session, "(12");
+    for _ in 0..2 {
+        let f = type_keys(&mut session, "<bs>");
+        assert!(!f.handled);
+        assert!(!f.delete_next);
+    }
+    let f = type_keys(&mut session, "<bs>");
+    assert!(!f.handled);
+    assert!(f.delete_next, "空了的一对退格两个一起删");
+    let f = type_keys(&mut session, ")");
+    assert_eq!(f.commit.as_deref(), Some("）"), "删掉以后没有配对了");
+
+    // 套着的：删掉里面那一对以后外面那一对也空了，再退格也两个一起删
+    let mut session = auto_pair_session();
+    type_keys(&mut session, "([");
+    let f = type_keys(&mut session, "<bs>");
+    assert!(f.delete_next);
+    let f = type_keys(&mut session, "<bs>");
+    assert!(f.delete_next, "外面那一对也空了");
+    // 删掉里面那一对以后，外面那一对的右半边照样跳过
+    let mut session = auto_pair_session();
+    type_keys(&mut session, "([<bs>");
+    let f = type_keys(&mut session, ")");
+    assert_eq!((f.commit, f.cursor_delta), (None, 1));
+
+    // 跳过的一对整个算进外面那一对：（【】|）退格删的是】，不成对删
+    let mut session = auto_pair_session();
+    type_keys(&mut session, "([]");
+    let f = type_keys(&mut session, "<bs>");
+    assert!(!f.delete_next);
+}
+
+#[test]
+fn auto_pair_cleared_when_cursor_may_move() {
+    // 光标可能挪走了的键：方向键、Home、End、回车、Tab、Delete、Ctrl 快捷键；之后的右标点照常上屏
+    for keys in ["<left>", "<right>", "<up>", "<home>", "<end>", "<cr>", "<tab>", "<del>"] {
+        let mut session = auto_pair_session();
+        type_keys(&mut session, "(");
+        type_keys(&mut session, keys);
+        let f = type_keys(&mut session, ")");
+        assert_eq!(f.commit.as_deref(), Some("）"), "{keys} 以后");
+        assert_eq!(f.cursor_delta, 0, "{keys} 以后");
+    }
+    let mut session = auto_pair_session();
+    type_keys(&mut session, "(");
+    session.key(&Key {
+        modifiers: modifier::CTRL,
+        ..Key::char('z')
+    });
+    let f = type_keys(&mut session, ")");
+    assert_eq!(f.commit.as_deref(), Some("）"), "Ctrl+Z 以后");
+
+    // 失去焦点、重置（点鼠标）
+    let mut session = auto_pair_session();
+    type_keys(&mut session, "(");
+    session.reset(false);
+    let f = type_keys(&mut session, ")");
+    assert_eq!(f.commit.as_deref(), Some("）"));
+
+    // 中 ↔ 英不打断：括号里打英文
+    use archtype_core::session::Mode;
+    let mut session = auto_pair_session();
+    type_keys(&mut session, "(");
+    session.set_mode(Mode::English);
+    type_keys(&mut session, "ab");
+    session.set_mode(Mode::Chinese);
+    let f = type_keys(&mut session, ")");
+    assert_eq!((f.commit, f.cursor_delta), (None, 1));
+}
+
+#[test]
+fn auto_pair_checks_char_after_cursor() {
+    use archtype_core::session::key_hints;
+    let key = |c: char, next: Option<char>| Key {
+        hints: key_hints::NEXT_CHAR,
+        next_char: next,
+        ..Key::char(c)
+    };
+    // 应用说光标后面是补好的右括号：跳过
+    let mut session = auto_pair_session();
+    type_keys(&mut session, "(");
+    let f = session.key(&key(')', Some('）')));
+    assert_eq!((f.commit, f.cursor_delta), (None, 1));
+
+    // 光标后面不是它（用鼠标点到了别处、应用没重置输入法）：配对作废，照常上屏
+    for next in [Some('x'), None] {
+        let mut session = auto_pair_session();
+        type_keys(&mut session, "(");
+        let f = session.key(&key(')', next));
+        assert_eq!(f.commit.as_deref(), Some("）"), "光标后是 {next:?}");
+        assert_eq!(f.cursor_delta, 0);
+    }
+
+    // 退格成对删也核对两边
+    let bs = |prev: Option<char>, next: Option<char>| Key {
+        hints: key_hints::NEXT_CHAR | key_hints::SURROUNDING,
+        prev_char: prev,
+        next_char: next,
+        ..Key::press(keysym::BACKSPACE)
+    };
+    for (prev, next, paired) in [(Some('（'), Some('）'), true), (Some('（'), Some('x'), false), (Some('a'), Some('）'), false)] {
+        let mut session = auto_pair_session();
+        type_keys(&mut session, "(");
+        assert_eq!(session.key(&bs(prev, next)).delete_next, paired, "光标两边是 {prev:?} {next:?}");
+    }
+}
+
+#[test]
+fn auto_pair_off_by_default_and_halfwidth() {
+    let mut session = with(engine());
+    let f = type_keys(&mut session, "(");
+    assert_eq!((f.commit.as_deref(), f.cursor_delta), (Some("（"), 0));
+
+    let mut session = with(engine());
+    session.configure(Config {
+        auto_pair_punct: true,
+        punct_style: PunctStyle::Halfwidth,
+        ..Config::default()
+    });
+    let f = type_keys(&mut session, "(");
+    assert!(!f.handled);
+    assert_eq!(f.cursor_delta, 0);
+}

@@ -26,10 +26,10 @@ let
   # 词库不在 git 里：用发布页上的词库压缩包（scripts/package-deb.sh data 打的），按哈希固定。
   # 换了词库的版本发版后，发布流程会自动开 PR 改这三行（.github/scripts/nix-data-pr.sh）；
   # 手动改的话 hash 在发布页 SHA256SUMS 里，nix hash convert --hash-algo sha256 <十六进制> 转成 SRI 格式。
-  dataVersion = "2026.11.11.3";
+  dataVersion = "2026.11.11.7";
   data = fetchurl {
-    url = "https://github.com/Gloridust/WowType/releases/download/v0.3.12/wowtype-data-rime-ice-${dataVersion}.tar.gz";
-    hash = "sha256-6gfD6M9my/fQ68I6uVzJY4Tm84CP0M3uH4eQUyLlHXw=";
+    url = "https://github.com/Gloridust/WowType/releases/download/v0.5.1/wowtype-data-rime-ice-${dataVersion}.tar.gz";
+    hash = "sha256-s1pK92Vz67HHtALFKF0zu7HOKzJEdwvvnpCCbD/PyKo=";
   };
 
   pythonEnv = python3.withPackages (ps: [ ps.pygobject3 ]);

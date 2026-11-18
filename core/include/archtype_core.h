@@ -16,7 +16,7 @@
  * 删函数或改参数含义时升主版本。外壳启动时用 archtype_abi_version() 比对主版本。
  * 规则见 docs/ABI.md。 */
 #define ARCHTYPE_ABI_VERSION_MAJOR 1
-#define ARCHTYPE_ABI_VERSION_MINOR 11
+#define ARCHTYPE_ABI_VERSION_MINOR 12
 
 #ifdef __cplusplus
 extern "C" {
@@ -401,6 +401,8 @@ typedef struct {
     uint32_t code;      /* 1.10 起：按键码（硬件键码），不知道给 0。单按 Shift 时按下、松开按它对上 */
     uint32_t repeat;    /* 1.10 起：按住不放的自动重复 */
     uint64_t time_ms;   /* 1.10 起：按键时刻（毫秒，单调递增的任意起点），不知道给 0 */
+    uint32_t next_char; /* 1.12 起：应用里光标后一个字符，读不到给 0；带 ARCHTYPE_KEY_HINT_NEXT_CHAR 时
+                         * 0 是光标后确实没有字。自动配对跳过右标点、成对删之前拿它核对 */
 } ArchtypeKey;
 
 /* ArchtypeKey.hints（1.10 起）。 */
@@ -409,6 +411,7 @@ typedef struct {
 #define ARCHTYPE_KEY_HINT_NO_TRANSLATE (1u << 2)  /* 不能翻译的输入框（密码框）：「译」里也照常上屏 */
 #define ARCHTYPE_KEY_HINT_SURROUNDING (1u << 3)   /* 应用告诉了光标周围的文字：prev_char 为 0 是光标前确实没有字 */
 #define ARCHTYPE_KEY_HINT_NO_LEARN (1u << 4)      /* 确定是密码框：选的词也不学（回车上屏的原始字母串本来就不学）（1.11） */
+#define ARCHTYPE_KEY_HINT_NEXT_CHAR (1u << 5)     /* 应用告诉了光标后面的字：next_char 为 0 是光标后确实没有字；有选区时别带（1.12） */
 
 /* 输入模式（1.10 起）。单按 Shift（Shift_L 0xffe1 / Shift_R 0xffe2 的按下、松开都交给会话）
  * 在中 → 英 →（ArchtypeSessionConfig.translate_mode 时）译 → 中 之间切换，frame->mode_changed 为 1；
@@ -477,6 +480,10 @@ typedef struct {
     int association;     /* 1.11 起：上屏以后的联想（选词、整句上屏以后给出一页常跟在后面的词，
                           * frame->panel 是 ARCHTYPE_PANEL_ASSOCIATION），默认 0：外壳要会画联想才开，
                           * 设置里 Association 的默认值是开。五笔、「译」、密码框（KEY_HINT_NO_TRANSLATE）不出 */
+    int auto_pair_punct; /* 1.12 起：中文标点自动配对：全角标点下打 ( [ < { " ' 上屏成对的（）【】《》「」“”‘’，
+                          * frame->cursor_delta 让外壳把光标挪到中间；在里面打完再按右半边跳过补好的那个
+                          * （cursor_delta 为 +1），空的一对按退格两个一起删（frame->delete_next）。
+                          * 默认 0：外壳要会挪光标、删字才开，设置里 AutoPairPunct 的默认值也是关 */
 } ArchtypeSessionConfig;
 
 /* 一次调用之后外壳要做的事。归会话所有，和里面的字符串一起在同一个会话的下一次调用前有效。
@@ -512,6 +519,12 @@ typedef struct {
     const char *translate_title;  /* 候选框上方：方向标签 +「互译：」 */
     const char *translate_status; /* 候选框下方的一行：出错原因、「翻译中…」、怎么上屏，没有是空串 */
     int translate_done;     /* translate_text 是译完的最终结果 */
+    int cursor_delta;       /* 1.12 起：commit 落到应用以后把应用里的光标挪几格：负数左移、正数右移，0 不动
+                             * （自动配对：上屏「（）」后 -1，跳过补好的右标点 +1，这时 commit 可能是先上屏的候选）。
+                             * 外壳要保证先后：挪光标在这次的 commit 之后、下一个键之前 */
+    int delete_next;        /* 1.12 起：1 时这次的退格没接（handled 为 0），成对删：外壳除了删光标前的字（退格），
+                             * 还要删光标后的右标点（Delete），和挪光标的键走同一条路按顺序发 */
+    size_t choice_index;    /* 1.12 起：这次上屏的候选在列表里的位置（1 起）；不是选候选为 0 */
 } ArchtypeFrame;
 
 /* 建会话。engine 可以传 NULL（词库没载入好时也能打字，载入好了用 set_engine 补上）；
@@ -625,6 +638,7 @@ typedef struct {
     const char *emoji;  /* emoji 本身；不是 emoji 为空串 */
     const char *comment; /* 1.10 起：画在候选后面的小字，不上屏（五笔还要打的码、z 临时拼音反查的五笔码），
                           * 没有为空串 */
+    size_t index;       /* 1.12 起：这个候选在列表里的位置（1 起）；0 表示不知道 */
 } ArchtypeCandidateInfo;
 /* 候选个数。没有引擎、没在打字时为 0。 */
 size_t archtype_session_candidate_total(ArchtypeSession *session);
@@ -646,46 +660,57 @@ typedef struct {
 /* 返回 0 成功，-1 参数为 NULL。 */
 int archtype_session_view(ArchtypeSession *session, ArchtypeSessionView *out);
 
-/* ---------------- 打字统计（1.11 起） ----------------
+/* ---------------- 打字统计（1.12 起） ----------------
  *
- * 只记本机的聚合计数：每天各类字符数、活跃毫秒、每个键按下的次数、候选位置。
- * 不保存输入内容、按键顺序或上下文。输入法用 archtype_stats_* 记录，设置界面读同一个 JSON 文件。
+ * 默认关：外壳读到 archtype.conf 的 TypingStats=True 才调 archtype_stats_set_enabled(stats, 1)。
+ * 关着时什么都不做：不计数、不起线程、不读不建文件。
  *
- * 口径：两次上屏间隔超过 10 秒算休息，不计入活跃时长；速度只算汉字与字母；
- * 长按只算一次；密码框里的按键和上屏不计。统计默认打开，设置界面可以关闭或清空。
+ * 打开以后只记每天的聚合计数：上屏字符数（分汉字 / 字母 / 数字 / 标点 / 表情 / 其他）、活跃毫秒、
+ * 每个物理键当天按下的次数、按输入模式和双拼方案分的字符数、候选位置 1–9 和第 10 个以后的次数。
+ * 不记上屏的文字、词、拼音、按键顺序、每次按键或上屏的时刻；密码框（flags 带 ARCHTYPE_STATS_SENSITIVE）整个不算。
+ *
+ * 按键和上屏只改内存，攒够（20 次上屏或 30 秒）交给记录器自己的写文件线程，按键的线程不碰文件。
+ * 文件只有输入法写（0600，只留最近 400 天）；设置界面只读，清空调 archtype_stats_clear
+ * （或照 docs/CONFIG.md 的做法：旁边 stats.clear 里的整数加一、删掉 stats.json）。
+ * 口径：两次上屏间隔超过 10 秒算休息，不计入活跃时长；长按只算一次。
  */
 typedef struct ArchtypeStats ArchtypeStats;
 
-/* 创建记录器。path 是统计文件的绝对路径；失败返回 NULL，原因用 archtype_last_error 取。 */
+#define ARCHTYPE_STATS_SENSITIVE (1u << 0) /* 密码框 / 敏感输入框：这次按键或上屏不算 */
+
+/* 建记录器（关着）。path 是统计文件的绝对路径；不读、不建文件。失败返回 NULL，原因用 archtype_last_error 取。 */
 ArchtypeStats *archtype_stats_new(const char *path);
+/* 开着时把最后攒着的交出去，等写完再释放。NULL 什么都不做。 */
 void archtype_stats_free(ArchtypeStats *stats);
 
-/* 一次物理按键。platform：0 = X11/fcitx5（code 是 XKB 键码），1 = macOS（NSEvent.keyCode）。
- * down 非 0 表示按下，0 表示松开。返回 0 成功。 */
+/* 打开（非 0）或关上（0）。关上时丢掉内存里还没交出去的计数。返回 0 成功，-1 参数为 NULL。 */
+int archtype_stats_set_enabled(ArchtypeStats *stats, int enabled);
+/* 1 开，0 关（stats 为 NULL 也是 0）。 */
+int archtype_stats_enabled(const ArchtypeStats *stats);
+
+/* 一次物理按键。platform：0 = X11/fcitx5（code 是 XKB 键码，松开也要传，用来认长按），
+ * 1 = macOS（NSEvent.keyCode，只传按下，自动重复外壳自己挡掉）。down 非 0 表示按下。
+ * 关着、密码框、热力图上没有的键不算。返回 0 成功，-1 参数为 NULL。 */
 int archtype_stats_key(ArchtypeStats *stats, int platform, unsigned int code, int down,
-                      int64_t now_ms);
+                      unsigned int flags, int64_t now_ms);
 
-/* 一次上屏。text 只用来分类（汉字/字母/数字/标点/表情），不落盘。
- * source：quanpin / shuangpin / english / translate；scheme 是双拼方案 id，没有传 NULL/空串。
- * cand_index：候选在列表里的位置（1 起），不是选候选上屏时传 0。返回 0 成功。 */
+/* 一次上屏。text 只用来数各类字符有几个，不留下。
+ * source：quanpin / shuangpin / wubi / english / translate（别的不记）；scheme 是双拼方案名（只认字母数字，
+ * 没有传 NULL 或空串）；cand_index：候选在列表里的位置（1 起），不是选候选上屏时传 0。
+ * 返回 0 成功，-1 参数错误。 */
 int archtype_stats_commit(ArchtypeStats *stats, const char *text, const char *source,
-                         const char *scheme, int cand_index, int64_t now_ms);
+                         const char *scheme, int cand_index, unsigned int flags, int64_t now_ms);
 
-/* 把攒着的计数写进文件（失焦、退出时调用）。返回 0 成功，-1 失败。 */
+/* 把攒着的交给写文件线程（不等写完；失焦时调）。返回 0。 */
 int archtype_stats_flush(ArchtypeStats *stats, int64_t now_ms);
+/* 等交出去的都写完。timeout_ms < 0 一直等。返回 0 写完了，-1 写失败或超时（原因见 archtype_last_error）。 */
+int archtype_stats_wait(ArchtypeStats *stats, int64_t timeout_ms);
 
-/* 缓存的开关：1 开，0 关。最多 30 秒重读一次文件。 */
-int archtype_stats_enabled(ArchtypeStats *stats);
-
-/* 设置界面用：清空统计（保留开关，换一个随机代数）。返回 0 成功。 */
-int archtype_stats_clear_file(const char *path, uint64_t generation);
-
-/* 设置界面用：打开或关闭统计。返回 0 成功。 */
-int archtype_stats_set_enabled(const char *path, int enabled);
+/* 设置界面用：清空统计（输入法开着关着都行）。返回 0 成功，-1 失败。 */
+int archtype_stats_clear(const char *path);
 
 /* 当前 Unix 毫秒。 */
 int64_t archtype_stats_now_ms(void);
-
 
 #ifdef __cplusplus
 }

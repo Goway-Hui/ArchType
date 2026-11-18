@@ -94,6 +94,13 @@ def out_of_range_cases(setting, policy, end):
     return cases
 
 
+def index_prompt(prompt, source, target_name, formal):
+    """按规格拼 Index-Translate 的提示词；target_name 是 None 时原文是外文（译成中文）。"""
+    head = prompt["headChinese"].replace("{target}", target_name) if target_name else prompt["headOther"]
+    tone = prompt["toneFormal" if formal else "toneCasual"]
+    return prompt["template"].replace("{head}", head).replace("{tone}", tone).replace("{text}", source.strip())
+
+
 def check_spec(spec, pack):
     """规格本身说得通：键不重复、默认值合类型、在范围和可选值里，例子用到的键都有。"""
     keys = [s["key"] for s in spec["settings"]]
@@ -135,6 +142,18 @@ def check_spec(spec, pack):
     for end in ENDS:
         check(policy.get(end) in ("default", "keep", "clamp"), f"规格：readRules.outOfRange 没写 {end} 或写错了",
               policy.get(end))
+
+    bili = spec["translateBilibili"]
+    ids = [m["id"] for m in bili["models"]]
+    check(ids and ids[0] == bili["default"], "规格：translateBilibili.default 要是 models 的第一个", ids)
+    check(len(ids) == len(set(ids)), "规格：translateBilibili.models 重复", ids)
+    check(all(i.lower().startswith(bili["modelPrefix"].lower()) for i in ids),
+          "规格：translateBilibili 的模型名都要以 modelPrefix 开头", ids)
+    same(re.sub(r"^https?://", "", bili["url"]).split("/")[0], bili["host"], "规格：translateBilibili.host 是 url 的主机")
+    check(all(bili["url"] != p["url"] for p in spec["translateProviders"]["items"]),
+          "规格：哔哩哔哩不在 translateProviders 里（它是单独的引擎）")
+    same([e["id"] for e in spec["translateEngines"]["items"]], ["local", "bilibili", "custom"],
+         "规格：translateEngines 的顺序")
 
     pattern = re.compile(re.escape(pack["assetPrefix"]) + "(" + pack["versionPattern"] + ")"
                          + re.escape(pack["assetSuffix"]))
@@ -246,6 +265,29 @@ def check_settings(spec, wc, home):
     same([tuple(item) for item in wc.TRANSLATE_PROVIDERS],
          [(p["name"], p["url"], p["model"]) for p in spec["translateProviders"]["items"]],
          "设置界面：TRANSLATE_PROVIDERS")
+    same([tuple(item) for item in wc.TRANSLATE_ENGINES],
+         [(e["name"], e["note"]) for e in spec["translateEngines"]["items"]], "设置界面：TRANSLATE_ENGINES")
+    bili = spec["translateBilibili"]
+    same((wc.BILIBILI_URL, wc.BILIBILI_HOST, wc.BILIBILI_MODEL_PREFIX, wc.BILIBILI_DEFAULT_MODEL, wc.BILIBILI_PRIVACY),
+         (bili["url"], bili["host"], bili["modelPrefix"], bili["default"], bili["privacy"]),
+         "设置界面：哔哩哔哩的地址、主机、模型前缀、默认模型、隐私说明")
+    same([tuple(m) for m in wc.BILIBILI_MODELS], [(m["id"], m["name"]) for m in bili["models"]],
+         "设置界面：BILIBILI_MODELS")
+    same(wc.INDEX_TRANSLATE_PROMPT, {k: v for k, v in bili["prompt"].items() if not k.startswith("$")},
+         "设置界面：INDEX_TRANSLATE_PROMPT")
+    for item in by_key["TranslateTarget"]["values"]:
+        for formal in (False, True):
+            for source, chinese in ((" 明天见\n", True), ("See you", False)):
+                same(wc.index_translate_prompt(source, item["value"], formal),
+                     index_prompt(bili["prompt"], source, item["name"] if chinese else None, formal),
+                     f"设置界面：Index-Translate 提示词（{item['value']}，{'正式' if formal else '聊天'}，{source.strip()}）")
+    engine = {"local": 0, "bilibili": 1, "custom": 2}
+    for values, want in (({"TranslateLocal": "True", "TranslateBaseUrl": bili["url"]}, "local"),
+                         ({"TranslateLocal": "False", "TranslateBaseUrl": bili["url"]}, "bilibili"),
+                         ({"TranslateLocal": "False", "TranslateBaseUrl": bili["url"] + "/chat/completions"}, "bilibili"),
+                         ({"TranslateLocal": "False", "TranslateBaseUrl": "https://api.deepseek.com/v1"}, "custom"),
+                         ({"TranslateLocal": "False", "TranslateBaseUrl": ""}, "custom")):
+        same(wc.translate_engine(values), engine[want], f"设置界面：{values} 是「{want}」")
     same([value for _label, value in wc.EMOJI_KEYS], by_key["EmojiKey"]["presets"]["settings"],
          "设置界面：EMOJI_KEYS")
     same([value for _label, value in wc.VOICE_KEYS], by_key["VoiceKey"]["presets"]["settings"],

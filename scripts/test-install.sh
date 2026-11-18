@@ -68,7 +68,7 @@ fail() { printf 'FAIL: %s\n' "$*" >&2; exit 1; }
 pass() { count=$((count + 1)); printf 'ok %s - %s\n' "$count" "$*"; }
 # macOS 自带的 bash 3.2 在 UTF-8 下把变量名后面紧跟的全角字符（比如全角括号）当成变量名的一部分（set -u 时直接报
 # unbound variable）。变量后面紧跟非 ASCII 字符的一律要写成 ${version}。CI 的 bash 5 复现不了，只能这样查。
-bad=$(cd "$root" && git ls-files -z '*.sh' macos/pkg/scripts | xargs -0 perl -ne 'print "$ARGV:$.: $_" if /\$[A-Za-z_]\w*[^\x00-\x7f]/; close ARGV if eof' || true)
+bad=$(cd "$root" && git ls-files -z '*.sh' | xargs -0 perl -ne 'print "$ARGV:$.: $_" if /\$[A-Za-z_]\w*[^\x00-\x7f]/; close ARGV if eof' || true)
 [[ -z "$bad" ]] || fail "变量后面紧跟中文要加花括号（macOS 的 bash 3.2 会报 unbound variable）：
 $bad"
 
@@ -196,7 +196,7 @@ run > "$work/output" 2>&1 || fail "apt install: $(cat "$work/output")"
 assert_log 'apt-get update -qq'
 assert_log 'apt-get install -y'
 assert_log 'fcitx5-config-qt fcitx5-frontend-all im-config'
-assert_log 'python3-gi gir1.2-gtk-4.0 gir1.2-adw-1'
+assert_log 'python3-gi python3-gi-cairo gir1.2-gtk-4.0 gir1.2-adw-1'
 assert_log 'archtype_0.3.8_ubuntu24.04_amd64.deb'
 assert_log 'archtype-data-rime-ice_20260101_all.deb'
 assert_log 'archtype-config --setup --yes --no-im-config --no-restart'
@@ -339,6 +339,5 @@ test_version=
 run > "$work/output" 2>&1 || fail 'Latest release resolution failed'
 grep -Fq 'https://github.com/Goway-Hui/ArchType/releases/latest' "$work/fetches" || fail 'Wrong release repository'
 pass 'Latest release uses the upstream repository'
-
 
 printf '%s installer checks passed\n' "$count"

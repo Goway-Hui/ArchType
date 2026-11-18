@@ -26,10 +26,11 @@
 | 1.9 | 0.3.11 | 加 `archtype_engine_set_rare_ext_chars`：是否出 CJK 扩展 B 区及以后的单字（通用规范汉字表里的除外），默认不出（以前总是出） |
 | 1.10 | 0.4.0 | 输入会话接管标点、自动空格、上文、中 / 英 / 译和单按 Shift、互译、工具栏和表情面板：`ArchtypeKey` 加 `hints`、`code`、`repeat`、`time_ms`（`KEY_HINT_*`、`KEY_ACTION_OBSERVE`、`KEY_ACTION_TOGGLE_MODE`、`KEY_ACTION_TOGGLE_TRANSLATE`；`KEY_HINT_SURROUNDING`：读得到周围文字时拿 `prev_char` 核对会话记的上文），`ArchtypeSessionConfig` 加 `punct_style`、`auto_space`、`shift_toggle`、`shift_tap_ms`、`translate_mode`、`toolbar`、`clipboard_history`，`ArchtypeFrame` 加 `learned`、`mode`、`mode_changed`、`translating`、`translate_*`（`aux`、`wake_after_ms` 开始用，`panel` 加 2 表情面板、3 工具栏）；加 `archtype_session_set_mode`、`_mode`、`_set_translator`、`_set_translate_backend`、`_tick`、`_commit_text`、`_translate_clear`、`_translate_source`、`_toggle_emoji_panel`、`_open_tool`、`_open_panel`、`archtype_recent_emoji_path`、`_list`、`archtype_custom_code`、`archtype_guess_pinyin`（自定义词的编码整理、猜拼音，macOS 设置不再自己抄音节表），`archtype_engine_set_domain_lm`（混上用户自己训的领域词级模型），`ArchtypeSessionConfig` 加 `shuangpin_keys`（双拼编辑区显示打的键）；五笔：加 `archtype_engine_load_wubi`，`ArchtypeSessionConfig` 加 `wubi`、`wubi_auto_commit`、`wubi_hint`，`translate_key`（另设了进出「译」的键，单按 Shift 只切中 / 英），`ArchtypeCandidateInfo` 加 `comment`、加 `archtype_session_candidate_comment`（候选后面的小字）；删掉会话的过渡函数 `_append`、`_set_context`、`_last_choice` |
 | 1.11 | 0.5.0 | `KEY_HINT_NO_LEARN`（1 << 4）：确定是密码框，选的词也不学（回车上屏的原始字母串哪里都不学）；加 `archtype_nnlm_check`（只试着解析字级神经语言模型，不载入引擎，导入前用）；上屏以后的联想：`ArchtypeSessionConfig` 末尾加 `association`（默认 0，外壳会画了才开），`ArchtypeFrame.panel` 加 4（`ARCHTYPE_PANEL_ASSOCIATION`），加 `archtype_session_association`；`archtype_engine_predict_next` 把学到的搭配排在模型的前面。退格把句首词退回编辑区、Esc 放弃、上屏后紧接着按退格时撤销学到的（会话里做，外壳不用改）；存盘挪出按键线程：加 `archtype_engine_save_user_dict_async`、`_save_history_async`（锁里抄一份、引擎自己的线程写，连着的合并成一次）、`archtype_engine_save_wait`（等写完，进程退出、外壳析构、换词库前调），同步的两个 save 照旧（先等后台排着的写完），`archtype_engine_free` 也先写完 |
+| 1.12 | 0.6.0 | 中文标点自动配对：`ArchtypeSessionConfig` 末尾加 `auto_pair_punct`（默认 0，外壳会挪光标、删字了才开），`ArchtypeFrame` 末尾加 `cursor_delta`（commit 落到应用以后把光标挪几格，负数左移）、`delete_next`（这次没接的退格要连光标后的右标点一起删），`ArchtypeKey` 末尾加 `next_char`（光标后一个字）和 `KEY_HINT_NEXT_CHAR`（1 << 5，`next_char` 为 0 是光标后确实没有字，有选区时别带）；打字统计（默认关）：加 `archtype_stats_new`、`_free`、`_set_enabled`、`_enabled`、`_key`、`_commit`、`_flush`、`_wait`、`_clear`、`_now_ms`、`ARCHTYPE_STATS_SENSITIVE`。记录器新建时关着（不读不建文件、不起线程），外壳按 `TypingStats` 打开；只记按天的聚合计数（字符数和类别、活跃毫秒、各键按下次数、模式和双拼方案的字数、候选位置），不记文字、拼音、按键顺序和时刻，带 `ARCHTYPE_STATS_SENSITIVE`（密码框）的整个不算；按键和上屏只改内存，写文件在记录器自己的线程，`_free` 等写完。`ArchtypeCandidateInfo` 末尾加 `index`（候选在列表里的位置，1 起），`ArchtypeFrame` 末尾加 `choice_index`（这次上屏的候选位置，不是选候选为 0） |
 
 ## 所有权和生命周期
 
-- `archtype_engine_new` 返回的句柄用 `archtype_engine_free` 释放；`archtype_voice_new`、`archtype_translate_new` 同理各配各的 `_free`。
+- `archtype_engine_new` 返回的句柄用 `archtype_engine_free` 释放；`archtype_voice_new`、`archtype_translate_new`、`archtype_stats_new` 同理各配各的 `_free`。
 - 返回 `ArchtypeCandidates *` 的函数（`archtype_engine_input`、`archtype_symbol_search`、`archtype_emoji_recommend` 等），结果用 `archtype_candidates_free` 释放；从里面取出的字符串在释放前有效。
 - 返回 `const char *` 而且不属于某个句柄的（`archtype_fullwidth_punct`、`archtype_punct`、`archtype_segment_input`、`archtype_engine_shuangpin_display`、`archtype_last_error`），指针在**同一线程**下一次调用同一个函数前有效，要留着就自己拷一份。
 - `archtype_version()` 返回静态字符串，一直有效。
@@ -41,6 +42,7 @@
 - 「指针在下一次调用前有效」的那些缓冲区是线程局部的，跨线程拿到的指针不要混用。
 - 语音、翻译句柄各自管自己的后台线程；`_poll` 不阻塞，外壳在自己的定时器里调。
 - 引擎有一个存盘线程（1.11，第一次调 `_save_*_async` 时才起）：只写交给它的那份拷贝，不碰引擎；`archtype_engine_free` 等它写完再释放。
+- 打字统计的记录器（1.12）在一个线程用（外壳的按键线程）；它有自己的写文件线程（打开统计时才起），按键线程不读写文件，`archtype_stats_free` 等它写完。
 
 ## 错误
 
@@ -88,6 +90,7 @@
 | 英文模式（1.10） | 只管汉字后面打字母、数字时补空格，别的键交给应用 |
 | 互译（1.10） | 上屏的字攒成原文（`frame->translate_*`），0.5 秒没再打字（句末标点立刻）发请求，`frame->wake_after_ms` 时外壳调 `_tick`；没在打拼音时：回车上屏译文（没译完先记下，译好了在 `_tick` 的 commit 里）、Shift+回车上屏原文、空格上屏译文、Esc 清空、退格删原文、方向键吃掉、数字和符号进原文 |
 | 联想（`association`，1.11） | 选词上屏、整句上屏（选了引擎的词，不是回车原样上屏的字母）以后，按上文末尾查常跟在后面的词（学到的搭配在前，再是词级模型），一页（最多 `page_size` 个）放进候选框：`frame->panel` 是 4，`preedit` 空，提示在 `aux`；去掉标点、单个字母、和刚上屏的一样的。没进联想行时 `cand_cursor` 是 -1（外壳别画序号）：只有 Tab（进联想行）和 Esc（关掉，吃掉）归联想，别的键（字母、数字、标点、空格、回车、退格、方向键、快捷键）先关掉联想再照原来的规则处理——数字不选联想（中文后面接着打数字很常见）；单按的修饰键、松开不关。进了联想行：空格、回车、数字选，左右（上下）键、Tab、Shift+Tab 移光标，Esc 退出，别的键退出联想再照常。鼠标点用 `_select` / `_choose`（没进联想行也能点）。选中的上屏、和普通选词一样记一次选词，接着出下一轮。五笔、「译」、`KEY_HINT_NO_TRANSLATE`（密码框）、英文不出；`_reset`、切模式、开面板、外壳上屏别的字时关掉 |
+| 自动配对（`auto_pair_punct`，1.12） | 全角标点、不在「译」里时：打 `( [ < { " '` 上屏成对的（）【】《》「」“”‘’，`frame->cursor_delta` 是 -1（光标放中间）；数字后面的左标点照常是半角、不配对。在里面再按右半边（`) ] > } " '`，数字后面也算）不上屏，`cursor_delta` 是 +1（跳过补好的那个；打字途中按的话 `commit` 是先上屏的候选）。可以套着。会话数着左半边和光标之间有几个字（上屏的、交给应用的字和空格）：交给应用的退格少数一个，数到 0 时（空的一对）`delete_next` 为 1，外壳连光标后的右标点一起删。交给应用的方向键、Home、End、翻页、回车、Tab、Delete、带 Ctrl / Alt / Super 的键和 `_reset`、进出「译」让配对作废（中 ↔ 英不算，Esc 不算）；带 `KEY_HINT_NEXT_CHAR` 时跳过、成对删之前核对光标后确实是那个右标点（成对删再拿 `prev_char` 核对左半边），对不上配对作废、照常处理。外壳挪光标、删字要按顺序：挪光标在这次的 `commit` 落到应用以后、下一个键之前，和 `delete_next` 的两下走同一条路 |
 | v + 空格、表情快捷键（1.10） | 工具栏（菜单、剪贴板、常用语，竖排一页 9 个）和表情 / 符号面板（6 列网格，字母搜索）；开着时按键都归面板，带 Ctrl / Alt / Super 的收起面板、交给应用；`frame->panel` 是 3 / 2，提示在 `frame->aux` |
 | 五笔（`wubi`，1.10） | 字母是五笔码（a–y，最多四码）：码对上的按码表顺序排在前，后面是逐码提示（更长的码的词，`comment` 是还要打的码，`wubi_hint` 关掉时为空）；四码只有一个候选时直接上屏（`wubi_auto_commit`）；四码再打字母、空码时打字母、按 z 或大写字母先顶字（空码丢掉）；空码时 `frame->aux` 是「空码」，空格清空，标点只上屏标点，回车上屏字母；打码时引号是标点；z 开头临时打全拼（编辑区 `z` + 分好音节的拼音，`comment` 是反查的五笔码）；计算器是大写 `V`，v + 空格不开工具栏；日期时间只在临时拼音里出；`arrow_keys` 是 `CARET` 时打五笔码的方向键照 `CANDIDATES` 用（临时拼音里照常挪光标，挪不到 z 前面）；五笔和临时拼音都不学习，Ctrl+Delete 在五笔码上什么也不忘。引擎没载入码表时照全拼打，`frame->aux` 说没有码表 |
 

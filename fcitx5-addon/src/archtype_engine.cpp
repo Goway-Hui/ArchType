@@ -17,6 +17,7 @@
 #include <string>
 #include <string_view>
 #include <system_error>
+#include <thread>
 #include <utility>
 
 #include <fcitx-config/iniparser.h>
@@ -56,6 +57,8 @@ constexpr std::size_t kGridRows = 6;
 constexpr unsigned int kMaxCandidates = 1000;
 /// 每上屏这么多次保存一次用户词库（另外失去焦点和退出时也保存）。
 constexpr int kSaveEvery = 20;
+// 退出时等后台载入、后台存盘最多这么久（秒），再久就不等了（#244）
+constexpr int kShutdownWaitSeconds = 3;
 /// 打字推荐的 emoji 插在第几个候选（从 0 数）：不挤掉前两个词。
 
 bool envFlag(const char *name, bool fallback) {
@@ -84,17 +87,7 @@ std::string userDataDir() {
     } else {
         return {};
     }
-    const std::string dir = base + "/archtype";
-    std::error_code ec;
-    if (!std::filesystem::exists(dir, ec)) {
-        // 从旧品牌 WowType 升级：设置程序会把旧目录复制成 archtype；插件先照旧读，
-        // 免得在设置程序跑之前，自定义词、输入习惯、统计看起来像丢了。
-        const std::string legacy = base + "/wowtype";
-        if (std::filesystem::exists(legacy, ec)) {
-            return legacy;
-        }
-    }
-    return dir;
+    return base + "/archtype";
 }
 
 /// 按顺序找第一个存在的文件：环境变量 > 用户数据目录 > 系统目录。
@@ -647,7 +640,7 @@ public:
     /// prev_char：应用里光标前一个字（读不到给 0）；hints：ARCHTYPE_KEY_HINT_*。
     const ArchtypeFrame *sessionKey(uint32_t keysym, uint32_t modifiers, uint32_t action,
                                    uint32_t prevChar = 0, uint32_t hints = 0,
-                                   uint64_t timeMs = 0) {
+                                   uint64_t timeMs = 0, uint32_t nextChar = 0) {
         ArchtypeKey raw{};
         raw.time_ms = timeMs;
         raw.size = sizeof(raw);
@@ -656,6 +649,7 @@ public:
         raw.action = action;
         raw.prev_char = prevChar;
         raw.hints = hints;
+        raw.next_char = nextChar;
         return archtype_session_key(session_, &raw);
     }
     void clear() {
@@ -810,11 +804,8 @@ ArchtypeEngine::ArchtypeEngine(fcitx::Instance *instance)
     lexicon_ = wantedLexicon_ = resolveLexicon(*config_.lexicon);
     lexiconStamp_ = fileStamp(lexicon_);
     loading_ = std::async(std::launch::async, loadCore, userDictPath(), lexicon_);
-    applyConfig();
-    setupVoiceOverlay();
-    setupControl();
-    const std::string statsDir = userDataDir();
-    if (!statsDir.empty()) {
+    // 打字统计的记录器建好时是关着的（不读不建文件），applyConfig 按 TypingStats 打开
+    if (const std::string statsDir = userDataDir(); !statsDir.empty()) {
         const std::string statsPath = statsDir + "/stats.json";
         stats_ = archtype_stats_new(statsPath.c_str());
         if (!stats_) {
@@ -822,6 +813,9 @@ ArchtypeEngine::ArchtypeEngine(fcitx::Instance *instance)
                      << (archtype_last_error() ? archtype_last_error() : "unknown");
         }
     }
+    applyConfig();
+    setupVoiceOverlay();
+    setupControl();
 }
 
 namespace {
@@ -865,60 +859,6 @@ void ArchtypeEngine::setupControl() {
     } catch (const std::exception &e) {
         WLOG_I() << "ArchType: 连不上会话总线，外部命令切不了模式：" << e.what();
     }
-}
-
-void ArchtypeEngine::recordStats(const std::string &text, const ArchtypeFrame *frame) {
-    if (!stats_ || text.empty()) {
-        return;
-    }
-    const std::string src = typingSource();
-    const std::string scheme = shuangpin_ ? typingScheme() : std::string();
-    // 上游 0.5.1 的 frame 没有选中候选的序号，候选位置先记 0（不影响字符/按键统计）
-    unsigned candidate = 0;
-    (void)frame;
-    archtype_stats_commit(stats_, text.c_str(), src.c_str(),
-                         scheme.empty() ? nullptr : scheme.c_str(),
-                         static_cast<int>(candidate), statsNowMs());
-}
-
-void ArchtypeEngine::recordKey(fcitx::InputContext *ic, const fcitx::Key &key, bool down) {
-    if (!stats_ || !ic) {
-        return;
-    }
-    if (ic->capabilityFlags().test(fcitx::CapabilityFlag::PasswordOrSensitive)) {
-        return;
-    }
-    archtype_stats_key(stats_, 0, static_cast<unsigned>(key.code()), down ? 1 : 0, statsNowMs());
-}
-
-void ArchtypeEngine::flushStats() {
-    if (!stats_) {
-        return;
-    }
-    if (archtype_stats_flush(stats_, statsNowMs()) != 0) {
-        WLOG_W() << "ArchType: 打字统计写入失败："
-                 << (archtype_last_error() ? archtype_last_error() : "unknown");
-    }
-}
-
-std::string ArchtypeEngine::typingSource() const {
-    if (translateMode_) {
-        return "translate";
-    }
-    if (asciiMode_) {
-        return "english";
-    }
-    return shuangpin_ ? "shuangpin" : "quanpin";
-}
-
-std::string ArchtypeEngine::typingScheme() const {
-    std::string id = shuangpinScheme_;
-    for (char &ch : id) {
-        if (ch >= 'A' && ch <= 'Z') {
-            ch = static_cast<char>(ch - 'A' + 'a');
-        }
-    }
-    return id;
 }
 
 std::string ArchtypeEngine::modeName() const {
@@ -1101,11 +1041,6 @@ void ArchtypeEngine::maybeSwitchLexicon() {
     if (core_) {
         archtype_engine_free(core_);
         core_ = nullptr;
-    flushStats();
-    if (stats_) {
-        archtype_stats_free(stats_);
-        stats_ = nullptr;
-    }
         // 简繁表、五笔码表是载进这个引擎的，新引擎载好后 applyCoreSettings 再载
         conversionLoaded_ = false;
         wubiLoaded_ = false;
@@ -1161,6 +1096,11 @@ void ArchtypeEngine::applyConfig() {
     }
     pickChar_ = envOr("ARCHTYPE_PICK_CHAR", *config_.pickChar);
     association_ = envOr("ARCHTYPE_ASSOCIATION", *config_.association);
+    typingStats_ = envOr("ARCHTYPE_TYPING_STATS", *config_.typingStats);
+    if (stats_) {
+        // 关掉时记录器丢掉内存里还没写的计数，以后什么都不记
+        archtype_stats_set_enabled(stats_, typingStats_ ? 1 : 0);
+    }
     dateTime_ = envOr("ARCHTYPE_DATETIME", *config_.dateTime);
     calculator_ = envOr("ARCHTYPE_CALC", *config_.calculator);
     toolbar_ = envOr("ARCHTYPE_TOOLBAR", *config_.toolbar);
@@ -1175,6 +1115,7 @@ void ArchtypeEngine::applyConfig() {
     if (const char *env = std::getenv("ARCHTYPE_AUTOSPACE"); env && *env) {
         autoSpaceFlags_ = static_cast<int>(std::strtol(env, nullptr, 0)) & 3;
     }
+    autoPairPunct_ = envOr("ARCHTYPE_AUTO_PAIR_PUNCT", *config_.autoPairPunct);
     typo_ = envOr("ARCHTYPE_TYPO", *config_.typo);
     rareExt_ = envOr("ARCHTYPE_RARE_EXT", *config_.rareExt);
     shuangpin_ = envOr("ARCHTYPE_SHUANGPIN", *config_.inputScheme == ArchtypeInputScheme::Shuangpin);
@@ -1285,7 +1226,7 @@ void ArchtypeEngine::applyConfig() {
              << " 剪贴板历史=" << clipboardHistory_ << " 互译=" << translateEnabled_ << "("
              << (translateAvailable() ? translateModel + " → " + translateTarget : "未配置")
              << ")"
-             << " 检查更新=" << *config_.checkUpdate;
+             << " 检查更新=" << *config_.checkUpdate << " 打字统计=" << typingStats_;
     if (core_) {
         applyCoreSettings();
     }
@@ -1378,8 +1319,20 @@ bool ArchtypeEngine::canToggleMode() const {
 }
 
 ArchtypeEngine::~ArchtypeEngine() {
+    // 退出时不能无限等（#244：桌面会话结束时 fcitx5 卡在这里，等到被 SIGTERM）。后台还在载入词库的，
+    // 最多等几秒；还没好就交给一个分离的线程等它载完再释放，这里不管了（进程反正要退出）
     if (loading_.valid()) {
-        takeLoaded();
+        if (loading_.wait_for(std::chrono::seconds(kShutdownWaitSeconds)) == std::future_status::ready) {
+            takeLoaded();
+        } else {
+            WLOG_W() << "ArchType: 退出时词库还在载入，不等了";
+            std::thread([loading = std::move(loading_)]() mutable {
+                const ArchtypeLoaded loaded = loading.get();
+                if (loaded.core) {
+                    archtype_engine_free(loaded.core);
+                }
+            }).detach();
+        }
     }
     // 会话借用引擎和翻译器：先让它们放开，再释放（ABI.md：要比会话活得久）
     instance_->inputContextManager().foreach([this](fcitx::InputContext *ic) {
@@ -1389,10 +1342,25 @@ ArchtypeEngine::~ArchtypeEngine() {
         return true;
     });
     if (core_) {
-        // 退出前等后台存盘写完（free 也会等，这里能把失败记进日志）
-        maybeSaveUserDict(true, true);
-        archtype_engine_free(core_);
+        // 退出前把没存的交给后台存盘，最多等几秒（free 也会等写完，所以没写完时不 free：
+        // 盘卡住了也别把 fcitx5 的退出拖住，进程退出时内存反正都还回去）
+        maybeSaveUserDict(true, false);
+        const int saved = archtype_engine_save_wait(core_, kShutdownWaitSeconds * 1000);
+        if (saved < 0) {
+            WLOG_W() << "ArchType: 用户词库或输入习惯保存失败："
+                     << (archtype_last_error() ? archtype_last_error() : "unknown");
+        }
+        if (saved == 1) {
+            WLOG_W() << "ArchType: 退出时存盘 " << kShutdownWaitSeconds << " 秒还没写完，不等了";
+        } else {
+            archtype_engine_free(core_);
+        }
         core_ = nullptr;
+    }
+    if (stats_) {
+        // 开着时交出最后攒着的、等写文件线程写完
+        archtype_stats_free(stats_);
+        stats_ = nullptr;
     }
     voiceTimer_.reset();
     if (voice_) {
@@ -1496,7 +1464,7 @@ void ArchtypeEngine::finishCommit(fcitx::InputContext *ic, ArchtypeState *state,
     const bool learned = countLearned(frame);
     if (ic && !text.empty()) {
         // 会话已经补好了空格；互译时攒原文也是会话做的，这里上屏的是译文、原文或不在互译时的字
-        recordStats(text, frame);
+        recordStats(ic, text, frame);
         ic->commitString(text);
     }
     // 会话上屏时已经清好了它上屏的那部分，这里从不 reset 会话（reset 会把还在打的丢掉）：只丢掉抄的候选，
@@ -1553,6 +1521,7 @@ void ArchtypeEngine::syncSession(ArchtypeState *state) {
     config.wubi_auto_commit = *config_.wubiAutoCommit ? 1 : 0;
     config.wubi_hint = *config_.wubiHint ? 1 : 0;
     config.association = association_ ? 1 : 0;
+    config.auto_pair_punct = autoPairPunct_ ? 1 : 0;
     archtype_session_configure(state->session_, &config);
 }
 
@@ -1572,14 +1541,19 @@ const ArchtypeFrame *ArchtypeEngine::sessionKey(fcitx::InputContext *ic, Archtyp
         // fcitx5 的 Password / Sensitive 是这个输入框自己的能力位，确定是密码框：选的词也不学
         hints |= ARCHTYPE_KEY_HINT_NO_TRANSLATE | ARCHTYPE_KEY_HINT_NO_LEARN;
     }
-    // 读得到周围文字时会话拿光标前的字核对自己记的上文（在应用里删过、改过就作废）
-    const auto prev = prevChar(ic);
+    // 读得到周围文字时会话拿光标前的字核对自己记的上文（在应用里删过、改过就作废），
+    // 自动配对拿光标后的字核对补好的右标点还在不在。这次按键开头刚挪过光标时，报来的还是挪之前的，不带
+    const auto prev = surroundingStale_ ? std::nullopt : prevChar(ic);
     if (prev) {
         hints |= ARCHTYPE_KEY_HINT_SURROUNDING;
     }
+    const auto next = surroundingStale_ ? std::nullopt : nextChar(ic);
+    if (next) {
+        hints |= ARCHTYPE_KEY_HINT_NEXT_CHAR;
+    }
     const ArchtypeFrame *frame =
         state->sessionKey(static_cast<uint32_t>(key.sym()), static_cast<uint32_t>(key.states()),
-                          action, prev.value_or(0), hints, nowMs());
+                          action, prev.value_or(0), hints, nowMs(), next.value_or(0));
     if (frame && frame->wake_after_ms > 0) {
         scheduleTick(ic, frame->wake_after_ms);
     }
@@ -1608,6 +1582,25 @@ std::optional<uint32_t> ArchtypeEngine::prevChar(fcitx::InputContext *ic) const 
     return fcitx::utf8::isValidChar(prev) ? std::optional<uint32_t>(prev) : std::nullopt;
 }
 
+std::optional<uint32_t> ArchtypeEngine::nextChar(fcitx::InputContext *ic) const {
+    if (!ic || !ic->capabilityFlags().test(fcitx::CapabilityFlag::SurroundingText)) {
+        return std::nullopt;
+    }
+    const auto &surrounding = ic->surroundingText();
+    if (!surrounding.isValid() || surrounding.cursor() != surrounding.anchor()) {
+        return std::nullopt;
+    }
+    const unsigned pos = surrounding.cursor();
+    const std::string &text = surrounding.text();
+    // 光标在报来的文字末尾不算「后面没有字」：有的应用只报光标前的字
+    if (pos >= fcitx::utf8::length(text)) {
+        return std::nullopt;
+    }
+    const auto offset = fcitx::utf8::ncharByteLength(text.begin(), pos);
+    const uint32_t next = fcitx::utf8::getChar(text.begin() + offset, text.end());
+    return fcitx::utf8::isValidChar(next) ? std::optional<uint32_t>(next) : std::nullopt;
+}
+
 uint32_t ArchtypeEngine::keyAction(const fcitx::Key &key) const {
     const auto sym = key.sym();
     if (sym == FcitxKey_Up || sym == FcitxKey_Down || sym == FcitxKey_Left ||
@@ -1630,6 +1623,105 @@ uint32_t ArchtypeEngine::keyAction(const fcitx::Key &key) const {
     return ARCHTYPE_KEY_ACTION_NONE;
 }
 
+namespace {
+/// 上屏以后等多久再发挪光标的键。Wayland 上上屏走 text-input、发键走虚拟键盘，同时发的话方向键常比
+/// 上屏先到；下一个键来的时候不等这么久，先把攒着的发掉（别让应用先收到下一个字）。
+constexpr uint64_t kCursorDelayUsec = 15000;
+/// 自己给应用发键以后多久内来的重置算是应用对这几下键的反应。
+constexpr uint64_t kOwnKeysResetUsec = 300000;
+} // namespace
+
+void ArchtypeEngine::sendAppKeys(fcitx::InputContext *ic, fcitx::KeySym sym, int count) {
+    if (!ic || count <= 0) {
+        return;
+    }
+    // 只给 keysym、键码留 0（不同键盘、前端的键码不一样）：D-Bus 前端只传 keysym，要键码的前端按 keysym 找
+    const fcitx::Key key(sym);
+    for (int i = 0; i < count; ++i) {
+        ic->forwardKey(key, false);
+        ic->forwardKey(key, true);
+    }
+    appKeysTarget_ = ic->watch();
+    appKeysAtUsec_ = fcitx::now(CLOCK_MONOTONIC);
+}
+
+bool ArchtypeEngine::flushCursorDelta() {
+    if (cursorTimer_) {
+        cursorTimer_->setEnabled(false);
+    }
+    const int delta = std::exchange(pendingCursorDelta_, 0);
+    auto *target = cursorTarget_.get();
+    if (!target || delta == 0) {
+        return false;
+    }
+    sendAppKeys(target, delta < 0 ? FcitxKey_Left : FcitxKey_Right, delta < 0 ? -delta : delta);
+    return true;
+}
+
+void ArchtypeEngine::dropCursorDelta(fcitx::InputContext *ic) {
+    if (cursorTarget_.get() != ic) {
+        return;
+    }
+    if (cursorTimer_) {
+        cursorTimer_->setEnabled(false);
+    }
+    pendingCursorDelta_ = 0;
+}
+
+void ArchtypeEngine::applyCursorDelta(fcitx::InputContext *ic, const ArchtypeFrame *frame,
+                                     bool afterCommit) {
+    if (!ic || !frame ||
+        frame->size < offsetof(ArchtypeFrame, cursor_delta) + sizeof(frame->cursor_delta) ||
+        frame->cursor_delta == 0) {
+        return;
+    }
+    if (cursorTarget_.get() != ic) {
+        flushCursorDelta(); // 别的输入框攒着的先发掉
+    }
+    cursorTarget_ = ic->watch();
+    pendingCursorDelta_ += frame->cursor_delta;
+    const bool waiting = cursorTimer_ && cursorTimer_->isEnabled();
+    if (!afterCommit) {
+        // 没上屏（跳过右标点）：前面攒着的还在等上屏落到应用就一起发，不抢在前面；没有就马上发
+        if (!waiting) {
+            flushCursorDelta();
+        }
+        return;
+    }
+    if (!cursorTimer_) {
+        cursorTimer_ = instance_->eventLoop().addTimeEvent(
+            CLOCK_MONOTONIC, fcitx::now(CLOCK_MONOTONIC) + kCursorDelayUsec, kTimerAccuracyUsec,
+            [this](fcitx::EventSourceTime *, uint64_t) {
+                flushCursorDelta();
+                return true;
+            });
+    } else {
+        cursorTimer_->setNextInterval(kCursorDelayUsec);
+    }
+    cursorTimer_->setOneShot();
+}
+
+bool ArchtypeEngine::pairDelete(fcitx::InputContext *ic, const ArchtypeFrame *frame,
+                               fcitx::KeyEvent &event) {
+    if (!ic || !frame || frame->handled ||
+        frame->size < offsetof(ArchtypeFrame, delete_next) + sizeof(frame->delete_next) ||
+        !frame->delete_next) {
+        return false;
+    }
+    // 退格自己发，不放行：放行的退格和发的 Delete 在有的前端走两条路，先后说不准。
+    // 都从 sendAppKeys 发，前面攒着的挪光标（按键开头已经发了）也在它前面
+    event.filterAndAccept();
+    flushCursorDelta();
+    sendAppKeys(ic, FcitxKey_Delete, 1);
+    sendAppKeys(ic, FcitxKey_BackSpace, 1);
+    return true;
+}
+
+bool ArchtypeEngine::resetFromOwnKeys(fcitx::InputContext *ic) const {
+    return ic && appKeysTarget_.get() == ic && appKeysAtUsec_ != 0 &&
+           fcitx::now(CLOCK_MONOTONIC) - appKeysAtUsec_ < kOwnKeysResetUsec;
+}
+
 void ArchtypeEngine::applySessionFrame(fcitx::InputContext *ic, ArchtypeState *state,
                                       const ArchtypeFrame *frame) {
     if (frame && frame->size >= offsetof(ArchtypeFrame, forgot) + sizeof(frame->forgot) &&
@@ -1639,9 +1731,11 @@ void ArchtypeEngine::applySessionFrame(fcitx::InputContext *ic, ArchtypeState *s
         maybeSaveUserDict(true);
     }
     if (frame && frame->commit) {
-        // 学没学到词看 frame->learned；选了 emoji 由会话记进最近用过
+        // 学没学到词看 frame->learned；选了 emoji 由会话记进最近用过。
+        // 候选位置从 frame->choice_index 拿（1.11），统计用。
         finishCommit(ic, state, frame);
         updateInputPanel(ic, state);
+        applyCursorDelta(ic, frame, true);
         return;
     }
     // 没有要上屏的字也可能学到了：「译」里选的词进了原文，不在 frame->commit 里。也记一次、攒够了存，
@@ -1653,6 +1747,7 @@ void ArchtypeEngine::applySessionFrame(fcitx::InputContext *ic, ArchtypeState *s
         if (learned) {
             maybeSaveUserDict(false);
         }
+        applyCursorDelta(ic, frame, false);
         return;
     }
     const bool wasExpanded = state->expanded_;
@@ -2105,8 +2200,10 @@ void ArchtypeEngine::keyEvent(const fcitx::InputMethodEntry & /*entry*/,
     }
     auto *state = ic->propertyFor(&factory_);
     const fcitx::Key key = event.key();
-    recordKey(ic, key, !event.isRelease());
     const auto sym = key.sym();
+    // 上屏后还没发的挪光标（自动配对）先发：应用要先把光标放好，再收到这个键或这个键上屏的字。
+    // 这时应用报的周围文字还是挪之前的
+    surroundingStale_ = flushCursorDelta();
     // 联想开着时按了别的键：会话关掉了联想、键交给了应用（没有 frame 要画）时，候选框上的联想也收起来。
     // 放在最后（各条路都处理完、frame 用完以后）
     struct AfterKey {
@@ -2117,6 +2214,10 @@ void ArchtypeEngine::keyEvent(const fcitx::InputMethodEntry & /*entry*/,
             updateInputPanel(ic, state);
         }
     }};
+
+    // 按键热力图：所有按键都经过这里（输入法消费掉的、还给应用的都算），松开也传，
+    // 长按和合成的自动重复由核心去重。密码框在 recordKey 里排除，统计关着时什么都不做。
+    recordKey(ic, event.origKey(), !event.isRelease());
 
     if (voice_ && handleVoiceKey(ic, state, event)) {
         return;
@@ -2183,6 +2284,8 @@ void ArchtypeEngine::keyEvent(const fcitx::InputMethodEntry & /*entry*/,
         if (const ArchtypeFrame *frame = sessionKey(ic, state, key); frame && frame->handled) {
             applySessionFrame(ic, state, frame);
             event.filterAndAccept();
+        } else {
+            pairDelete(ic, frame, event); // 括号里切到英文打了字又删到空：两个一起删
         }
         return;
     }
@@ -2236,7 +2339,8 @@ void ArchtypeEngine::keyEvent(const fcitx::InputMethodEntry & /*entry*/,
     if (const ArchtypeFrame *frame = sessionKey(ic, state, key); frame && frame->handled) {
         applySessionFrame(ic, state, frame);
         event.filterAndAccept();
-        return;
+    } else {
+        pairDelete(ic, frame, event); // 自动配对：空的一对按退格，两个一起删
     }
 }
 
@@ -2316,6 +2420,16 @@ void ArchtypeEngine::reset(const fcitx::InputMethodEntry & /*entry*/,
     if (!ic) {
         return;
     }
+    if (event.type() == fcitx::EventType::InputContextReset && resetFromOwnKeys(ic)) {
+        // 自动配对刚给应用发了方向键、Delete、退格，GTK 挪光标、删字时会重置输入法：
+        // 光标是自己挪的，配对、上文、刚开始打的拼音都还算数
+        return;
+    }
+    // 光标去了别处：还没发的挪光标不发了，之后的重置也不再当成是自己发的键引起的
+    dropCursorDelta(ic);
+    if (appKeysTarget_.get() == ic) {
+        appKeysAtUsec_ = 0;
+    }
     // 原文和拼音一样只在输入法里：应用重置输入框（点了别处、失去焦点）就丢掉，
     // 会话记的上文也作废（回来时光标可能在别处）。编辑区标了 DontCommit，工具包不会自己上屏。
     auto *state = ic->propertyFor(&factory_);
@@ -2382,7 +2496,11 @@ bool ArchtypeEngine::handleShiftKey(fcitx::InputContext *ic, ArchtypeState *stat
         return false;
     }
     followSessionMode(ic, state, frame);
-    event.filterAndAccept();
+    // 这一下是松开 Shift（切了模式）：不接受，照常交给应用。外壳只在输入法没接受的时候才把键
+    // 转给应用（Wayland 上经 KWin 的虚拟键盘），吞掉松开的 Shift，应用会以为它还按着：之后
+    // shift+单击开新窗口、滚轮变横向、快捷键错乱（#225）。按下那一下本来就没接受（见上），
+    // 单独按下、松开 Shift 不出字，交给应用不会多打东西。
+    event.filter();
     return true;
 }
 
@@ -2746,6 +2864,71 @@ void ArchtypeEngine::clearTranslation(ArchtypeState *state) {
     }
 }
 
+namespace {
+/// 密码框、敏感输入框（Password / Sensitive 任一位）：打字统计整个不算。
+unsigned statsFlags(fcitx::InputContext *ic) {
+    return !ic || ic->capabilityFlags().testAny(fcitx::CapabilityFlag::PasswordOrSensitive)
+               ? ARCHTYPE_STATS_SENSITIVE
+               : 0u;
+}
+} // namespace
+
+void ArchtypeEngine::recordStats(fcitx::InputContext *ic, const std::string &text,
+                                const ArchtypeFrame *frame) {
+    // 关着时核心什么都不做；这里先挡一下，省得算模式名
+    if (!stats_ || !typingStats_ || text.empty()) {
+        return;
+    }
+    const std::string src = typingSource();
+    const std::string scheme = shuangpin_ && !translateMode_ && !asciiMode_ ? typingScheme() : std::string();
+    unsigned candidate = frame ? static_cast<unsigned>(frame->choice_index) : 0;
+    if (src == "translate") {
+        candidate = 0; // 互译上屏的不是候选
+    }
+    // 文字只交给核心数各类字符有几个，核心不留下；密码框里的整个不算
+    archtype_stats_commit(stats_, text.c_str(), src.c_str(), scheme.empty() ? nullptr : scheme.c_str(),
+                         static_cast<int>(candidate), statsFlags(ic), statsNowMs());
+}
+
+void ArchtypeEngine::recordKey(fcitx::InputContext *ic, const fcitx::Key &key, bool down) {
+    if (!stats_ || !typingStats_ || !ic) {
+        return;
+    }
+    // 只记哪个物理键按了一次（当天的次数），不记顺序和时刻；密码框里的不算
+    archtype_stats_key(stats_, 0, static_cast<unsigned>(key.code()), down ? 1 : 0, statsFlags(ic),
+                      statsNowMs());
+}
+
+void ArchtypeEngine::flushStats() {
+    if (stats_ && typingStats_) {
+        // 交给核心的写文件线程，这里不等
+        archtype_stats_flush(stats_, statsNowMs());
+    }
+}
+
+std::string ArchtypeEngine::typingSource() const {
+    if (translateMode_) {
+        return "translate";
+    }
+    if (asciiMode_) {
+        return "english";
+    }
+    if (wubi_) {
+        return "wubi";
+    }
+    return shuangpin_ ? "shuangpin" : "quanpin";
+}
+
+std::string ArchtypeEngine::typingScheme() const {
+    std::string id = shuangpinScheme_;
+    for (char &ch : id) {
+        if (ch >= 'A' && ch <= 'Z') {
+            ch = static_cast<char>(ch - 'A' + 'a');
+        }
+    }
+    return id;
+}
+
 uint64_t ArchtypeEngine::nowMs() {
     return static_cast<uint64_t>(fcitx::now(CLOCK_MONOTONIC) / 1000);
 }
@@ -2788,7 +2971,7 @@ uint32_t ArchtypeEngine::tickTranslate() {
     }
     if (frame->commit) {
         // 按过回车，译好了：上屏译文（正在打的拼音留着，不清编辑区）
-        recordStats(frame->commit, frame);
+        recordStats(ic, frame->commit, frame);
         ic->commitString(frame->commit);
         translateDrawn_.clear();
         updateInputPanel(ic, state);

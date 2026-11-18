@@ -31,7 +31,8 @@ dbus-send --session --dest=org.fcitx.Fcitx5 /controller \
 
 ## 互译
 
-在设置界面「翻译」里下载本地模型，或者在「用什么翻译」里选「自定义翻译服务」填一个 OpenAI 格式（`chat/completions`）的接口，打开「互译」，
+在设置界面「翻译」页的「翻译引擎」里选一个：**本地翻译（离线）**（默认，要先下载模型）、
+**哔哩哔哩（免费，不用 API Key）**，或者**自定义翻译服务**（填一个 OpenAI 格式、`chat/completions` 的接口），再打开「互译」，
 单按 Shift 就在 **中 → 英 → 译 → 中** 之间切换（没填好服务时只在中英之间切）。
 也可以在「输入」页设一个**互译的快捷键**（`TranslateModeKey`，比如 `Ctrl+Shift+Y`）：按它进「译」，在「译」里再按回到原来的模式（中文或英文）；设了以后单按 Shift 只在中英之间切。
 左 Shift 被 fcitx5 拿去「临时切换输入法」时切不到「译」，用右 Shift，或在设置「输入」页打开「Shift 只给 ArchType 用」。
@@ -52,16 +53,45 @@ dbus-send --session --dest=org.fcitx.Fcitx5 /controller \
 - 打的是外文（比如英文）就翻成中文。数字、`/` `+` 这些符号也进原文。
 - 同一句话翻过一次会记住（最近 64 句），再打不用等。出错时候选框底下写原因，按回车重试。
 - 有的程序不让输入法把编辑区画在它的输入框里，这时译文写在候选框最下面一行。
-- **打的字会发给你填的服务**（ArchType 自己不经手）。密码框里不翻译。
+- **打的字会发给你选的服务**（ArchType 自己不经手）。密码框里不翻译。
 - API Key 存在 `~/.config/archtype/translate.key`（权限 0600，只有自己能读），不写进 `archtype.conf`、不进日志。
   手动写也行：一行，就是 Key 本身。本机的服务（Ollama 等）可以不填。
 - 发请求用的是系统的 `curl`（没装的话装一下），走系统的代理设置；连本机的服务不走代理。
 - 打字时要等它翻译，挑又小又快的模型（各家的 mini、flash、turbo 版）；推理模型会慢很多。
   设置里的「测试连接」会显示一次要多久。
 
+### 翻译引擎
+
+「翻译引擎」不是单独的设置项，是从下面几项推出来的（Linux 设置界面和 macOS 一样，见 `spec/config.json` 的 `translateEngines`）：
+
+| 引擎 | 配置文件里 | 说明 |
+|---|---|---|
+| 本地翻译（离线） | `TranslateLocal=True`（默认） | 见[本地模型](#本地模型离线) |
+| 哔哩哔哩（免费，不用 API Key） | `TranslateLocal=False`，`TranslateBaseUrl` 的主机是 `index-translate.bilibili.com` | 见[哔哩哔哩](#哔哩哔哩index-translate) |
+| 自定义翻译服务 | `TranslateLocal=False`，别的地址 | 服务商、地址、Key、模型，见上面 |
+
+在设置里换引擎时写上这个引擎的 `TranslateLocal`、`TranslateBaseUrl`、`TranslateModel`。从「自定义」换到哔哩哔哩再换回来，
+原来填的地址和模型照原样写回（只记在这次打开的设置窗口里）；API Key 文件一直不动。
+升级不会换引擎：默认还是本地翻译、互译默认关，已经在用的服务照旧用，不会自己开始把字发给新的服务。
+
+### 哔哩哔哩（Index-Translate）
+
+哔哩哔哩开源的翻译模型 [Index-Translate](https://github.com/bilibili/Index-Translate)，官方提供免费的公开接口
+`https://index-translate.bilibili.com/v1`（OpenAI 格式），**不用注册、不用 API Key**。一句话不到 1 秒。
+
+- 设置里选「哔哩哔哩」，再挑模型：`Index-Translate-2B`（最快，默认）、`Index-Translate-9B`（译得好一点，稍慢）、
+  `Index-Translate-35B-A3B`（预览版）。`TranslateModel` 空着时用 2B。
+- **隐私**：要翻译的文字会发到哔哩哔哩的服务器（`index-translate.bilibili.com`）。只在切到「译」时发，密码框里不翻译；
+  存在 `translate.key` 里给别的服务商的 Key **不会**发给哔哩哔哩。
+- Index-Translate 是专门的翻译模型，不认通用的系统提示词，核心用它官方的「带约束翻译」提示词（原文是问题、指令也只翻译，
+  不回答；表情、网址、@ 提及、数字和代码照抄；跟着「正式语气」），temperature 0，关掉思考。
+  地址的主机是 `index-translate.bilibili.com`，或者模型名以 `Index-Translate` 开头（不分大小写，自己部署的
+  Index-Translate 换了地址也认得）时都这样发；「测试连接」也一样。
+- 这是哔哩哔哩免费提供的服务，ArchType 管不了它能用多久、有没有限流；用不了时换回本地翻译或自定义服务。
+
 ### 本地模型（离线）
 
-不想把字发出去，可以在「翻译」页的「用什么翻译」里选「本地模型（离线）」（设置里默认就是它），用腾讯混元的翻译模型
+不想把字发出去，可以在「翻译」页的「翻译引擎」里选「本地翻译（离线）」（设置里默认就是它），用腾讯混元的翻译模型
 [HY-MT 1.5 1.8B](https://huggingface.co/tencent/HY-MT1.5-1.8B-GGUF)（Q4_K_M，1.13 GB）在本机翻：
 
 - 模型点「下载」获取，放在 `~/.local/share/archtype/models/`（`TranslateLocalModel` 写了位置就下到那里），下载完校验 SHA256，断了再点会接着下（接着下时不用再确认许可）。两端一样。
@@ -145,6 +175,7 @@ ClipboardHistory=False
 AutoSpace=False
 AutoSpaceLetters=True
 AutoSpaceDigits=True
+AutoPairPunct=False
 Voice=True
 VoiceKey=Alt_R
 VoiceCopy=False
@@ -163,6 +194,7 @@ TranslateLlamaServer=
 TranslateIdleMinutes=5
 CheckUpdate=True
 BetaUpdates=False
+TypingStats=False
 Lexicon=
 ```
 
@@ -171,13 +203,15 @@ Lexicon=
 | `CandidateLayout` | `Horizontal` 横排、`Vertical` 竖排 |
 | `ArrowKeys` | 打字途中方向键做什么（#129），设置界面里叫「方向键」：`Candidates`「都用来选词」（默认），跟着候选排列，横排 `←` `→` 选词、`↑` 上一页、`↓` 展开更多候选，竖排 `↑` `↓` 选词、`←` `→` 翻页；`Caret`「左右键移动光标」，横排竖排都是 `↑` `↓` 选词（到了一页的两头接着翻页），`←` `→` 在拼音里移动光标：打的字母插在光标处，退格删光标前一个，`Home`、`End`、`Delete` 也管光标，到了两头再按什么也不做；方向键不翻页，翻页用 `PgUp` `PgDn` 和翻页键，横排也不展开面板。双拼时光标在中间，编辑区显示打的键；「译」里拼音在原文框里，没有光标 |
 | `PageSize` | 每页候选个数，3–9 |
-| `Fuzzy`、`TypoCorrection`、`Traditional`、`DateTime`、`Calculator`、`Toolbar`、`ClipboardHistory`、`Voice`、`VoiceCopy`、`EmojiSuggest`、`Translate`、`TranslateFormal`、`CheckUpdate`、`BetaUpdates` | `True` / `False` |
+| `Fuzzy`、`TypoCorrection`、`Traditional`、`DateTime`、`Calculator`、`Toolbar`、`ClipboardHistory`、`Voice`、`VoiceCopy`、`EmojiSuggest`、`Translate`、`TranslateFormal`、`CheckUpdate`、`BetaUpdates`、`TypingStats` | `True` / `False` |
 | `AutoSpace`、`AutoSpaceLetters`、`AutoSpaceDigits` | 中英文之间自动加空格：总开关（默认关）、汉字和字母之间、汉字和数字之间。要应用报告光标前的文字才生效（终端等不支持），密码、网址、邮箱输入框不加 |
+| `AutoPairPunct` | 中文标点自动配对，默认关，在设置的「输入」页（标点样式下面）打开。中文标点下打 `(` `[` `<` `{` `"` `'` 上屏成对的（）【】《》「」“”‘’，光标放到中间；在里面打完再按右半边（`)` `]` `>` `}` `"` `'`）不再多上屏一个，而是跳过补好的那个（打拼音途中按的先上屏候选），数字后面也一样：`(` `3` `)` 是（3）。可以套着打（“”）。里面空着时按退格两个一起删。里面打字、空格、退格都不打断配对；按了方向键、`Home` `End`、回车、`Tab`、`Delete`、快捷键，换了窗口、点鼠标挪了光标（应用重置输入法）以后不再跳过。数字后面的左括号照常是半角（`3(`），不配对；互译、半角标点时不配对。Linux 上光标靠插件给应用发方向键挪；macOS 上没有挪光标的接口（发方向键要「辅助功能」权限），靠输入法按位置换字：把光标要停的位置前面那个字原样换一遍，光标就落在那里（和长按出重音字母一样的接口），所以只在应用告诉输入法光标在哪、读得到光标旁边的字时配对，终端这类应用里、空的输入框里第一个字照常一个一个上屏。应用报告光标前后文字时，跳过、一起删之前还核对右边确实是补好的那个 |
 | `FuzzyZh`、`FuzzyCh`、`FuzzySh`、`FuzzyNL`、`FuzzyFH`、`FuzzyRL`、`FuzzyAn`、`FuzzyEn`、`FuzzyIn`、`FuzzyIan`、`FuzzyUan`、`FuzzyUn`、`FuzzyAnAi`、`FuzzyHuangWang`、`FuzzyUnIong`、`FuzzyEngOng` | 模糊音的各组（z=zh、c=ch、s=sh、n=l、f=h、r=l、an=ang、en=eng、in=ing、ian=iang、uan=uang、un=ong、an=ai、huang=wang、un=iong、eng=ong），`Fuzzy` 打开时才生效 |
 | `SelectKeys` | 分号、引号选词：`Off`、`Semicolon`（`;` 选第 2 个）、`SemicolonQuote`（再加 `'` 选第 3 个，引号不再当隔音符） |
 | `RareExtChars` | 也出 CJK 扩展 B 区及以后的单字（比如 `hou` 的 𠯜），默认关：常见中文字体（Noto CJK、思源、苹方）都没有这些字，列出来是方块。打开前先装能显示它们的字体，比如 Ubuntu / Debian 的 `fonts-hanazono`。通用规范汉字表里的扩展区字（𬭩、𫚔，约 200 个，常见字体都有）和含这些字的词（𩽾𩾌）不受这个开关影响 |
 | `PickChar` | 以词定字：打拼音时 `[` 上屏光标处候选的第一个字、`]` 上屏最后一个字，默认开；翻页键设成 `[ ]` 时让给翻页 |
 | `Association` | 联想：选词、整句上屏以后给出一页常跟在后面的词（词级模型里的，加上自己用过的搭配）。按 `Tab` 进联想行，再用空格、回车、数字上屏，`Esc` 退出，也能用鼠标点；没按 `Tab` 时接着打字、数字、标点、空格、回车都照常（数字不选联想，中文后面常接着打数字）。五笔、互译、密码框里不出。默认关（0.5.0 预发布时默认开），在设置的「输入」页打开 |
+| `TypingStats` | [打字统计](#打字统计)，默认关。关着时什么都不记、不建文件；打开以后只在本机记每天的聚合计数，不记打的内容。在设置的「统计」页打开、清除 |
 | `InputScheme` | 输入方案，设置界面里是「输入方案」的单选：`Quanpin` 拼音（默认）、`Shuangpin` 双拼、`Wubi86` 五笔 86。五笔要数据目录里有五笔码表 `wubi86.tsv`（安装包里带着，查找顺序和词库一样，环境变量是 `ARCHTYPE_WUBI`）；没有时设置里「五笔输入」灰掉，配置文件里写了 `Wubi86` 的照全拼打，候选框上方提示没有码表。五笔怎么打见 [README 的五笔](../README.md#五笔) |
 | `Shuangpin` | 0.3.12 及以前的双拼开关，已经不是设置项。文件里没有 `InputScheme` 时，`Shuangpin=True` 读成 `InputScheme=Shuangpin`；有 `InputScheme` 时不看它。三端存盘时都不写它，下次存盘这一行就没了 |
 | `WubiAutoCommit` | 五笔打满四码、只有一个字词时直接上屏，默认 `True`。只在五笔时显示 |
@@ -185,14 +219,14 @@ Lexicon=
 | `ShuangpinScheme` | 双拼方案：`Ziranma` 自然码、`Xiaohe` 小鹤、`Microsoft` 微软、`Sogou` 搜狗、`ABC` 智能 ABC、`Ziguang` 紫光、`PinyinJiajia` 拼音加加 |
 | `ShuangpinShowKeys` | 双拼时编辑区显示打的键（`uivs`），不翻成全拼（`shi'zhong`），中英混打时看得出打了什么。默认 `False` |
 | `ShiftToggle` | 单按哪个 Shift 切中英文：`Both`、`Left`、`Right`、`Off`。fcitx5 自己的全局快捷键（「临时切换输入法」「切换输入法」「向前切换输入法」等任何一项）里用了同一个 Shift 时，fcitx5 先处理，ArchType 收不到；设置界面「输入」页会提示，并能一键把 Shift 从 fcitx5 那边去掉（改的是 `~/.config/fcitx5/config`，关掉开关就还原；这个文件写不了时提示「只在这次有效」，NixOS 见[安装说明](INSTALL.md#单按-shift-在-nixos-上)） |
-| `InitialMode` | 从别的输入法切到 ArchType、开机后第一次用时的模式：`Chinese`（默认）、`English`、`Last`（和上次切走时一样）。换窗口不算，中英文照旧全局保持；关了 Shift 切换（`ShiftToggle=Off`）、也没另设切换键（`ToggleKey`）时总是中文（`TranslateModeKey` 只进出「译」，不算）。只在 Linux（macOS 每个应用一份模式，还没有这一项） |
+| `InitialMode` | 从别的输入法切到 ArchType、开机后第一次用时的模式：`Chinese`（默认）、`English`、`Last`（和上次切走时一样）。换窗口不算，中英文照旧全局保持；关了 Shift 切换（`ShiftToggle=Off`）、也没另设切换键（`ToggleKey`）时总是中文（`TranslateModeKey` 只进出「译」，不算）。macOS 上每个应用记着自己的中英文：输入法停用以后系统现在用的不是 ArchType（切到了别的输入法；密码框里系统临时换成英文键盘不算）就记一笔，之后每个应用第一次用到 ArchType 时按这一项定一次，换应用、换窗口不动；`Last` 是每个应用和它上次一样 |
 | `VoiceKey` | fcitx5 的键名，如 `Alt_R`、`Control_R`、`Menu`、`F8` |
 | `ToggleKey` | 另设一个切换中 / 英文的快捷键（fcitx5 键名，如 `Control+Shift+space`），留空不用；单按 Shift 照常。在「译」里按回到中文。fcitx5 自己的全局快捷键先处理：`Control+space` 默认是 fcitx5「切换启用/禁用输入法」的键（macOS 上是系统「选择上一个输入法」的键），设成它 ArchType 收不到，所以设置里不再列它；Linux 设置界面会提示被 fcitx5 占着的键 |
 | `TranslateModeKey` | 进出「译」的快捷键（如 `Control+Shift+Y`），留空不用：按它进「译」（打到一半的拼音带进去），在「译」里再按回到进来前的模式；设了以后单按 Shift 只在中 ↔ 英之间切（在「译」里单按回中文）。互译没打开、翻译没配好、密码框里这个键交给应用。和 `ToggleKey` 设成同一个键时算这个 |
 | `EmojiKey` | 表情面板快捷键，fcitx5 的键名，如 `Super+period`、`Control+semicolon`；留空不用快捷键。macOS 上默认 `Control+period`，`Super` 当 `Control`（见 [macOS](#macos)） |
 | `TranslateTarget` | 互译语言：`en` 英、`ja` 日、`ko` 韩、`fr` 法、`de` 德、`es` 西、`ru` 俄、`pt` 葡、`it` 意、`vi` 越、`th` 泰、`id` 印尼、`ar` 阿 |
-| `TranslateBaseUrl`、`TranslateModel` | 翻译服务（OpenAI 格式）的地址和模型，见[互译](#互译) |
-| `TranslateLocal` | `True` 用本地模型（默认），`False` 用 `TranslateBaseUrl` 的翻译服务。配置文件里没写这一项、又填了 `TranslateBaseUrl` 时当 `False`（0.3.10 及以前填过翻译服务的照旧用服务）；Linux 插件、设置界面和 macOS 都这样 |
+| `TranslateBaseUrl`、`TranslateModel` | 翻译服务（OpenAI 格式）的地址和模型，见[互译](#互译)。地址是 `https://index-translate.bilibili.com/v1` 时是[哔哩哔哩](#哔哩哔哩index-translate)，模型可以空着（用 `Index-Translate-2B`）、不用 Key |
+| `TranslateLocal` | `True` 用本地模型（默认），`False` 用 `TranslateBaseUrl` 的翻译服务（哔哩哔哩或自定义，见[翻译引擎](#翻译引擎)）。配置文件里没写这一项、又填了 `TranslateBaseUrl` 时当 `False`（0.3.10 及以前填过翻译服务的照旧用服务）；Linux 插件、设置界面和 macOS 都这样 |
 | `TranslateLocalModel` | 本地模型文件，留空用 `~/.local/share/archtype/models/HY-MT1.5-1.8B-Q4_K_M.gguf`，见[本地模型](#本地模型离线) |
 | `TranslateLlamaServer` | `llama-server` 的路径，留空先在 `PATH` 里找，再用设置里下载的那份 |
 | `TranslateIdleMinutes` | 本地模型闲置几分钟后释放，0–240，0 表示不自动释放 |
@@ -217,7 +251,7 @@ Lexicon=
 
 | 变量 | 作用 |
 |---|---|
-| `ARCHTYPE_FUZZY=1`、`ARCHTYPE_SHUANGPIN=1`、`ARCHTYPE_TRADITIONAL=1`、`ARCHTYPE_TYPO=0`、`ARCHTYPE_VERTICAL=1`、`ARCHTYPE_EMOJI=0`、`ARCHTYPE_DATETIME=0`、`ARCHTYPE_CALC=0`、`ARCHTYPE_TOOLBAR=0`、`ARCHTYPE_CLIPBOARD_HISTORY=0`、`ARCHTYPE_VOICE_COPY=1` | 对应上面的开关 |
+| `ARCHTYPE_FUZZY=1`、`ARCHTYPE_SHUANGPIN=1`、`ARCHTYPE_TRADITIONAL=1`、`ARCHTYPE_TYPO=0`、`ARCHTYPE_VERTICAL=1`、`ARCHTYPE_EMOJI=0`、`ARCHTYPE_DATETIME=0`、`ARCHTYPE_CALC=0`、`ARCHTYPE_TOOLBAR=0`、`ARCHTYPE_CLIPBOARD_HISTORY=0`、`ARCHTYPE_VOICE_COPY=1`、`ARCHTYPE_AUTO_PAIR_PUNCT=1` | 对应上面的开关 |
 | `ARCHTYPE_AUTOSPACE` | 自动加空格的位掩码：1 汉字和字母之间、2 汉字和数字之间，`3` 两种都加，`0` 关 |
 | `ARCHTYPE_FUZZY_GROUPS` | 模糊音分组的位掩码（1 z/zh、2 c/ch、4 s/sh、8 n/l、16 f/h、32 r/l、64 an/ang、128 en/eng、256 in/ing、512 ian/iang、1024 uan/uang、2048 un/ong、4096 an/ai、8192 huang/wang、16384 un/iong、32768 eng/ong） |
 | `ARCHTYPE_SELECT_KEYS` | `off`、`semicolon`、`quote` |
@@ -252,8 +286,8 @@ macOS 还没有的功能不列；Linux 单独一页的「更新」在「常规�
 改完下一次按键时生效，不用重启；换了 `Lexicon` 会在后台重新载入词库，载完之前照旧用原来的。
 
 现在认的项：`CandidateLayout`、`ArrowKeys`、`PageSize`、`PageKeys*`、`SelectKeys`、`PickChar`、`Association`、`Fuzzy` 和 `Fuzzy*` 各组、`TypoCorrection`、`RareExtChars`、
-`InputScheme`、`ShuangpinScheme`、`ShuangpinShowKeys`、`WubiAutoCommit`、`WubiHint`、`ShiftToggle`、`Traditional`、`PunctuationStyle`、`DateTime`、`Calculator`、`EmojiSuggest`、
-`AutoSpace*`、`Lexicon`、`Toolbar`、`ClipboardHistory`、`EmojiKey`、`ToggleKey`、`TranslateModeKey`、`Voice`、`VoiceKey`、`VoiceCopy`、`Translate` 和 `Translate*` 各项，另外有一项只有 macOS 有的 `CandidateFontSize`（候选字号，10–40 磅，默认 17；Linux 上字号跟着 fcitx5 主题）。
+`InputScheme`、`ShuangpinScheme`、`ShuangpinShowKeys`、`WubiAutoCommit`、`WubiHint`、`ShiftToggle`、`InitialMode`、`Traditional`、`PunctuationStyle`、`AutoPairPunct`、`DateTime`、`Calculator`、`EmojiSuggest`、
+`AutoSpace*`、`Lexicon`、`Toolbar`、`ClipboardHistory`、`EmojiKey`、`ToggleKey`、`TranslateModeKey`、`Voice`、`VoiceKey`、`VoiceCopy`、`Translate` 和 `Translate*` 各项、`TypingStats`，另外有一项只有 macOS 有的 `CandidateFontSize`（候选字号，10–40 磅，默认 17；Linux 上字号跟着 fcitx5 主题）。
 `CheckUpdate`（默认 `True`）：输入法每天最多查一次 GitHub 上的最新正式版（后台，不挡打字），有新版时菜单栏的输入法菜单里多一项
 「有新版本 …，下载并安装…」，点它打开设置窗口「常规」页；设置窗口打开时也查。不弹系统通知（输入法没有开发者签名，通知要先授权，打字时弹框也打扰人）。
 「下载并安装」下载 `ArchType-<版本>-macos.pkg` 和同一页的 `SHA256SUMS`，校验后交给系统的 `installer` 只装给当前用户（不要密码，和一键安装脚本一样），
@@ -288,9 +322,9 @@ macOS 还没有的功能不列；Linux 单独一页的「更新」在「常规�
   （加词时自动填拼音，能删、导入、导出），保存后下一次按键时生效。
 - `AutoSpace` 只在应用告诉输入法光标前是什么字时才加（很多应用不告诉，这时不猜）。
 - [互译](#互译)用法和 Linux 一样（单按 Shift 中 → 英 → 译 → 中，原文在候选框顶上，译文写在输入框里）。在设置窗口的「翻译」页打开互译、
-  填接口地址和模型（也可以直接改 `archtype.conf` 里的 `Translate`、`TranslateBaseUrl`、`TranslateModel`）；API Key 也在那一页填，
+  在「翻译引擎」里选本地翻译、[哔哩哔哩](#哔哩哔哩index-translate)（免费，不用 Key）或自定义翻译服务；自定义的填接口地址和模型（也可以直接改 `archtype.conf` 里的 `Translate`、`TranslateBaseUrl`、`TranslateModel`）；API Key 也在那一页填，
   存在同一个目录的 `translate.key`（0600，只有自己能读），不写进 `archtype.conf`。系统开着安全输入（密码框）时照常打中文，不翻译。
-- 本地模型（`TranslateLocal=True`）：和 Linux 一样一键下载。设置窗口「翻译」页选「本地模型（离线）」，点「下载」，
+- 本地模型（`TranslateLocal=True`）：和 Linux 一样一键下载。设置窗口「翻译」页选「本地翻译（离线）」，点「下载」，
   确认许可后模型（1.13 GB）下到数据目录的 `models/`（`TranslateLocalModel` 写了位置就下到那里），下完校验 SHA256，断了再点会接着下；好了那一行写「已就绪」。
   找不到 `llama-server` 时一起下载 llama.cpp 官方的 macOS 程序（和 Linux 同一个构建，Apple 芯片约 17 MB、Intel 约 12 MB，MIT 许可，钉死 SHA256），
   只解出 `llama-server` 和它的动态库到数据目录的 `llama/`，跑一次 `--version` 确认能用，不用 `brew install llama.cpp`。
@@ -335,6 +369,7 @@ macOS 还没有的功能不列；Linux 单独一页的「更新」在「常规�
 | `user.tsv` | 自动学到的新词：分几次选出来拼成的词（四个字以内，比如「霜」「频」「阁」）30 天里第二次这样拼（或者直接选它）就收进来；一次打出来的词选够 3 次（按 30 天减半的热度算）才收 |
 | `history.tsv` | 输入习惯：选过哪些词、哪些词常连着用、等第二次的候选新词 |
 | `emoji-recent.txt` | 最近用过的 emoji（表情面板里排最前） |
+| `stats.json` | [打字统计](#打字统计)（默认关，打开了才有）：每天的字数、各类字符数、活跃毫秒、每个键按下的次数、候选位置，不保存输入内容；旁边的 `stats.clear` 是清空计数 |
 | `lexicon.tsv.wcache` | 词库快照，让第二次启动更快（约 0.3 秒）；删了会自动重建 |
 | `wtlocal/` | 语音模型（约 130MB），在设置的「语音」页下载或删除；没有它语音输入打不开，按语音键只提示去下载 |
 | `dicts/wanxiang/` | 可选：万象词库包（`lexicon.tsv`、许可证、来源说明），在设置里下载，见下 |
@@ -402,10 +437,60 @@ cargo run --release -p archtype-core --bin archtype-lmbuild -- \
   `~/Library/Application Support/ArchType/dicts/wanxiang/`。命令行是
   `"~/Library/Input Methods/ArchType.app/Contents/MacOS/ArchType" --install-lexicon wanxiang`（或 `.tar.gz` 路径）、
   `--use-lexicon rime-ice|wanxiang`。包里只许有哪几个文件、少于多少条不装、怎么校验，和 Linux 的规矩一样
-  （`macos/Sources/Shared/LexiconPack.swift`）。
+  （`macos/Sources/Shared/LexiconPack.swift`）。正在用万象、开着 `CheckUpdate` 时，输入法每天检查更新时顺带看一眼：
+  发布页上有新版万象就在后台下载、校验、换上（和 Linux 设置界面的后台检查一样，不打扰人；没成功的那一版一天以内不再试）。
 - **代价**：多占约 300 MB 内存，第一次载入（建快照）慢一些，之后启动约 2 秒。
 - 只用了万象的词条，没有用它的 `.gram` 语法模型（那是 librime 专用的格式）；整句仍靠 ArchType 自己的 `words.lm`。
   万象故意收的错音错字词库（`dicts/cuoyin`，如「秘鲁 mì lǔ」）没收，因为 ArchType 没有在候选旁提示正确读音的功能。
 - 词库包由 `scripts/make-wanxiang.sh` 生成：拼音去声调，词频整体缩放到和雾凇同一量级，再合进项目热词；包里带万象的 `LICENSE` 和写明来源与改动的 `SOURCE.txt`。
 
 想用自己的词库：任何 Rime 格式的词库（`.dict.yaml`）都能用 `python3 tools/rime2tsv.py xxx.dict.yaml > lexicon.tsv` 转过来。
+
+## 打字统计
+
+设置里的「统计」页：今天 / 累计的字数、活跃时长、速度、连续天数，按键热力图，字符类型、输入模式、双拼方案、候选命中位置。
+
+**默认关**（`TypingStats=False`）。关着时输入法什么都不记：内存里不计数、不记时间、不建也不写文件。
+在「统计」页打开开关（或在配置文件里写 `TypingStats=True`）以后才开始记，关掉时还没写进文件的计数直接丢掉。
+
+**记什么**——打开以后，只在本机按天记这些计数（`stats.json` 里只有这些）：
+
+```json
+{
+  "version": 2,
+  "cleared": 0,
+  "days": {
+    "2026-11-18": {
+      "chars": 1982,
+      "kinds": {"han": 1800, "latin": 82, "number": 40, "punct": 52, "emoji": 8, "other": 0},
+      "activeMs": 2140000,
+      "keys": {"KeyA": 310, "Space": 420},
+      "sources": {"quanpin": 1900, "english": 82},
+      "schemes": {},
+      "selections": [500, 200, 30, 0, 0, 0, 0, 0, 0],
+      "beyond": 0
+    }
+  }
+}
+```
+
+- `chars`、`kinds`：当天 ArchType 上屏的字符数，分汉字、字母、数字、标点、表情、其他；空格和换行不算，组合表情算一个，删除不扣减。
+- `activeMs`：活跃时长。两次上屏间隔不超过 10 秒的算进去，超过的算休息（上一次上屏的时刻只在内存里，不写进文件）。
+- `keys`：每个物理键（`KeyboardEvent.code` 风格的键位名，换键盘布局不影响位置）当天按下的次数，按住不放只算一次。
+- `sources`、`schemes`：按输入模式（`quanpin`、`shuangpin`、`wubi`、`english`、`translate`）、双拼方案分的字数。
+- `selections`、`beyond`：选第 1–9 个候选上屏的次数、第 10 个以后的次数。
+- `cleared`：写这份文件时的清空计数（见下）。
+
+**不记什么**：打的字、词、拼音、按键的先后顺序、每次按键或上屏的时刻、在哪个应用里打的。
+密码框和别的敏感输入框（fcitx5 的 `Password` / `Sensitive`，macOS 的安全输入）里的按键和上屏整个不算。
+数据不离开这台电脑。
+
+**文件**：`~/.local/share/archtype/stats.json`（`$XDG_DATA_HOME/archtype/`；macOS 是 `~/Library/Application Support/ArchType/stats.json`），
+权限 0600。只有输入法写：按键和上屏只改内存，攒够 20 次上屏或 30 秒、切出输入框、退出时交给后台线程，
+后台线程读文件、加上这批、去掉 400 天以前的、原子写回，打字的线程不碰文件。设置界面只读。
+文件坏了或超过 16 MB 时挪到 `stats.json.bad`，从空的重新记。
+
+**清除**：「统计」页的「清除统计」（关着时也能点）。它把旁边 `stats.clear` 里的整数加一，再删掉 `stats.json`（和 `stats.json.bad`）。
+输入法写文件前看这个数：和开始攒这一批时不一样，就整批丢掉（里面有清除之前打的），不会把清掉的写回来；
+文件里的 `cleared` 和 `stats.clear` 对不上的，设置界面当作没有记录，输入法下次写时删掉。
+不用设置界面也可以：退出输入法（或先关掉统计）再删掉 `stats.json`。

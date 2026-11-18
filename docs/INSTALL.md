@@ -65,7 +65,7 @@ sudo apt update
 sudo apt install build-essential pkg-config cmake extra-cmake-modules git curl xz-utils \
   libasound2-dev libfcitx5core-dev libfcitx5config-dev libfcitx5utils-dev \
   fcitx5 fcitx5-frontend-all fcitx5-config-qt im-config \
-  python3 python3-gi gir1.2-gtk-4.0 gir1.2-adw-1
+  python3 python3-gi python3-gi-cairo gir1.2-gtk-4.0 gir1.2-adw-1
 ```
 
 已有可用的 Rust 工具链可以直接使用；未安装时按 [Rust 官方说明](https://www.rust-lang.org/tools/install)安装：
@@ -90,7 +90,7 @@ sudo apt update
 sudo apt install build-essential pkg-config cmake extra-cmake-modules git curl xz-utils \
   libasound2-dev libfcitx5core-dev libfcitx5config-dev libfcitx5utils-dev \
   fcitx5 fcitx5-frontend-gtk3 fcitx5-frontend-gtk4 fcitx5-frontend-qt5 fcitx5-config-qt im-config \
-  python3 python3-gi gir1.2-gtk-4.0 gir1.2-adw-1
+  python3 python3-gi python3-gi-cairo gir1.2-gtk-4.0 gir1.2-adw-1
 ```
 
 Rust 照上面的方法装，编译、安装照[第 4 节](#4-通用源码编译与安装)。
