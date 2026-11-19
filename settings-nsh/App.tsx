@@ -1,4 +1,4 @@
-import { mount, setColorScheme, colorScheme, computed, signal, Image, Scroll, Text, View } from "nsh";
+import { mount, setColorScheme, colorScheme, computed, signal, Image, Picker, Scroll, Text, View } from "nsh";
 import { currentWindow } from "nsh/desktop";
 import menuIcon from "./icons/menu.svg";
 import minusIcon from "./icons/minus.svg";
@@ -1397,6 +1397,56 @@ function App() {
     () =>
       lexiconBusyState().startsWith("downloading") || lexiconBusyState().startsWith("installing"),
   );
+  // 整句增强模型(字级神经语言模型):自带一份,也能导入微信输入法的。
+  const nnlmRaw = signal(Config.nnlmState());
+  const nnlmMessage = signal("");
+  const nnlmData = computed(() => {
+    try {
+      const value: unknown = JSON.parse(nnlmRaw());
+      if (value && typeof value === "object") {
+        return value as { kind?: string; path?: string };
+      }
+    } catch {
+      // 读不出来就当没有
+    }
+    return { kind: "none", path: "" };
+  });
+  const nnlmSubtitle = computed(() => {
+    const kind = nnlmData().kind;
+    if (kind === "imported") return "用的是导入的微信输入法模型，长句的第一候选更准";
+    if (kind === "bundled")
+      return "已自带 ArchType 的整句增强模型，长句的第一候选更准；也可以导入微信输入法的（效果相近）";
+    return "可选。微信输入法自带的小模型（16 MB），长句的第一候选更准。它是腾讯的，ArchType 不带：先下载微信输入法 macOS 版安装包（.zip），再点「导入」";
+  });
+  const importNnlm = async () => {
+    const picked = await Picker.pickFiles({ maxSize: 200 * 1024 * 1024 });
+    if (picked.length === 0) return;
+    const file = picked[0].file;
+    if (!file) {
+      nnlmMessage.set("文件太大，没读进来");
+      return;
+    }
+    nnlmMessage.set("正在导入…");
+    const bytes = await file.bytes();
+    const error = Config.nnlmImport(bytes);
+    if (error === "") {
+      nnlmRaw.set(Config.nnlmState());
+      nnlmMessage.set("已导入，重启输入法后生效");
+      Config.reloadConfig();
+    } else {
+      nnlmMessage.set(error);
+    }
+  };
+  const deleteNnlm = () => {
+    if (!Config.nnlmDelete()) {
+      nnlmMessage.set("删不掉，检查一下文件权限");
+      return;
+    }
+    nnlmRaw.set(Config.nnlmState());
+    nnlmMessage.set("已删除导入的模型，用回自带的");
+    Config.reloadConfig();
+  };
+
   const lexiconSubtitle = computed(() => {
     const state = lexiconBusyState();
     const [doneText, totalText] = lexiconProgress().split("/");
@@ -1961,6 +2011,19 @@ function App() {
                   <Row title="自定义词库" subtitle={lexiconCustomPath()}>
                     <RadioDot selected />
                   </Row>
+                ) : null}
+                <Row title="整句增强模型" subtitle={nnlmSubtitle()}>
+                  {nnlmData().kind === "imported" ? (
+                    <SmallButton title="删除" onPress={deleteNnlm} />
+                  ) : null}
+                  <SmallButton
+                    title={nnlmMessage().startsWith("正在") ? "导入中…" : "导入…"}
+                    tone={nnlmData().kind === "imported" ? "plain" : "accent"}
+                    onPress={importNnlm}
+                  />
+                </Row>
+                {nnlmMessage() !== "" ? (
+                  <Text style={{ color: ui().muted, fontSize: 11 }}>{nnlmMessage()}</Text>
                 ) : null}
                 <Text style={{ color: ui().muted, fontSize: 11 }}>
                   万象拼音词更多，比雾凇多占约 300 MB 内存；从 amzxyz/rime_wanxiang（CC BY 4.0）转换，只用了它的词条。

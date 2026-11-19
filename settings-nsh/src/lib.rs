@@ -307,6 +307,47 @@ fn curl(url: &str, key: &str, body: Option<&str>, timeout: u32) -> Result<String
     Ok(String::from_utf8_lossy(&output.stdout).to_string())
 }
 
+/// 从导入的字节里取出整句增强模型：微信输入法的 .zip 里找 `nlrgpt2_nnlm.bin`，
+/// 否则当作模型文件本身；再按核心认的两种文件头校验。
+fn nnlm_model_bytes(data: &[u8]) -> Result<Vec<u8>, String> {
+    use std::io::Read;
+    if data.is_empty() {
+        return Err("文件是空的".to_string());
+    }
+    if data.len() > 200 << 20 {
+        return Err("文件大得不对，不装".to_string());
+    }
+    let model = if data.starts_with(b"PK\x03\x04") {
+        let mut archive =
+            zip::ZipArchive::new(std::io::Cursor::new(data)).map_err(|error| {
+                format!("这个压缩包打不开：{error}")
+            })?;
+        let mut found = None;
+        for index in 0..archive.len() {
+            let Ok(mut entry) = archive.by_index(index) else {
+                continue;
+            };
+            let name = entry.name().to_string();
+            if name == "nlrgpt2_nnlm.bin" || name.ends_with("/nlrgpt2_nnlm.bin") {
+                let mut bytes = Vec::new();
+                if entry.read_to_end(&mut bytes).is_ok() {
+                    found = Some(bytes);
+                }
+                break;
+            }
+        }
+        found.ok_or_else(|| {
+            "这个安装包里没有 nlrgpt2_nnlm.bin，要微信输入法 macOS 版的安装包（.zip）".to_string()
+        })?
+    } else {
+        data.to_vec()
+    };
+    if !(model.starts_with(b"WTNN") || (model.len() >= 16 && model[0] == 1)) {
+        return Err("读不出这个模型（文件头不对），可能是微信输入法改了模型格式".to_string());
+    }
+    Ok(model)
+}
+
 fn custom_lines(path: &str) -> Vec<String> {
     read(path)
         .lines()
@@ -803,6 +844,52 @@ impl Config {
             return json_error("服务返回了空的译文");
         }
         json_ok(line)
+    }
+
+    /// 整句增强模型用的是哪一份：{"kind":"imported|bundled|none","path":"…"}。
+    pub fn nnlm_state() -> String {
+        let imported = format!("{}/wetype/nlrgpt2_nnlm.bin", Config::data_dir());
+        if Path::new(&imported).is_file() {
+            return serde_json::json!({"kind": "imported", "path": imported}).to_string();
+        }
+        for candidate in [
+            format!("{}/nnlm.bin", Config::data_dir()),
+            "/usr/share/archtype/nnlm.bin".to_string(),
+        ] {
+            if Path::new(&candidate).is_file() {
+                return serde_json::json!({"kind": "bundled", "path": candidate}).to_string();
+            }
+        }
+        serde_json::json!({"kind": "none", "path": ""}).to_string()
+    }
+
+    /// 导入整句增强模型：bytes 是微信输入法的 .zip（macOS 安装包）或模型文件本身。
+    /// 先从包里取出 nlrgpt2_nnlm.bin，检查格式后写到数据目录；成功返回空串，失败返回原因。
+    pub fn nnlm_import(data: Vec<u8>) -> String {
+        let model = match nnlm_model_bytes(&data) {
+            Ok(model) => model,
+            Err(error) => return error,
+        };
+        let dir = format!("{}/wetype", Config::data_dir());
+        if let Err(error) = fs::create_dir_all(&dir) {
+            return format!("建不了目录：{error}");
+        }
+        let path = format!("{dir}/nlrgpt2_nnlm.bin");
+        let tmp = format!("{path}.tmp");
+        if let Err(error) = fs::write(&tmp, &model) {
+            return format!("写不进文件：{error}");
+        }
+        if let Err(error) = fs::rename(&tmp, &path) {
+            let _ = fs::remove_file(&tmp);
+            return format!("换不到位置：{error}");
+        }
+        String::new()
+    }
+
+    /// 删掉导入的整句增强模型，回到自带的 nnlm.bin。
+    pub fn nnlm_delete() -> bool {
+        let path = format!("{}/wetype/nlrgpt2_nnlm.bin", Config::data_dir());
+        !Path::new(&path).exists() || fs::remove_file(&path).is_ok()
     }
 
     /// 拉服务商的模型列表（GET {base}/models），每行一个名字；失败返回 "ERR:…"。
@@ -2125,6 +2212,42 @@ fn install_lexicon_pack(tarball: &str) -> Result<String, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // 微信输入法的模型:zip 里取出、裸文件直通、坏文件拒绝。
+    #[test]
+    fn reads_nnlm_from_zip_and_file() {
+        let model = {
+            let mut bytes = vec![1u8];
+            bytes.extend(std::iter::repeat_n(0u8, 63));
+            bytes
+        };
+        // 裸模型文件
+        assert_eq!(nnlm_model_bytes(&model).unwrap(), model);
+        // WTNN 也认
+        let mut wtnn = b"WTNN".to_vec();
+        wtnn.extend(std::iter::repeat_n(0u8, 60));
+        assert_eq!(nnlm_model_bytes(&wtnn).unwrap(), wtnn);
+
+        // zip 里带 WeType.app/Contents/Resources/nlrgpt2_nnlm.bin
+        let mut zip_bytes = Vec::new();
+        {
+            let mut writer = zip::ZipWriter::new(std::io::Cursor::new(&mut zip_bytes));
+            let options = zip::write::SimpleFileOptions::default()
+                .compression_method(zip::CompressionMethod::Stored);
+            writer
+                .start_file("WeType.app/Contents/Resources/nlrgpt2_nnlm.bin", options)
+                .unwrap();
+            use std::io::Write;
+            writer.write_all(&model).unwrap();
+            writer.finish().unwrap();
+        }
+        assert_eq!(nnlm_model_bytes(&zip_bytes).unwrap(), model);
+
+        // 坏文件:长度不够、空、包里没有模型
+        assert!(nnlm_model_bytes(&[9, 9, 9]).is_err());
+        assert!(nnlm_model_bytes(&[]).is_err());
+        assert!(nnlm_model_bytes(b"PK\x03\x04not-a-zip").is_err());
+    }
 
     #[test]
     fn compares_versions() {
