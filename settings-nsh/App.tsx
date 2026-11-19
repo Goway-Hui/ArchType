@@ -542,8 +542,20 @@ const voiceKeyItems = [
 
 const translateEngineItems = [
   { value: "local", title: "本地翻译（离线）" },
-  { value: "bilibili", title: "哔哩哔哩（免费）" },
+  { value: "bilibili", title: "哔哩哔哩（免费，不用 API Key）" },
   { value: "custom", title: "自定义翻译服务" },
+];
+
+const translateEngineNotes: Record<string, string> = {
+  local: "不联网、不用账号，打的字不出这台电脑；一句话等 1–3 秒",
+  bilibili: "哔哩哔哩的 Index-Translate，不用注册；要联网，一句话不到 1 秒",
+  custom: "填你自己的翻译接口（DeepSeek、通义千问、Ollama……），要联网",
+};
+
+const biliModelItems = [
+  { value: "Index-Translate-2B", title: "Index-Translate-2B（最快）" },
+  { value: "Index-Translate-9B", title: "Index-Translate-9B" },
+  { value: "Index-Translate-35B-A3B", title: "Index-Translate-35B-A3B（预览）" },
 ];
 
 const translateTargetItems = [
@@ -1911,9 +1923,9 @@ function App() {
             </>
           ) : current() === 4 ? (
             <>
-              <Text style={{ color: ui().muted, fontSize: 12 }}>翻译</Text>
+              <Text style={{ color: ui().muted, fontSize: 12 }}>互译</Text>
               <Card>
-                <Row title="互译" subtitle="按互译键进入「译」模式，打字后上屏译文">
+                <Row title="互译" subtitle="单按 Shift 切到「译」，照常打中文，停一下就翻成外文。回车用译文，Shift+回车用原文，Esc 取消。">
                   <Toggle
                     checked={translateOn()}
                     onChange={(on) => {
@@ -1922,7 +1934,26 @@ function App() {
                     }}
                   />
                 </Row>
-                <Row title="翻译引擎">
+                <Row title="翻译成" subtitle="中文翻成这种语言；这种语言（和别的外文）翻成中文。">
+                  <SelectBox
+                    items={translateTargetItems}
+                    value={translateTarget()}
+                    onChange={(value) => {
+                      translateTarget.set(value);
+                      save("TranslateTarget", value);
+                    }}
+                  />
+                </Row>
+                <Row title="正式语气" subtitle="默认是聊天的口吻">
+                  <Toggle
+                    checked={translateFormal()}
+                    onChange={(on) => {
+                      translateFormal.set(on);
+                      save("TranslateFormal", on ? "True" : "False");
+                    }}
+                  />
+                </Row>
+                <Row title="翻译引擎" subtitle={translateEngineNotes[engineOf(translateLocal(), translateBase())]}>
                   <SelectBox
                     items={translateEngineItems}
                     value={engineOf(translateLocal(), translateBase())}
@@ -1943,64 +1974,71 @@ function App() {
                     }}
                   />
                 </Row>
-                <Row title="目标语言">
-                  <SelectBox
-                    items={translateTargetItems}
-                    value={translateTarget()}
-                    onChange={(value) => {
-                      translateTarget.set(value);
-                      save("TranslateTarget", value);
-                    }}
-                  />
-                </Row>
               </Card>
-              {engineOf(translateLocal(), translateBase()) === "custom" ? (
+
+              {engineOf(translateLocal(), translateBase()) !== "local" ? (
                 <>
                   <Text style={{ color: ui().muted, fontSize: 12 }}>翻译服务</Text>
                   <Card>
-                    <Row title="服务商" subtitle="选一家，自动填地址和建议的模型">
+                    {engineOf(translateLocal(), translateBase()) === "custom" ? (
+                      <>
+                        <Row title="服务商" subtitle="选一家，自动填地址和建议的模型">
+                          <SelectBox
+                            items={providerItems}
+                            value={String(translateProvider())}
+                            onChange={applyProvider}
+                          />
+                        </Row>
+                        <Row title="接口地址" subtitle="OpenAI 格式，最后不用带 /chat/completions">
+                          <InputBox
+                            value={translateBase()}
+                            placeholder="https://api.example.com/v1"
+                            onChange={(value) => {
+                              translateBase.set(value);
+                              Config.set("TranslateBaseUrl", value);
+                            }}
+                          />
+                        </Row>
+                        <Row title="API Key" subtitle="只存在这台电脑上；本机服务可以不填">
+                          <InputBox
+                            value={translateKey()}
+                            masked
+                            onChange={(value) => {
+                              translateKey.set(value);
+                              Config.setTranslateKey(value);
+                            }}
+                          />
+                        </Row>
+                        <Row title="模型" subtitle="留空用服务商的默认模型">
+                          <InputBox
+                            value={translateModel()}
+                            placeholder="deepseek-chat"
+                            onChange={(value) => {
+                              translateModel.set(value);
+                              Config.set("TranslateModel", value);
+                            }}
+                          />
+                        </Row>
+                      </>
+                    ) : null}
+                    <Row title="测试连接" subtitle={testState() || "用「你好」试一下"}>
+                      <SmallButton title="测试" onPress={runTranslateTest} />
+                    </Row>
+                  </Card>
+                </>
+              ) : null}
+
+              {engineOf(translateLocal(), translateBase()) === "bilibili" ? (
+                <>
+                  <Text style={{ color: ui().muted, fontSize: 12 }}>哔哩哔哩 Index-Translate</Text>
+                  <Card>
+                    <Row title="模型" subtitle="2B 最快；9B 译得更好一点，稍慢；35B-A3B 是预览版">
                       <SelectBox
-                        items={providerItems}
-                        value={String(translateProvider())}
-                        onChange={applyProvider}
-                      />
-                    </Row>
-                    <Row title="接口地址" subtitle="OpenAI 格式，最后不用带 /chat/completions">
-                      <InputBox
-                        value={translateBase()}
-                        placeholder="https://api.example.com/v1"
-                        onChange={(value) => {
-                          translateBase.set(value);
-                          Config.set("TranslateBaseUrl", value);
-                        }}
-                      />
-                    </Row>
-                    <Row title="模型" subtitle="留空用服务商的默认模型">
-                      <InputBox
-                        value={translateModel()}
-                        placeholder="deepseek-chat"
+                        items={biliModelItems}
+                        value={translateModel() || "Index-Translate-2B"}
                         onChange={(value) => {
                           translateModel.set(value);
                           Config.set("TranslateModel", value);
-                        }}
-                      />
-                    </Row>
-                    <Row title="API Key" subtitle="只存在这台电脑上；本机服务可以不填">
-                      <InputBox
-                        value={translateKey()}
-                        masked
-                        onChange={(value) => {
-                          translateKey.set(value);
-                          Config.setTranslateKey(value);
-                        }}
-                      />
-                    </Row>
-                    <Row title="正式语气" subtitle="默认是聊天的口吻">
-                      <Toggle
-                        checked={translateFormal()}
-                        onChange={(on) => {
-                          translateFormal.set(on);
-                          save("TranslateFormal", on ? "True" : "False");
                         }}
                       />
                     </Row>
@@ -2008,6 +2046,9 @@ function App() {
                       <SmallButton title="测试" onPress={runTranslateTest} />
                     </Row>
                   </Card>
+                  <Text style={{ color: ui().muted, fontSize: 12 }}>
+                    要翻译的文字会发到哔哩哔哩的服务器（index-translate.bilibili.com）
+                  </Text>
                 </>
               ) : null}
             </>
