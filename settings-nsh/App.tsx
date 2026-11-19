@@ -634,9 +634,9 @@ const tips: [string, string][] = [
 const issuesUrl = "https://github.com/Goway-Hui/ArchType/issues/new";
 
 const inputSchemeItems = [
-  { value: "Quanpin", title: "全拼" },
-  { value: "Shuangpin", title: "双拼" },
-  { value: "Wubi86", title: "五笔 86" },
+  { value: "Quanpin", title: "拼音输入" },
+  { value: "Shuangpin", title: "双拼输入" },
+  { value: "Wubi86", title: "五笔输入" },
 ];
 
 const shuangpinItems = [
@@ -651,9 +651,26 @@ const shuangpinItems = [
 
 const shiftItems = [
   { value: "Both", title: "左右 Shift 都行" },
-  { value: "Left", title: "只左 Shift" },
-  { value: "Right", title: "只右 Shift" },
-  { value: "Off", title: "关掉" },
+  { value: "Left", title: "左 Shift" },
+  { value: "Right", title: "右 Shift" },
+  { value: "Off", title: "不用 Shift 切换" },
+];
+
+const initialModeItems = [
+  { value: "Chinese", title: "中文" },
+  { value: "English", title: "英文" },
+  { value: "Last", title: "和上次切走时一样" },
+];
+
+const selectKeyItems = [
+  { value: "Off", title: "不用" },
+  { value: "Semicolon", title: "分号选第 2 个" },
+  { value: "SemicolonQuote", title: "分号选第 2 个、引号选第 3 个" },
+];
+
+const punctStyleItems = [
+  { value: "Fullwidth", title: "全角 ，。" },
+  { value: "Halfwidth", title: "半角 , ." },
 ];
 
 const themeItems = [
@@ -934,6 +951,33 @@ function App() {
     summarizeStats(parseStats(statsRaw()).days ?? {}, dayKey(new Date())),
   );
 
+  const shuangpinShowKeys = signal(boolOf(Config.get("ShuangpinShowKeys"), false));
+  const wubiAutoCommit = signal(boolOf(Config.get("WubiAutoCommit"), true));
+  const wubiHint = signal(boolOf(Config.get("WubiHint"), true));
+  const initialMode = signal(Config.get("InitialMode") || "Chinese");
+  const traditional = signal(boolOf(Config.get("Traditional"), false));
+  const rareChars = signal(boolOf(Config.get("RareExtChars"), false));
+  const punctStyle = signal(Config.get("PunctuationStyle") || "Fullwidth");
+  const dateTime = signal(boolOf(Config.get("DateTime"), true));
+  const calculator = signal(boolOf(Config.get("Calculator"), true));
+  const toolbar = signal(boolOf(Config.get("Toolbar"), true));
+  const clipboardHistory = signal(boolOf(Config.get("ClipboardHistory"), false));
+  const selectKeys = signal(Config.get("SelectKeys") || "Off");
+  const pickChar = signal(boolOf(Config.get("PickChar"), true));
+  const association = signal(boolOf(Config.get("Association"), false));
+  const autoSpace = signal(boolOf(Config.get("AutoSpace"), false));
+  const autoSpaceLetters = signal(boolOf(Config.get("AutoSpaceLetters"), true));
+  const autoSpaceDigits = signal(boolOf(Config.get("AutoSpaceDigits"), true));
+  const calcHint = computed(() =>
+    inputScheme() === "Shuangpin" || inputScheme() === "Wubi86"
+      ? `${inputScheme() === "Shuangpin" ? "双拼" : "五笔"}时打大写 V：V1+2*3 → 7`
+      : "v1+2*3 → 7",
+  );
+  const toolbarHint = computed(() =>
+    inputScheme() === "Shuangpin" || inputScheme() === "Wubi86"
+      ? `${inputScheme() === "Shuangpin" ? "双拼" : "五笔"}时不可用`
+      : "打 v 再按空格：剪贴板、常用语、符号、表情",
+  );
   const arrowKeys = signal(Config.get("ArrowKeys") || "Candidates");
   const pageKeysOpen = signal(false);
   const tipsOpen = signal(false);
@@ -1247,31 +1291,108 @@ function App() {
             <>
               <Text style={{ color: ui().muted, fontSize: 12 }}>输入方案</Text>
               <Card>
-                <Row title="输入方案" subtitle="全拼 / 双拼 / 五笔">
-                  <SelectBox
-                    items={inputSchemeItems}
-                    value={inputScheme()}
-                    onChange={(value) => {
-                      inputScheme.set(value);
-                      save("InputScheme", value);
+                <Row title="拼音输入" subtitle="全拼，也能只打声母">
+                  <SmallButton
+                    title={inputScheme() === "Quanpin" ? "当前" : "选用"}
+                    tone={inputScheme() === "Quanpin" ? "accent" : "plain"}
+                    onPress={() => {
+                      inputScheme.set("Quanpin");
+                      save("InputScheme", "Quanpin");
+                    }}
+                  />
+                </Row>
+                <Row title="双拼输入" subtitle="每个字打两个键">
+                  <SmallButton
+                    title={inputScheme() === "Shuangpin" ? "当前" : "选用"}
+                    tone={inputScheme() === "Shuangpin" ? "accent" : "plain"}
+                    onPress={() => {
+                      inputScheme.set("Shuangpin");
+                      save("InputScheme", "Shuangpin");
                     }}
                   />
                 </Row>
                 {inputScheme() === "Shuangpin" ? (
-                  <Row title="双拼方案">
-                    <SelectBox
-                      items={shuangpinItems}
-                      value={shuangpin()}
-                      onChange={(value) => {
-                        shuangpin.set(value);
-                        save("ShuangpinScheme", value);
-                      }}
-                    />
-                  </Row>
+                  <>
+                    <Row title="双拼方案">
+                      <SelectBox
+                        items={shuangpinItems}
+                        value={shuangpin()}
+                        onChange={(value) => {
+                          shuangpin.set(value);
+                          save("ShuangpinScheme", value);
+                        }}
+                      />
+                    </Row>
+                    <Row title="编辑区显示打的键" subtitle="不翻成全拼，中英混打时看得出打了什么">
+                      <Toggle
+                        checked={shuangpinShowKeys()}
+                        onChange={(on) => {
+                          shuangpinShowKeys.set(on);
+                          save("ShuangpinShowKeys", on ? "True" : "False");
+                        }}
+                      />
+                    </Row>
+                  </>
+                ) : null}
+                <Row title="五笔输入" subtitle="86 版，z 键临时打拼音">
+                  <SmallButton
+                    title={inputScheme() === "Wubi86" ? "当前" : "选用"}
+                    tone={inputScheme() === "Wubi86" ? "accent" : "plain"}
+                    onPress={() => {
+                      inputScheme.set("Wubi86");
+                      save("InputScheme", "Wubi86");
+                    }}
+                  />
+                </Row>
+                {inputScheme() === "Wubi86" ? (
+                  <>
+                    <Row title="四码唯一自动上屏" subtitle="打满四码、只有一个字词时直接上屏">
+                      <Toggle
+                        checked={wubiAutoCommit()}
+                        onChange={(on) => {
+                          wubiAutoCommit.set(on);
+                          save("WubiAutoCommit", on ? "True" : "False");
+                        }}
+                      />
+                    </Row>
+                    <Row title="编码提示" subtitle="候选后面显示还要打的码">
+                      <Toggle
+                        checked={wubiHint()}
+                        onChange={(on) => {
+                          wubiHint.set(on);
+                          save("WubiHint", on ? "True" : "False");
+                        }}
+                      />
+                    </Row>
+                  </>
                 ) : null}
               </Card>
 
-              <Text style={{ color: ui().muted, fontSize: 12 }}>模糊音</Text>
+              <Text style={{ color: ui().muted, fontSize: 12 }}>中英文切换</Text>
+              <Card>
+                <Row title="单按 Shift" subtitle="单按一下 Shift 切到英文，再按一下回到中文">
+                  <SelectBox
+                    items={shiftItems}
+                    value={shiftToggle()}
+                    onChange={(value) => {
+                      shiftToggle.set(value);
+                      save("ShiftToggle", value);
+                    }}
+                  />
+                </Row>
+                <Row title="切到 ArchType 时" subtitle="从别的输入法切过来、开机后第一次用时；换窗口不变">
+                  <SelectBox
+                    items={initialModeItems}
+                    value={initialMode()}
+                    onChange={(value) => {
+                      initialMode.set(value);
+                      save("InitialMode", value);
+                    }}
+                  />
+                </Row>
+              </Card>
+
+              <Text style={{ color: ui().muted, fontSize: 12 }}>拼音</Text>
               <Card>
                 <Row title="模糊音" subtitle="比如 n 和 l 不分">
                   <Toggle
@@ -1295,11 +1416,7 @@ function App() {
                       </Row>
                     ))
                   : null}
-              </Card>
-
-              <Text style={{ color: ui().muted, fontSize: 12 }}>其他</Text>
-              <Card>
-                <Row title="按错键自动纠正" subtitle="比如 weixni 打成微信">
+                <Row title="按错键自动纠正" subtitle="zhognguo → 中国（全拼时）">
                   <Toggle
                     checked={typo()}
                     onChange={(on) => {
@@ -1308,17 +1425,35 @@ function App() {
                     }}
                   />
                 </Row>
-                <Row title="单按 Shift 切换中英文">
-                  <SelectBox
-                    items={shiftItems}
-                    value={shiftToggle()}
-                    onChange={(value) => {
-                      shiftToggle.set(value);
-                      save("ShiftToggle", value);
+                <Row title="繁体字">
+                  <Toggle
+                    checked={traditional()}
+                    onChange={(on) => {
+                      traditional.set(on);
+                      save("Traditional", on ? "True" : "False");
                     }}
                   />
                 </Row>
-                <Row title="中文标点自动配对" subtitle="打 ( 出（），光标在中间">
+                <Row title="更多生僻字" subtitle="要装能显示它们的字体，比如 fonts-hanazono">
+                  <Toggle
+                    checked={rareChars()}
+                    onChange={(on) => {
+                      rareChars.set(on);
+                      save("RareExtChars", on ? "True" : "False");
+                    }}
+                  />
+                </Row>
+                <Row title="标点样式" subtitle="数字后面的符号总是半角的，比如 3.14。">
+                  <SelectBox
+                    items={punctStyleItems}
+                    value={punctStyle()}
+                    onChange={(value) => {
+                      punctStyle.set(value);
+                      save("PunctuationStyle", value);
+                    }}
+                  />
+                </Row>
+                <Row title="中文标点自动配对" subtitle="打（【《「“‘ 时自动补上右半边">
                   <Toggle
                     checked={autoPair()}
                     onChange={(on) => {
@@ -1327,6 +1462,105 @@ function App() {
                     }}
                   />
                 </Row>
+              </Card>
+
+              <Text style={{ color: ui().muted, fontSize: 12 }}>快捷输入</Text>
+              <Card>
+                <Row title="日期和时间" subtitle="打 riqi、shijian、xingqi（五笔前面加 z）">
+                  <Toggle
+                    checked={dateTime()}
+                    onChange={(on) => {
+                      dateTime.set(on);
+                      save("DateTime", on ? "True" : "False");
+                    }}
+                  />
+                </Row>
+                <Row title="计算器" subtitle={calcHint()}>
+                  <Toggle
+                    checked={calculator()}
+                    onChange={(on) => {
+                      calculator.set(on);
+                      save("Calculator", on ? "True" : "False");
+                    }}
+                  />
+                </Row>
+                <Row title="工具栏" subtitle={toolbarHint()}>
+                  <Toggle
+                    checked={toolbar() && inputScheme() === "Quanpin"}
+                    onChange={(on) => {
+                      toolbar.set(on);
+                      save("Toolbar", on ? "True" : "False");
+                    }}
+                  />
+                </Row>
+                <Row title="记录剪贴板历史" subtitle="复制的密码也可能被记下">
+                  <Toggle
+                    checked={clipboardHistory()}
+                    onChange={(on) => {
+                      clipboardHistory.set(on);
+                      save("ClipboardHistory", on ? "True" : "False");
+                    }}
+                  />
+                </Row>
+                <Row title="分号、引号选词" subtitle="用引号选词后，引号不能再用来隔开拼音（xi'an）。">
+                  <SelectBox
+                    items={selectKeyItems}
+                    value={selectKeys()}
+                    onChange={(value) => {
+                      selectKeys.set(value);
+                      save("SelectKeys", value);
+                    }}
+                  />
+                </Row>
+                <Row title="以词定字" subtitle="按 [ 取第一个字，按 ] 取最后一个字">
+                  <Toggle
+                    checked={pickChar()}
+                    onChange={(on) => {
+                      pickChar.set(on);
+                      save("PickChar", on ? "True" : "False");
+                    }}
+                  />
+                </Row>
+                <Row title="联想" subtitle="上屏以后给出常跟在后面的词，按 Tab 选">
+                  <Toggle
+                    checked={association()}
+                    onChange={(on) => {
+                      association.set(on);
+                      save("Association", on ? "True" : "False");
+                    }}
+                  />
+                </Row>
+                <Row title="中英文之间自动加空格" subtitle="第5章 → 第 5 章">
+                  <Toggle
+                    checked={autoSpace()}
+                    onChange={(on) => {
+                      autoSpace.set(on);
+                      save("AutoSpace", on ? "True" : "False");
+                    }}
+                  />
+                </Row>
+                {autoSpace() ? (
+                  <>
+                    <Row title="汉字和英文字母之间">
+                      <Toggle
+                        checked={autoSpaceLetters()}
+                        onChange={(on) => {
+                          autoSpaceLetters.set(on);
+                          save("AutoSpaceLetters", on ? "True" : "False");
+                        }}
+                      />
+                    </Row>
+                    <Row title="汉字和数字之间">
+                      <Toggle
+                        checked={autoSpaceDigits()}
+                        onChange={(on) => {
+                          autoSpaceDigits.set(on);
+                          save("AutoSpaceDigits", on ? "True" : "False");
+                        }}
+                      />
+                    </Row>
+                  </>
+                ) : null}
               </Card>
 
               <Text style={{ color: ui().muted, fontSize: 12 }}>
