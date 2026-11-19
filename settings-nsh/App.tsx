@@ -351,9 +351,9 @@ function KeyChip(props: { label: string; count: number; max: number }) {
   return (
     <View
       style={{
-        alignSelf: "flex-start",
         flexDirection: "row",
         alignItems: "center",
+        justifyContent: "space-between",
         gap: 6,
         borderWidth: 1,
         borderColor: ui().border,
@@ -364,15 +364,17 @@ function KeyChip(props: { label: string; count: number; max: number }) {
         paddingBottom: 3,
       }}
     >
-      <View
-        style={{
-          width: 10,
-          height: 10,
-          borderRadius: 2,
-          backgroundColor: heatColor(props.count, props.max),
-        }}
-      />
-      <Text style={{ color: ui().text, fontSize: 12 }}>{props.label}</Text>
+      <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+        <View
+          style={{
+            width: 10,
+            height: 10,
+            borderRadius: 2,
+            backgroundColor: heatColor(props.count, props.max),
+          }}
+        />
+        <Text style={{ color: ui().text, fontSize: 12 }}>{props.label}</Text>
+      </View>
       <Text style={{ color: ui().muted, fontSize: 11 }}>{formatNumber(props.count)}</Text>
     </View>
   );
