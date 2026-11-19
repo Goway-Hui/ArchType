@@ -509,7 +509,8 @@ function StepInput(props: {
   max: number;
   onChange: (value: number) => void;
 }) {
-  const buttonStyle = {
+  // 样式写成函数:ui() 在 View 的属性求值时读,主题一换就重算。
+  const buttonStyle = () => ({
     width: 24,
     height: 24,
     alignItems: "center" as const,
@@ -518,10 +519,10 @@ function StepInput(props: {
     borderWidth: 1,
     borderColor: ui().border,
     borderRadius: 6,
-  };
+  });
   return (
     <View style={{ flexDirection: "row", alignItems: "center" }}>
-      <View style={buttonStyle}>
+      <View style={buttonStyle()}>
         <Button onPress={() => props.onChange(Math.max(props.min, props.value - 1))}>
           <Text style={{ color: ui().text, fontSize: 15 }}>−</Text>
         </Button>
@@ -529,7 +530,7 @@ function StepInput(props: {
       <Text style={{ color: ui().text, fontSize: 13, width: 34, textAlign: "center" }}>
         {props.value}
       </Text>
-      <View style={buttonStyle}>
+      <View style={buttonStyle()}>
         <Button onPress={() => props.onChange(Math.min(props.max, props.value + 1))}>
           <Text style={{ color: ui().text, fontSize: 15 }}>+</Text>
         </Button>
@@ -2514,6 +2515,12 @@ function App() {
       </Scroll>
     </View>
   );
+}
+
+// 启动时就应用保存的主题:否则 colorScheme 还是系统的,配置里的浅色要手动切一次才对。
+{
+  const saved = Config.stateGet("theme") || "system";
+  setColorScheme(saved === "light" ? "light" : saved === "dark" ? "dark" : "system");
 }
 
 mount(App);
