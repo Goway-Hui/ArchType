@@ -348,6 +348,327 @@ fn nnlm_model_bytes(data: &[u8]) -> Result<Vec<u8>, String> {
     Ok(model)
 }
 
+/// /etc/os-release 里的一项（去掉引号）。
+fn os_release_field(text: &str, key: &str) -> String {
+    let prefix = format!("{key}=");
+    for line in text.lines() {
+        if let Some(rest) = line.strip_prefix(&prefix) {
+            return rest.trim().trim_matches('"').to_string();
+        }
+    }
+    String::new()
+}
+
+/// 当前系统用哪种包管理器更新，以及对应发布包的发行版 / 架构；不能一键装时 reason 非空。
+/// 规则与旧版 update_platform 一致：只认明确声明兼容基底的衍生发行版，不拿版本号猜。
+fn update_platform() -> (String, String, String, String) {
+    let info = read("/etc/os-release");
+    let distro = os_release_field(&info, "ID").to_lowercase();
+    let version = os_release_field(&info, "VERSION_ID");
+    let variant = os_release_field(&info, "VARIANT_ID").to_lowercase();
+    let mut family: Vec<String> = os_release_field(&info, "ID_LIKE")
+        .to_lowercase()
+        .split_whitespace()
+        .map(str::to_string)
+        .collect();
+    family.push(distro.clone());
+    let machine = std::env::consts::ARCH.to_string();
+    let immutable = Path::new("/run/ostree-booted").exists();
+    let guide = "安装说明：https://github.com/Goway-Hui/ArchType/blob/main/docs/INSTALL.md";
+    let cannot = |reason: String| (String::new(), String::new(), String::new(), reason);
+    if family.iter().any(|f| f == "nixos") {
+        return cannot(format!(
+            "NixOS 请更新 flake 输入后运行 nixos-rebuild switch；{guide}"
+        ));
+    }
+    if distro == "deepin" {
+        let codename = os_release_field(&info, "VERSION_CODENAME").to_lowercase();
+        let base = if codename == "crimson" || version.starts_with("25") {
+            "deepin25"
+        } else if codename == "beige" || version.starts_with("23") {
+            "deepin23"
+        } else {
+            return cannot(format!(
+                "deepin {version} 没有发布包（有 23 和 25 的）；{guide}"
+            ));
+        };
+        if machine != "x86_64" && machine != "amd64" {
+            return cannot(format!("deepin 的发布包只有 x86_64，{machine} 请从源码构建；{guide}"));
+        }
+        return ("apt-get".into(), base.into(), "amd64".into(), String::new());
+    }
+    let atomic_variants = ["silverblue", "kinoite", "sericea", "onyx", "coreos"];
+    if immutable || atomic_variants.contains(&variant.as_str()) {
+        return cannot(format!(
+            "不可变系统请用系统的分层或声明式配置更新（Fedora Atomic 用 rpm-ostree）；{guide}"
+        ));
+    }
+    if family.iter().any(|f| f == "manjaro") {
+        return cannot(format!(
+            "Manjaro 请用 scripts/package-arch.sh 在本机编包，避免混用 Arch 滚动库；{guide}"
+        ));
+    }
+    let (deb_arch, rpm_arch) = match machine.as_str() {
+        "x86_64" => ("amd64", "x86_64"),
+        "aarch64" => ("arm64", "aarch64"),
+        _ => {
+            return cannot(format!("发布包只有 x86_64 和 arm64，{machine} 请从源码构建；{guide}"));
+        }
+    };
+    if distro == "ubuntu" && ["22.04", "24.04", "26.04"].contains(&version.as_str()) {
+        return (
+            "apt-get".into(),
+            format!("ubuntu{version}"),
+            deb_arch.into(),
+            String::new(),
+        );
+    }
+    if distro == "debian" && (version == "13" || version.starts_with("13.")) {
+        return ("apt-get".into(), "debian13".into(), deb_arch.into(), String::new());
+    }
+    if distro != "ubuntu" && distro != "debian" {
+        let ubuntu_codename = {
+            let explicit = os_release_field(&info, "UBUNTU_CODENAME");
+            if explicit.is_empty() && family.iter().any(|f| f == "ubuntu") {
+                os_release_field(&info, "VERSION_CODENAME")
+            } else {
+                explicit
+            }
+        };
+        let mapped = match ubuntu_codename.as_str() {
+            "jammy" => Some("22.04"),
+            "noble" => Some("24.04"),
+            "resolute" => Some("26.04"),
+            _ => None,
+        };
+        if let Some(code) = mapped {
+            return (
+                "apt-get".into(),
+                format!("ubuntu{code}"),
+                deb_arch.into(),
+                String::new(),
+            );
+        }
+        let debian_codename = {
+            let explicit = os_release_field(&info, "DEBIAN_CODENAME");
+            if explicit.is_empty() && family.iter().any(|f| f == "debian") {
+                os_release_field(&info, "VERSION_CODENAME")
+            } else {
+                explicit
+            }
+        };
+        if debian_codename == "trixie" {
+            return ("apt-get".into(), "debian13".into(), deb_arch.into(), String::new());
+        }
+    }
+    let arch_family = ["arch", "archlinux", "endeavouros", "garuda", "cachyos"];
+    if family.iter().any(|f| arch_family.contains(&f.as_str())) {
+        if rpm_arch != "x86_64" {
+            return cannot(format!(
+                "Arch Linux 的发布包只有 x86_64，{machine} 请用 scripts/package-arch.sh 在本机编包；{guide}"
+            ));
+        }
+        return ("pacman".into(), "archlinux".into(), "x86_64".into(), String::new());
+    }
+    if distro == "fedora" && !version.is_empty() && version.chars().all(|c| c.is_ascii_digit()) {
+        return (
+            "dnf".into(),
+            format!("fc{version}"),
+            rpm_arch.into(),
+            String::new(),
+        );
+    }
+    cannot(format!(
+        "{} 请按发行版说明从源码更新；{guide}",
+        if distro.is_empty() { "这个发行版" } else { &distro }
+    ))
+}
+
+/// 包是不是这个包管理器装的：源码安装不能误走二进制更新。
+fn installed_by_package_manager(manager: &str) -> bool {
+    let mut command = match manager {
+        "apt-get" => {
+            let mut c = std::process::Command::new("dpkg");
+            c.args(["-s", "archtype"]);
+            c
+        }
+        "pacman" => {
+            let mut c = std::process::Command::new("pacman");
+            c.args(["-Q", "archtype"]);
+            c
+        }
+        "dnf" => {
+            let mut c = std::process::Command::new("rpm");
+            c.args(["-q", "archtype"]);
+            c
+        }
+        _ => return false,
+    };
+    command
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .status()
+        .map(|status| status.success())
+        .unwrap_or(false)
+}
+
+fn update_set_state(state: String) {
+    *UPDATE_STATE.lock().unwrap() = state;
+}
+
+/// 下载一个文件到 path，期间更新进度（轮询 .part 的大小）。
+fn update_download(url: &str, path: &str, total_hint: u64) -> Result<(), String> {
+    let part = format!("{path}.part");
+    let mut child = std::process::Command::new("curl")
+        .args([
+            "-sSL",
+            "--fail",
+            "--max-time",
+            "1800",
+            "-A",
+            &format!("ArchType/{}", Config::version()),
+            "-o",
+            &part,
+            url,
+        ])
+        .spawn()
+        .map_err(|error| format!("跑不了 curl：{error}"))?;
+    let total = if total_hint > 0 { total_hint } else { 0 };
+    loop {
+        if UPDATE_CANCEL.load(std::sync::atomic::Ordering::SeqCst) {
+            let _ = child.kill();
+            let _ = child.wait();
+            let _ = fs::remove_file(&part);
+            return Err("已取消".to_string());
+        }
+        match child.try_wait() {
+            Ok(Some(status)) => {
+                if !status.success() {
+                    let _ = fs::remove_file(&part);
+                    return Err("下载失败".to_string());
+                }
+                break;
+            }
+            Ok(None) => {
+                let done = fs::metadata(&part).map(|meta| meta.len()).unwrap_or(0);
+                if let Ok(mut progress) = UPDATE_PROGRESS.lock() {
+                    *progress = (done, total.max(done));
+                }
+                std::thread::sleep(std::time::Duration::from_millis(120));
+            }
+            Err(error) => return Err(error.to_string()),
+        }
+    }
+    fs::rename(&part, path).map_err(|error| format!("换不到位置：{error}"))
+}
+
+fn sha256_file(path: &str) -> Result<String, String> {
+    use sha2::{Digest, Sha256};
+    let bytes = fs::read(path).map_err(|error| error.to_string())?;
+    let mut hasher = Sha256::new();
+    hasher.update(&bytes);
+    Ok(format!("{:x}", hasher.finalize()))
+}
+
+/// 后台线程：下载包 → 按 SHA256SUMS 校验 → 用 pkexec 交给包管理器安装。
+fn update_install_work(release: String) {
+    let plan: serde_json::Value =
+        serde_json::from_str(&Config::update_plan(release.clone())).unwrap_or_default();
+    if !plan["can_install"].as_bool().unwrap_or(false) {
+        let reason = plan["reason"].as_str().unwrap_or("不能自动安装");
+        update_set_state(format!("error:{reason}"));
+        return;
+    }
+    let manager = plan["manager"].as_str().unwrap_or("").to_string();
+    let version = plan["version"].as_str().unwrap_or("").to_string();
+    let files = plan["files"].as_array().cloned().unwrap_or_default();
+    let dir = format!("{}/updates/{version}", Config::data_dir());
+    if let Err(error) = fs::create_dir_all(&dir) {
+        update_set_state(format!("error:建不了下载目录：{error}"));
+        return;
+    }
+    let release_value: serde_json::Value = serde_json::from_str(&release).unwrap_or_default();
+    let sums_url = release_value["assets"]["SHA256SUMS"]["url"]
+        .as_str()
+        .unwrap_or("")
+        .to_string();
+    if sums_url.is_empty() {
+        update_set_state("error:发布页缺少 SHA256SUMS".to_string());
+        return;
+    }
+    let sums_path = format!("{dir}/SHA256SUMS");
+    if let Err(error) = update_download(&sums_url, &sums_path, 0) {
+        update_set_state(format!("error:{error}"));
+        return;
+    }
+    let sums = read(&sums_path);
+    let mut paths: Vec<String> = Vec::new();
+    for file in &files {
+        let name = file["name"].as_str().unwrap_or("").to_string();
+        let url = file["url"].as_str().unwrap_or("").to_string();
+        let size = file["size"].as_u64().unwrap_or(0);
+        if name.is_empty() || url.is_empty() || name.contains('/') {
+            update_set_state("error:发布包文件名无效".to_string());
+            return;
+        }
+        let expected = sums
+            .lines()
+            .filter_map(|line| {
+                let mut fields = line.split_whitespace();
+                let digest = fields.next()?;
+                let file_name = fields.next()?.trim_start_matches('*');
+                (file_name == name).then(|| digest.to_lowercase())
+            })
+            .next();
+        let Some(expected) = expected else {
+            update_set_state(format!("error:SHA256SUMS 里没有 {name}"));
+            return;
+        };
+        let path = format!("{dir}/{name}");
+        if let Err(error) = update_download(&url, &path, size) {
+            update_set_state(format!("error:{error}"));
+            return;
+        }
+        update_set_state("verifying".to_string());
+        match sha256_file(&path) {
+            Ok(actual) if actual == expected => {}
+            Ok(_) => {
+                let _ = fs::remove_file(&path);
+                update_set_state(format!("error:{name} 校验和不对，可能没下完整，请重试"));
+                return;
+            }
+            Err(error) => {
+                update_set_state(format!("error:读不了 {name}：{error}"));
+                return;
+            }
+        }
+        paths.push(path);
+    }
+    update_set_state("installing".to_string());
+    let mut command = std::process::Command::new("pkexec");
+    match manager.as_str() {
+        "apt-get" => {
+            command.args(["apt-get", "install", "-y"]);
+        }
+        "dnf" => {
+            command.args(["dnf", "install", "-y"]);
+        }
+        "pacman" => {
+            command.args(["pacman", "-U", "--noconfirm"]);
+        }
+        _ => {
+            update_set_state("error:这个系统请按安装说明手动更新".to_string());
+            return;
+        }
+    }
+    command.args(&paths);
+    match command.status() {
+        Ok(status) if status.success() => update_set_state(format!("done:{version}")),
+        Ok(_) => update_set_state("error:安装没有完成（取消了授权，或包管理器报错）".to_string()),
+        Err(error) => update_set_state(format!("error:启动安装失败：{error}")),
+    }
+}
+
 fn custom_lines(path: &str) -> Vec<String> {
     read(path)
         .lines()
@@ -954,15 +1275,139 @@ impl Config {
         }
         let url = value["html_url"].as_str().unwrap_or("").to_string();
         let notes: String = value["body"].as_str().unwrap_or("").chars().take(20000).collect();
+        // 一键更新要拿资产名和下载地址（旧版自己从发布信息里挑包，不跳网页）
+        let mut assets = serde_json::Map::new();
+        if let Some(items) = value["assets"].as_array() {
+            for item in items {
+                let (Some(name), Some(link)) = (item["name"].as_str(), item["browser_download_url"].as_str())
+                else {
+                    continue;
+                };
+                assets.insert(
+                    name.to_string(),
+                    serde_json::json!({
+                        "url": link,
+                        "size": item["size"].as_u64().unwrap_or(0),
+                    }),
+                );
+            }
+        }
         serde_json::json!({
             "ok": true,
             "current": current,
             "tag": tag,
+            "version": tag,
             "url": url,
             "notes": notes,
+            "assets": assets,
             "newer": newer_version(&tag, &current),
         })
         .to_string()
+    }
+
+    /// 一键更新的计划：能不能直接在界面里装、要下哪个包。
+    /// 参数是 check_update 的 JSON。返回
+    /// {"can_install":bool,"manager":"apt-get|dnf|pacman","reason":"…","version":"…","files":[{"name","url","size"}]}
+    pub fn update_plan(release: String) -> String {
+        let value: serde_json::Value = match serde_json::from_str(&release) {
+            Ok(value) => value,
+            Err(_) => return serde_json::json!({"can_install": false, "reason": "读不懂发布信息"}).to_string(),
+        };
+        let version = value["version"].as_str().unwrap_or("").to_string();
+        let assets = &value["assets"];
+        let (manager, distro, arch, reason) = update_platform();
+        if !reason.is_empty() {
+            return serde_json::json!({
+                "can_install": false, "reason": reason, "version": version, "files": [],
+            })
+            .to_string();
+        }
+        if !installed_by_package_manager(&manager) {
+            return serde_json::json!({
+                "can_install": false,
+                "reason": format!("当前不是通过 {manager} 安装的 ArchType，请按安装说明更新源码"),
+                "version": version,
+                "files": [],
+            })
+            .to_string();
+        }
+        if version.is_empty()
+            || !version
+                .chars()
+                .all(|c| c.is_ascii_alphanumeric() || "._+~^-".contains(c))
+        {
+            return serde_json::json!({
+                "can_install": false, "reason": "发布版本号格式无效", "version": version, "files": [],
+            })
+            .to_string();
+        }
+        let name = match manager.as_str() {
+            "apt-get" => format!("archtype_{version}_{distro}_{arch}.deb"),
+            "pacman" => format!("archtype-{version}-1-{arch}.pkg.tar.zst"),
+            _ => format!("archtype-{version}-1.{distro}.{arch}.rpm"),
+        };
+        if assets[&name]["url"].as_str().is_none() {
+            return serde_json::json!({
+                "can_install": false,
+                "reason": format!("这一版没有 {distro} {arch} 的安装包，请按安装说明从源码构建"),
+                "version": version,
+                "files": [],
+            })
+            .to_string();
+        }
+        if assets["SHA256SUMS"]["url"].as_str().is_none() {
+            return serde_json::json!({
+                "can_install": false,
+                "reason": "发布页缺少 SHA256SUMS，暂不自动安装",
+                "version": version,
+                "files": [],
+            })
+            .to_string();
+        }
+        let note = if manager == "pacman" {
+            "要是提示依赖不满足，先在终端运行 sudo pacman -Syu 升级系统"
+        } else {
+            ""
+        };
+        serde_json::json!({
+            "can_install": true,
+            "manager": manager,
+            "distro": distro,
+            "arch": arch,
+            "reason": note,
+            "version": version,
+            "files": [{
+                "name": name,
+                "url": assets[&name]["url"],
+                "size": assets[&name]["size"].as_u64().unwrap_or(0),
+            }],
+        })
+        .to_string()
+    }
+
+    /// 开始下载并安装更新（后台线程）。返回是否真的开始了。
+    pub fn update_install_start(release: String) -> bool {
+        *UPDATE_STATE.lock().unwrap() = "downloading".to_string();
+        *UPDATE_PROGRESS.lock().unwrap() = (0, 0);
+        UPDATE_CANCEL.store(false, std::sync::atomic::Ordering::SeqCst);
+        std::thread::spawn(move || update_install_work(release));
+        true
+    }
+
+    /// 下载/安装状态：idle / downloading / verifying / installing / done:版本 / error:原因。
+    pub fn update_install_state() -> String {
+        UPDATE_STATE.lock().unwrap().clone()
+    }
+
+    /// 下载进度 "已下载字节/总字节"。
+    pub fn update_install_progress() -> String {
+        let (done, total) = *UPDATE_PROGRESS.lock().unwrap();
+        format!("{done}/{total}")
+    }
+
+    /// 下载后请用户重启输入法（安装完调）。
+    pub fn update_finish_restart() -> bool {
+        Config::restart_fcitx()
     }
 
     /// 导出自定义词到 ~/Downloads（没有就放家目录）。返回写入的路径，失败返回空串。
@@ -2008,6 +2453,10 @@ fn latest_lexicon_asset() -> Option<(String, String, String)> {
 }
 
 /// 万象词库下载状态。
+static UPDATE_STATE: LazyLock<Mutex<String>> = LazyLock::new(|| Mutex::new("idle".to_string()));
+static UPDATE_PROGRESS: LazyLock<Mutex<(u64, u64)>> = LazyLock::new(|| Mutex::new((0, 0)));
+static UPDATE_CANCEL: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
 static LEXICON_STATE: LazyLock<Mutex<String>> = LazyLock::new(|| Mutex::new("idle".to_string()));
 static LEXICON_PROGRESS: LazyLock<Mutex<(u64, u64)>> = LazyLock::new(|| Mutex::new((0, 0)));
 static LEXICON_CANCEL: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);

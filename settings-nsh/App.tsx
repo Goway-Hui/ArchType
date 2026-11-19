@@ -16,6 +16,8 @@ import { AlertDialog, Button, Input, Popover, Select, Switch, TextView } from "n
 import type { JSX } from "nsh/jsx-runtime";
 import { Config } from "archtype/native";
 
+const installGuideUrl = "https://github.com/Goway-Hui/ArchType/blob/main/docs/INSTALL.md";
+
 const pages = ["常规", "输入", "表情", "语音", "翻译", "自定义词", "统计", "更新"];
 const pageIcons = [
   settingsIcon,
@@ -1622,6 +1624,61 @@ function App() {
     voiceState.set("idle");
   };
 
+  // 一键更新：有新版且系统能用包管理器装时，在界面里下载并安装（旧版同此）。
+  const updateRelease = signal("");
+  const updateInstallState = signal("idle");
+  const updateProgressText = signal("0/0");
+  let updatePoll: ReturnType<typeof setInterval> | null = null;
+  const updatePlanData = computed(() => {
+    const raw = updateRelease();
+    if (raw === "") return null;
+    try {
+      return JSON.parse(Config.updatePlan(raw)) as {
+        can_install?: boolean;
+        reason?: string;
+        version?: string;
+        files?: { name: string; size: number }[];
+      };
+    } catch {
+      return null;
+    }
+  });
+  const stopUpdatePoll = () => {
+    if (updatePoll !== null) {
+      clearInterval(updatePoll);
+      updatePoll = null;
+    }
+  };
+  const startUpdateInstall = () => {
+    if (!Config.updateInstallStart(updateRelease())) return;
+    updateInstallState.set("downloading");
+    stopUpdatePoll();
+    updatePoll = setInterval(() => {
+      const state = Config.updateInstallState();
+      updateInstallState.set(state);
+      updateProgressText.set(Config.updateInstallProgress());
+      if (state.startsWith("done:") || state.startsWith("error:")) stopUpdatePoll();
+    }, 400);
+  };
+  const installStatusText = computed(() => {
+    const state = updateInstallState();
+    if (state === "downloading") {
+      const [doneText, totalText] = updateProgressText().split("/");
+      const done = Number(doneText) || 0;
+      const total = Number(totalText) || 0;
+      if (total > 0) {
+        const percent = Math.min(100, Math.round((done / total) * 100));
+        return `正在下载… ${percent}%（${(done / 1048576).toFixed(1)} / ${(total / 1048576).toFixed(1)} MB）`;
+      }
+      return "正在下载…";
+    }
+    if (state === "verifying") return "正在校验下载的文件…";
+    if (state === "installing") return "等待授权，正在安装…";
+    if (state.startsWith("done:")) return `已安装 ${state.slice(5)}，重启输入法后生效`;
+    if (state.startsWith("error:")) return state.slice(6);
+    return "";
+  });
+
   const runCheckUpdate = () => {
     updateState.set("检查中…");
     const result: { ok: boolean; tag?: string; newer?: boolean; url?: string; notes?: string; error?: string } =
@@ -1635,6 +1692,7 @@ function App() {
     updateUrl.set(result.url ?? "");
     // 已是最新时那一版说明不是「要更新到的东西」,不显示。
     updateNotes.set(result.newer ? (result.notes ?? "") : "");
+    updateRelease.set(result.newer ? JSON.stringify(result) : "");
   };
 
 
@@ -3108,10 +3166,37 @@ function App() {
                   <SmallButton title="检查更新" onPress={runCheckUpdate} />
                 </Row>
                 <Row title={updateTitle()} subtitle={updateState()}>
-                  {updateUrl() ? (
-                    <SmallButton title="打开下载页" onPress={() => Config.openUrl(updateUrl())} />
+                  {updatePlanData()?.can_install ? (
+                    <SmallButton title="下载并安装" tone="accent" onPress={startUpdateInstall} />
+                  ) : updateUrl() ? (
+                    <SmallButton
+                      title="打开安装说明"
+                      onPress={() => Config.openUrl(installGuideUrl)}
+                    />
                   ) : null}
                 </Row>
+                {updatePlanData()?.can_install && updatePlanData()?.reason ? (
+                  <Text style={{ color: ui().muted, fontSize: 11 }}>{updatePlanData()?.reason}</Text>
+                ) : null}
+                {updatePlanData() && updatePlanData()?.can_install === false ? (
+                  <Text style={{ color: ui().muted, fontSize: 11 }}>{updatePlanData()?.reason}</Text>
+                ) : null}
+                {installStatusText() !== "" ? (
+                  <Row
+                    title={installStatusText()}
+                    subtitle={
+                      updateInstallState().startsWith("done:") ? "装好了重启一次 fcitx5" : undefined
+                    }
+                  >
+                    {updateInstallState().startsWith("done:") ? (
+                      <SmallButton
+                        title="重启输入法"
+                        tone="accent"
+                        onPress={() => Config.updateFinishRestart()}
+                      />
+                    ) : null}
+                  </Row>
+                ) : null}
               </Card>
 
               {updateNotes() ? (
