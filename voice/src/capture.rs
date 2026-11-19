@@ -36,28 +36,42 @@ pub fn list_devices() -> Result<Vec<String>> {
     Ok(names)
 }
 
-fn pick_device(host: &cpal::Host, want: Option<&str>) -> Result<cpal::Device> {
+/// 候选录音设备，按优先级：指定名字的那个 > 系统默认 > 其余。
+fn candidate_devices(host: &cpal::Host, want: Option<&str>) -> Result<Vec<cpal::Device>> {
+    let mut all: Vec<cpal::Device> = host
+        .input_devices()
+        .context("枚举录音设备失败")?
+        .collect();
+    let mut ordered: Vec<cpal::Device> = Vec::new();
     if let Some(want) = want {
-        let mut devices: Vec<cpal::Device> =
-            host.input_devices().context("枚举录音设备失败")?.collect();
-        if let Some(pos) = devices
+        if let Some(pos) = all
             .iter()
             .position(|d| d.name().ok().as_deref() == Some(want))
         {
-            return Ok(devices.remove(pos));
+            ordered.push(all.remove(pos));
+        } else {
+            eprintln!("找不到设备 {want:?}，改用默认设备");
         }
-        eprintln!("找不到设备 {want:?}，改用默认设备");
     }
-    host.default_input_device().context("没有可用的录音设备")
+    if let Some(dev) = host.default_input_device() {
+        let name = dev.name().unwrap_or_default();
+        match all.iter().position(|d| d.name().ok() == Some(name.clone())) {
+            Some(pos) => ordered.push(all.remove(pos)),
+            None => ordered.push(dev),
+        }
+    }
+    ordered.extend(all);
+    Ok(ordered)
 }
 
-/// 开始采集；回调收到的是 16kHz 单声道 i16。
-pub fn start<F>(device: Option<&str>, on_pcm: F) -> Result<Capture>
+/// 用这个设备建一条流。建不起来就把错误带回去，让调用方换下一个设备。
+///
+/// Linux 上 cpal 走 ALSA，「默认设备」是 ALSA 的 default（PipeWire 的插件）：它依赖
+/// PipeWire 有默认录音源，没设好时查参数能过、真正开流才报 snd_pcm_hw_params 失败。
+fn open_stream<F>(dev: &cpal::Device, sink: Arc<Mutex<F>>) -> Result<Capture>
 where
     F: FnMut(Vec<i16>) + Send + 'static,
 {
-    let host = cpal::default_host();
-    let dev = pick_device(&host, device)?;
     // 设备能直接给 16kHz 就要 16kHz（PipeWire/PulseAudio 自己重采样，质量比我们好），
     // 声道越少越好；不行再用设备默认格式，自己滤波重采样
     let wanted = cpal::SampleRate(TARGET_RATE);
@@ -90,7 +104,6 @@ where
     };
 
     // 三个分支都要用同一个回调，用 Arc<Mutex> 共享；每次回调只会在一个线程里跑。
-    let sink = Arc::new(Mutex::new(on_pcm));
     let err_fn = |e| eprintln!("录音流错误: {e}");
 
     let stream = match format {
@@ -155,4 +168,37 @@ where
         _stream: stream,
         info,
     })
+}
+
+/// 开始采集；回调收到的是 16kHz 单声道 i16。
+pub fn start<F>(device: Option<&str>, on_pcm: F) -> Result<Capture>
+where
+    F: FnMut(Vec<i16>) + Send + 'static,
+{
+    let host = cpal::default_host();
+    let sink = Arc::new(Mutex::new(on_pcm));
+    let candidates = candidate_devices(&host, device)?;
+    let mut errors: Vec<String> = Vec::new();
+    for dev in &candidates {
+        match open_stream(dev, sink.clone()) {
+            Ok(capture) => {
+                if !errors.is_empty() {
+                    eprintln!(
+                        "录音设备 {:?} 可用，前面试过的打不开：{}",
+                        capture.info.device,
+                        errors.join("；")
+                    );
+                }
+                return Ok(capture);
+            }
+            Err(error) => {
+                let name = dev.name().unwrap_or_default();
+                errors.push(format!("{name}: {error:#}"));
+            }
+        }
+    }
+    if errors.is_empty() {
+        return Err(anyhow!("没有可用的录音设备"));
+    }
+    Err(anyhow!("没有能打开的录音设备（{}）", errors.join("；")))
 }
