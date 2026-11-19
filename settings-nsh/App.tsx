@@ -1,4 +1,5 @@
 import { mount, setColorScheme, colorScheme, computed, signal, Scroll, Text, View } from "nsh";
+import { currentWindow } from "nsh/desktop";
 import { AlertDialog, Button, Input, Popover, Select, Switch } from "nsh/base";
 import type { JSX } from "nsh/jsx-runtime";
 import { Config } from "archtype/native";
@@ -562,6 +563,26 @@ function SelectBox(props: {
         </View>
       }
     />
+  );
+}
+
+/* 标题右侧的窗口按钮:圆形浅底,和旧版 HeaderBar 的三个钮一样。 */
+function WindowButton(props: { title: string; onPress: () => void; children: JSX.Element }) {
+  return (
+    <View
+      accessibilityLabel={props.title}
+      onPress={props.onPress}
+      style={{
+        width: 26,
+        height: 26,
+        borderRadius: 13,
+        backgroundColor: ui().page,
+        alignItems: "center",
+        justifyContent: "center",
+      }}
+    >
+      {props.children}
+    </View>
   );
 }
 
@@ -1582,10 +1603,20 @@ function App() {
         ))}
       </View>
 
-      <Scroll style={{ flex: 1 }}>
-        <View style={{ padding: 28, gap: 16 }}>
-          <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
-            <Text style={{ color: ui().text, fontWeight: "800", fontSize: 24 }}>{pages[current()]}</Text>
+      <View style={{ flex: 1 }}>
+        <View
+          style={{
+            flexDirection: "row",
+            alignItems: "center",
+            justifyContent: "space-between",
+            gap: 8,
+            paddingLeft: 28,
+            paddingRight: 28,
+            paddingTop: 22,
+            paddingBottom: 4,
+          }}
+        >
+            <Text style={{ color: ui().text, fontWeight: "800", fontSize: 24, flex: 1 }}>{pages[current()]}</Text>
             <Popover
               open={menuOpen()}
               onOpenChange={(event) => menuOpen.set(event.open)}
@@ -1641,8 +1672,27 @@ function App() {
                 ))}
               </View>
             </Popover>
-          </View>
-
+            <WindowButton title="最小化" onPress={() => currentWindow().minimize()}>
+              <View style={{ width: 10, height: 2, borderRadius: 1, backgroundColor: ui().muted }} />
+            </WindowButton>
+            <WindowButton
+              title="最大化"
+              onPress={() =>
+                currentWindow().setMode(
+                  currentWindow().state()?.mode === "maximized" ? "normal" : "maximized",
+                )
+              }
+            >
+              <View
+                style={{ width: 9, height: 9, borderWidth: 1, borderColor: ui().muted, borderRadius: 1 }}
+              />
+            </WindowButton>
+            <WindowButton title="关闭" onPress={() => currentWindow().close()}>
+              <Text style={{ color: ui().muted, fontSize: 13 }}>✕</Text>
+            </WindowButton>
+        </View>
+        <Scroll style={{ flex: 1 }}>
+          <View style={{ paddingLeft: 28, paddingRight: 28, paddingTop: 8, paddingBottom: 28, gap: 16 }}>
           {current() === 0 ? (
             <>
               <Text style={{ color: ui().muted, fontSize: 12 }}>输入法</Text>
@@ -2788,8 +2838,9 @@ function App() {
           <Text style={{ color: ui().muted, fontSize: 12 }}>
             ArchType 设置（NSH 预览版，版本 {Config.version()}）
           </Text>
-        </View>
-      </Scroll>
+          </View>
+        </Scroll>
+      </View>
     </View>
   );
 }
