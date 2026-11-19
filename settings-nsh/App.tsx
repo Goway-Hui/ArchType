@@ -619,6 +619,20 @@ const fuzzyGroups: { key: string; label: string; default: boolean }[] = [
   { key: "FuzzyUnIong", label: "un = iong", default: false },
 ];
 
+const arrowKeyItems = [
+  { value: "Candidates", title: "都用来选词" },
+  { value: "Caret", title: "左右键移动光标" },
+];
+
+const tips: [string, string][] = [
+  ["长句分段选", "先选开头的词，剩下的接着选"],
+  ["忘掉学错的词", "光标移到候选上，按 Ctrl+Delete"],
+  ["搜符号", "表情面板里打 gou → ✓、youjiantou → →"],
+  ["互译", "单按 Shift 切到「译」，打中文出外文"],
+];
+
+const issuesUrl = "https://github.com/Goway-Hui/ArchType/issues/new";
+
 const inputSchemeItems = [
   { value: "Quanpin", title: "全拼" },
   { value: "Shuangpin", title: "双拼" },
@@ -920,6 +934,18 @@ function App() {
     summarizeStats(parseStats(statsRaw()).days ?? {}, dayKey(new Date())),
   );
 
+  const arrowKeys = signal(Config.get("ArrowKeys") || "Candidates");
+  const pageKeysOpen = signal(false);
+  const tipsOpen = signal(false);
+  const arrowKeysHint = computed(() => {
+    if (arrowKeys() === "Caret") return "↑ ↓ 选词，← → 在拼音里移动光标";
+    return layout() === "Vertical" ? "↑ ↓ 选词，← → 翻页" : "← → 选词，↑ 上一页，↓ 展开更多候选";
+  });
+  const fcitxRunning = signal(Config.fcitxRunning());
+  const fcitxStatus = computed(() => (fcitxRunning() ? "fcitx5 正在运行" : "fcitx5 没在运行"));
+  const fcitxHint = computed(() =>
+    fcitxRunning() ? "ArchType 已加载，改了设置会自动生效" : "在桌面设置里让 fcitx5 启动后再打字",
+  );
   const keysMinus = signal(boolOf(Config.get("PageKeysMinusEqual"), true));
   const keysBracket = signal(boolOf(Config.get("PageKeysBracket"), false));
   const keysComma = signal(boolOf(Config.get("PageKeysCommaPeriod"), false));
@@ -1079,15 +1105,32 @@ function App() {
 
           {current() === 0 ? (
             <>
+              <Text style={{ color: ui().muted, fontSize: 12 }}>输入法</Text>
+              <Card>
+                <Row title={fcitxStatus()} subtitle={fcitxHint()}>
+                  <SmallButton title="重启输入法" onPress={() => Config.restartFcitx()} />
+                </Row>
+              </Card>
+
               <Text style={{ color: ui().muted, fontSize: 12 }}>候选词</Text>
               <Card>
-                <Row title="候选排列" subtitle="横排 / 竖排">
+                <Row title="排列方向" subtitle="横排 / 竖排">
                   <SelectBox
                     items={layoutItems}
                     value={layout()}
                     onChange={(value) => {
                       layout.set(value);
                       save("CandidateLayout", value);
+                    }}
+                  />
+                </Row>
+                <Row title="方向键" subtitle={arrowKeysHint()}>
+                  <SelectBox
+                    items={arrowKeyItems}
+                    value={arrowKeys()}
+                    onChange={(value) => {
+                      arrowKeys.set(value);
+                      save("ArrowKeys", value);
                     }}
                   />
                 </Row>
@@ -1104,46 +1147,52 @@ function App() {
                     }}
                   />
                 </Row>
-              </Card>
-
-              <Text style={{ color: ui().muted, fontSize: 12 }}>翻页键</Text>
-              <Card>
-                <Row title="- 和 =" subtitle="翻到头时不当标点上屏">
-                  <Toggle
-                    checked={keysMinus()}
-                    onChange={(on) => {
-                      keysMinus.set(on);
-                      save("PageKeysMinusEqual", on ? "True" : "False");
-                    }}
+                <Row title="翻页键" subtitle="除了 Page Up / Page Down">
+                  <SmallButton
+                    title={pageKeysOpen() ? "收起" : "展开"}
+                    onPress={() => pageKeysOpen.set(!pageKeysOpen())}
                   />
                 </Row>
-                <Row title="[ 和 ]" subtitle="打字途中不再出【】">
-                  <Toggle
-                    checked={keysBracket()}
-                    onChange={(on) => {
-                      keysBracket.set(on);
-                      save("PageKeysBracket", on ? "True" : "False");
-                    }}
-                  />
-                </Row>
-                <Row title=", 和 ." subtitle="打字途中要先选词再打标点">
-                  <Toggle
-                    checked={keysComma()}
-                    onChange={(on) => {
-                      keysComma.set(on);
-                      save("PageKeysCommaPeriod", on ? "True" : "False");
-                    }}
-                  />
-                </Row>
-                <Row title="Shift+Tab 和 Tab">
-                  <Toggle
-                    checked={keysTab()}
-                    onChange={(on) => {
-                      keysTab.set(on);
-                      save("PageKeysTab", on ? "True" : "False");
-                    }}
-                  />
-                </Row>
+                {pageKeysOpen() ? (
+                  <>
+                    <Row title="- 和 =">
+                      <Toggle
+                        checked={keysMinus()}
+                        onChange={(on) => {
+                          keysMinus.set(on);
+                          save("PageKeysMinusEqual", on ? "True" : "False");
+                        }}
+                      />
+                    </Row>
+                    <Row title="[ 和 ]" subtitle="打字途中不再出【】">
+                      <Toggle
+                        checked={keysBracket()}
+                        onChange={(on) => {
+                          keysBracket.set(on);
+                          save("PageKeysBracket", on ? "True" : "False");
+                        }}
+                      />
+                    </Row>
+                    <Row title=", 和 ." subtitle="打字途中要先选词再打标点">
+                      <Toggle
+                        checked={keysComma()}
+                        onChange={(on) => {
+                          keysComma.set(on);
+                          save("PageKeysCommaPeriod", on ? "True" : "False");
+                        }}
+                      />
+                    </Row>
+                    <Row title="Shift+Tab 和 Tab">
+                      <Toggle
+                        checked={keysTab()}
+                        onChange={(on) => {
+                          keysTab.set(on);
+                          save("PageKeysTab", on ? "True" : "False");
+                        }}
+                      />
+                    </Row>
+                  </>
+                ) : null}
               </Card>
 
               <Text style={{ color: ui().muted, fontSize: 12 }}>外观</Text>
@@ -1171,6 +1220,22 @@ function App() {
                       Config.restartFcitx();
                     }}
                   />
+                </Row>
+              </Card>
+
+              <Text style={{ color: ui().muted, fontSize: 12 }}>帮助</Text>
+              <Card>
+                <Row title="小技巧" subtitle="点开看几个常用操作">
+                  <SmallButton
+                    title={tipsOpen() ? "收起" : "展开"}
+                    onPress={() => tipsOpen.set(!tipsOpen())}
+                  />
+                </Row>
+                {tipsOpen()
+                  ? tips.map((tip) => <Row title={tip[0]} subtitle={tip[1]} />)
+                  : null}
+                <Row title="提交问题" subtitle="在 GitHub 上报告问题">
+                  <SmallButton title="打开" onPress={() => Config.openUrl(issuesUrl)} />
                 </Row>
               </Card>
 

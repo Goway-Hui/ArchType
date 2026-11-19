@@ -472,6 +472,17 @@ impl Config {
             .unwrap_or(false)
     }
 
+    /// fcitx5 是否在运行（pgrep -x fcitx5，同旧版 _fcitx_running）。
+    pub fn fcitx_running() -> bool {
+        std::process::Command::new("pgrep")
+            .args(["-x", "fcitx5"])
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .status()
+            .map(|s| s.success())
+            .unwrap_or(false)
+    }
+
     /// 当前候选字号（classicui 的 Font 末尾数字）。
     pub fn font_size() -> String {
         font_size_of(&Config::classicui_get("Font".to_string()))
