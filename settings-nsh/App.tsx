@@ -711,6 +711,12 @@ const voiceKeyItems = [
   { value: "F10", title: "F10" },
 ];
 
+const candidateShadeItems = [
+  { value: "system", title: "跟随系统" },
+  { value: "light", title: "浅色" },
+  { value: "dark", title: "深色" },
+];
+
 const translateEngineItems = [
   { value: "local", title: "本地翻译（离线）" },
   { value: "bilibili", title: "哔哩哔哩（免费，不用 API Key）" },
@@ -1123,7 +1129,12 @@ function App() {
   const layout = signal(Config.get("CandidateLayout") || "Vertical");
   const pageSize = signal(Number(Config.get("PageSize") || "9"));
   const theme = signal(Config.stateGet("theme") || "system");
-  const blue = signal(Config.classicuiGet("Theme") === "archtype");
+  const blue = signal(
+    (Config.classicuiGet("Theme") || "").startsWith("archtype")
+      || (Config.classicuiGet("DarkTheme") || "").startsWith("archtype"),
+  );
+  // 候选框自己的深浅色,和设置界面的主题互不影响。
+  const candidateShade = signal(Config.stateGet("candidateShade") || "system");
   const fontSize = signal(Number(Config.fontSize() || "10"));
   const inputScheme = signal(Config.get("InputScheme") || "Quanpin");
   const shuangpin = signal(Config.get("ShuangpinScheme") || "Ziranma");
@@ -1695,11 +1706,19 @@ function App() {
     setColorScheme(value === "light" ? "light" : value === "dark" ? "dark" : "system");
   };
 
+  // fcitx5 按系统的深浅挑 Theme / DarkTheme 其中之一;把两个都写成同一套就等于钉死。
+  const applyCandidateTheme = () => {
+    const light = blue() ? "archtype" : "default";
+    const dark = blue() ? "archtype-dark" : "default-dark";
+    const shade = candidateShade();
+    Config.classicuiSet("Theme", shade === "dark" ? dark : light);
+    Config.classicuiSet("DarkTheme", shade === "light" ? light : dark);
+    Config.restartFcitx();
+  };
+
   const applyBlue = (on: boolean) => {
     blue.set(on);
-    Config.classicuiSet("Theme", on ? "archtype" : "default");
-    Config.classicuiSet("DarkTheme", on ? "archtype-dark" : "default-dark");
-    Config.restartFcitx();
+    applyCandidateTheme();
   };
 
   return (
@@ -1940,6 +1959,17 @@ function App() {
                 </Row>
                 <Row title="ArchType 蓝色主题" subtitle="选中的词是 ArchType 蓝，深色模式自动换深色版">
                   <Toggle checked={blue()} onChange={(on) => applyBlue(on)} />
+                </Row>
+                <Row title="候选框深浅" subtitle="候选框自己的浅色 / 深色，和上面的界面主题分开">
+                  <SelectBox
+                    items={candidateShadeItems}
+                    value={candidateShade()}
+                    onChange={(value) => {
+                      candidateShade.set(value);
+                      Config.stateSet("candidateShade", value);
+                      applyCandidateTheme();
+                    }}
+                  />
                 </Row>
                 <Row title="候选字号" subtitle="8–32 磅，改了马上生效">
                   <StepInput
