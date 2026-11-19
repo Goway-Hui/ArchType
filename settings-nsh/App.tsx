@@ -502,10 +502,11 @@ function SelectBox(props: {
   );
 }
 
-function Toggle(props: { checked: boolean; onChange: (on: boolean) => void }) {
+function Toggle(props: { checked: boolean; disabled?: boolean; onChange: (on: boolean) => void }) {
   return (
     <Switch
       checked={props.checked}
+      disabled={props.disabled ?? false}
       onChange={(e) => props.onChange(e.checked)}
       trackStyle={{
         width: 40,
@@ -931,6 +932,12 @@ function App() {
       voiceState().startsWith("verifying") ||
       voiceState().startsWith("extracting"),
   );
+  const voiceModelSubtitle = computed(() => {
+    if (voiceBusy()) return voiceState();
+    if (voiceState().startsWith("error:")) return `没下载好：${voiceState().slice(6)}`;
+    if (voiceModel()) return `已下载（${voiceModel()}）`;
+    return "在本机识别，录音不上传。要下载 102.9 MB，解开后约 130 MB";
+  });
   const updateState = signal("");
   const updateUrl = signal("");
 
@@ -1580,7 +1587,7 @@ function App() {
                     }}
                   />
                 </Row>
-                <Row title="表情面板快捷键" subtitle="打拼音或英文搜 emoji 和符号">
+                <Row title="表情面板快捷键" subtitle="按快捷键打开，打拼音或英文搜 emoji 和符号（xiao、pizza、youjiantou），方向键挑，空格或回车上屏，Esc 关闭。Super 就是 Windows 键。">
                   <SelectBox
                     items={emojiKeyItems}
                     value={emojiKey()}
@@ -1857,11 +1864,12 @@ function App() {
             </>
           ) : current() === 3 ? (
             <>
-              <Text style={{ color: ui().muted, fontSize: 12 }}>语音</Text>
+              <Text style={{ color: ui().muted, fontSize: 12 }}>语音输入</Text>
               <Card>
-                <Row title="语音输入" subtitle="按住语音键说话，松开上屏">
+                <Row title="语音输入" subtitle={voiceModel() ? "按住语音键说话，松开就上屏" : "先在下面下载语音模型"}>
                   <Toggle
-                    checked={voiceOn()}
+                    checked={voiceOn() && voiceModel() !== ""}
+                    disabled={voiceModel() === ""}
                     onChange={(on) => {
                       voiceOn.set(on);
                       save("Voice", on ? "True" : "False");
@@ -1878,7 +1886,7 @@ function App() {
                     }}
                   />
                 </Row>
-                <Row title="识别结果同时复制到剪贴板">
+                <Row title="同时复制到剪贴板" subtitle="要装 wl-clipboard 或 xclip">
                   <Toggle
                     checked={voiceCopy()}
                     onChange={(on) => {
@@ -1888,16 +1896,17 @@ function App() {
                   />
                 </Row>
               </Card>
+
               <Text style={{ color: ui().muted, fontSize: 12 }}>识别模型</Text>
               <Card>
-                <Row title="模型状态" subtitle={voiceModel() ? `已安装：${voiceModel()}` : "未下载"}>
+                <Row title="语音模型" subtitle={voiceModelSubtitle()}>
                   <SmallButton
-                    title={voiceModel() ? "删除模型" : "下载模型"}
-                    onPress={voiceModel() ? deleteVoice : downloadVoice}
+                    title={voiceBusy() ? "取消" : voiceModel() ? "删除" : "下载"}
+                    tone={voiceModel() || voiceBusy() ? "plain" : "accent"}
+                    onPress={voiceBusy() ? () => {} : voiceModel() ? deleteVoice : downloadVoice}
                     disabled={voiceBusy()}
                   />
                 </Row>
-                <Row title="下载状态" subtitle={voiceState()} />
               </Card>
             </>
           ) : current() === 4 ? (
