@@ -80,7 +80,11 @@ jitnian	今天
 
 # 模糊音关着时不出硬拼的怪词（计划 R2-c）
 shengme	什么
-penyou	朋友
+# 照着打本身是词库里的常用词（pen you 喷油）时它排第一，模糊音兜底的词排第二；只能硬凑时（上面的 shengme）模糊音的词排第一
+penyou	喷油
+penyou	朋友		top=2
+zuijing	最精
+zuijing	最近		top=2
 
 # 词频修正和热词（计划 R3）
 laoshi	老师

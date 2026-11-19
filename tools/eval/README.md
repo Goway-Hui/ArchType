@@ -128,6 +128,14 @@ scripts/eval.sh /usr/share/archtype
 换了数据（rime-ice 提交、`data/` 下的热词和词频表、`words.lm`）也要重写基线，提交说明里写清是数据变了。
 评测集本身改了（重新生成、加了用例）同样要重写基线，前后数字不能直接比。
 
+## 排序不变量
+
+排序评测只量「第一个对不对」，量不出「这种结果永远不许有」（`cehaohou` 只剩两个纠错候选时 top1 统计里只少一条）。
+`scripts/invariants.sh <数据目录> [--nnlm nnlm.bin]` 把这里全部用例逐键打一遍，检查硬规则：
+打对了的拼音第一个不是纠错出来的、第一个音节的单字一直在、候选不会只剩几个、加了上文或神经语言模型照着打的读法还在……
+一条都不许违反（`invariants-allow.tsv` 里写明了理由的除外）。CI 在排序评测后面跑它。规则和来历见
+[docs/ENGINE-INVARIANTS.md](../../docs/ENGINE-INVARIANTS.md)。
+
 ## 来源和许可证
 
 - `common`、`mid`、`rare`、`jianpin`、`trunc`、`trunc_exact`、`homophone2`、`homophone3` 是从雾凇拼音 rime-ice

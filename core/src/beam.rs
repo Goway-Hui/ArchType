@@ -201,6 +201,7 @@ pub fn beam_search(
             per_span,
             config,
             false,
+            false,
         );
 
         for state in states {
@@ -335,6 +336,7 @@ pub fn first_words(
         per_span,
         config,
         RARE,
+        true,
     )
     .into_iter()
     .filter(|s| s.word.known && s.word.end < n)
@@ -353,12 +355,24 @@ pub fn first_words(
     });
     // 每个长度最多取几个，避免两字词把单字全部挤掉；单字多留几个，
     // 整句和词都不对时用户靠它一个字一个字地选
-    let mut per_end: HashMap<usize, usize> = HashMap::new();
+    // 纠错出来的另算名额，不占照着打的词的位置（纠错只能「加」候选）
+    let mut per_end: HashMap<(usize, bool), usize> = HashMap::new();
     words.retain(|(w, _)| {
-        let count = per_end.entry(w.end).or_insert(0);
+        let count = per_end.entry((w.end, w.typos > 0)).or_insert(0);
         *count += 1;
         let single = w.pinyin.split_whitespace().count() <= 1;
         *count <= if single { 6 } else { 3 }
+    });
+    // 超过 limit 时先去掉排在后面的纠错词，照着打的词留着
+    let typed = words.iter().filter(|(w, _)| w.typos == 0).count();
+    let mut typo_room = limit.saturating_sub(typed);
+    words.retain(|(w, _)| {
+        if w.typos == 0 {
+            return true;
+        }
+        let keep = typo_room > 0;
+        typo_room = typo_room.saturating_sub(1);
+        keep
     });
     words.truncate(limit);
     words
@@ -387,6 +401,7 @@ pub fn all_first_words(
         per_span,
         config,
         RARE,
+        true,
     )
     .into_iter()
     .filter(|s| s.word.known)
@@ -409,6 +424,9 @@ pub fn all_first_words(
 
 /// 从 pos 出发的所有候选词：词典命中（按结束位置分组，各取代价最低的若干个）
 /// 加上每条精确边的未登录兜底。
+/// `typo_quota`：纠错出来的词另算名额（句首词、翻页长尾用）。纠错只能「加」候选：和照着打的词抢同一份
+/// 名额的话，纠错出来的常用词（词频高、只扣一个固定罚分）会把照着打的冷门字挤掉（`cunzai` 的「蹲」cun）。
+#[allow(clippy::too_many_arguments)]
 fn collect_spans(
     graph: &SyllableGraph,
     lexicon: &dyn Lexicon,
@@ -417,6 +435,7 @@ fn collect_spans(
     per_span: usize,
     config: &BeamConfig,
     rare: bool,
+    typo_quota: bool,
 ) -> Vec<Span> {
     let mut found: Vec<Span> = Vec::new();
     let mut keys: Vec<SyllableQuery> = Vec::new();
@@ -459,15 +478,39 @@ fn collect_spans(
         // 按代价排序；只在最多 `per_span` 个保留项里做线性比较，避免
         // 为每个候选克隆 String 并重新计算哈希。
         let mut unique = Vec::with_capacity(per_span.min(group.len()));
+        // (照着打的, 纠错的) 各留了几个；不另算名额时两种合在第一个里数
+        let mut kept = (0usize, 0usize);
         for span in group {
-            if unique
-                .iter()
-                .all(|kept: &Span| kept.word.text != span.word.text)
-            {
-                unique.push(span);
-                if unique.len() >= per_span {
+            let corrected = typo_quota && span.word.typos > 0;
+            let count = if corrected { kept.1 } else { kept.0 };
+            if count >= per_span {
+                if kept.0 >= per_span && (!typo_quota || kept.1 >= per_span) {
                     break;
                 }
+                continue;
+            }
+            match unique
+                .iter()
+                .position(|k: &Span| k.word.text == span.word.text)
+            {
+                None => {
+                    unique.push(span);
+                    if corrected {
+                        kept.1 += 1;
+                    } else {
+                        kept.0 += 1;
+                    }
+                }
+                // 同一个字既能照着打读出来、也能纠错读出来（蹲：dun 常用，cun 冷门）：留照着打的那个。
+                // 按代价留的话纠错的 dun 便宜，照着打的 cun 被去重去掉，后面再筛掉纠错的，cunzai 里就没有「蹲」了
+                Some(at) if unique[at].word.typos > 0 && span.word.typos == 0 => {
+                    if typo_quota {
+                        kept.1 -= 1;
+                        kept.0 += 1;
+                    }
+                    unique[at] = span;
+                }
+                Some(_) => {}
             }
         }
         out.extend(unique);

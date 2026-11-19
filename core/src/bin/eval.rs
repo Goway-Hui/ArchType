@@ -25,7 +25,13 @@
 //!
 //! 每组（每个用例文件，组名是文件名去掉 .tsv）报 top1 / top3 / top9 和「通过」（按上面的属性判断；
 //! 没写属性的用例「通过」就是 top1）。这是调排序权重时唯一靠谱的依据——没有数据就是盲调。
+//!
+//! `--invariants`：不统计命中率，改成把每个输入逐键打一遍、检查不许出现的结果（纠错的排在照着打的前面、
+//! 第一个音节的单字没了……），见 `common/invariants.rs` 和 `docs/ENGINE-INVARIANTS.md`。
+//! CI 跑的是 `scripts/invariants.sh`。
 
+#[path = "common/invariants.rs"]
+mod invariants;
 #[path = "common/preset.rs"]
 mod preset;
 
@@ -263,6 +269,11 @@ fn main() {
     let mut markdown_path: Option<String> = None;
     let mut strict: Vec<String> = Vec::new();
     let mut list_misses = false;
+    let mut invariants_mode = false;
+    let mut inv_contexts: Vec<String> = Vec::new();
+    let mut inv_limit = 20usize;
+    let mut inv_allow: Option<String> = None;
+    let mut inv_out: Option<String> = None;
 
     let mut i = 1;
     while i < args.len() {
@@ -345,6 +356,15 @@ fn main() {
             "--markdown" => markdown_path = Some(value(&mut i, "--markdown")),
             "--strict" => strict.push(value(&mut i, "--strict")),
             "--misses" => list_misses = true,
+            "--invariants" => invariants_mode = true,
+            "--inv-context" => inv_contexts.push(value(&mut i, "--inv-context")),
+            "--inv-limit" => {
+                inv_limit = value(&mut i, "--inv-limit")
+                    .parse()
+                    .unwrap_or_else(|_| fail("--inv-limit 要一个数"))
+            }
+            "--inv-allow" => inv_allow = Some(value(&mut i, "--inv-allow")),
+            "--inv-out" => inv_out = Some(value(&mut i, "--inv-out")),
             "-h" | "--help" => {
                 println!("archtype-eval (--data <目录> | --lexicon <tsv>) --eval <tsv> [--eval <tsv> ...]");
                 println!("  配置：默认和外壳一致（候选上限 1000、词库旁边的 words.lm / english.txt、纠错开、模糊音关）");
@@ -354,6 +374,7 @@ fn main() {
                 println!("            [--nnlm <file>] [--nnlm-rerank n] [--lm-weight w] [--learn | --learn-from <tsv>]");
                 println!("  输出：[--k n] [--show-top1] [--misses]");
                 println!("  门槛：[--strict 组名]... [--baseline <tsv> [--tolerance 百分点]] [--write-baseline <tsv>] [--markdown <file>]");
+                println!("  不变量：--invariants [--inv-context 上文]... [--inv-limit n] [--inv-allow <tsv>] [--inv-out <tsv>]");
                 return;
             }
             other => fail(&format!("未知参数: {other}")),
@@ -406,6 +427,7 @@ fn main() {
         None => lm,
     };
     let lex: Arc<dyn Lexicon> = Arc::new(lexicon);
+    let lex_for_checks = lex.clone();
     let ranker = Arc::new(LinearRanker::new(weights));
     let mut config = if legacy {
         EngineConfig {
@@ -471,15 +493,52 @@ fn main() {
     );
     let mut engine = Engine::new(lex, lm).with_config(config).with_ranker(ranker);
     engine.prepare_fuzzy();
-    if let Some(path) = &nnlm_path {
-        if let Err(e) = engine.load_nnlm(path) {
-            fail(&format!("{e:#}"));
-        }
-    }
+    let nnlm_model = nnlm_path.as_ref().map(|path| {
+        Arc::new(archtype_core::nnlm::Nnlm::load(path).unwrap_or_else(|e| fail(&format!("{e:#}"))))
+    });
+    engine.set_nnlm(nnlm_model.clone());
     if let Some(path) = &english_path {
         if let Err(e) = engine.load_english(path) {
             fail(&format!("{e:#}"));
         }
+    }
+
+    if invariants_mode {
+        let mut cases: Vec<(String, String)> = Vec::new();
+        for eval_path in &eval_paths {
+            let data = std::fs::read_to_string(eval_path)
+                .unwrap_or_else(|e| fail(&format!("读取用例 {eval_path} 失败: {e}")));
+            // 双拼的用例（sp=）按键和音节对不上，不查
+            for case in parse_cases(eval_path, &data)
+                .into_iter()
+                .filter(|c| c.scheme.is_none())
+            {
+                let context = if legacy {
+                    case.context.clone()
+                } else {
+                    preset::context_tail(&case.context).to_string()
+                };
+                cases.push((case.input, context));
+            }
+        }
+        let opts = invariants::Options {
+            contexts: inv_contexts,
+            limit: inv_limit,
+            allow: inv_allow,
+            out: inv_out,
+        };
+        let failed = invariants::run(
+            &mut engine,
+            lex_for_checks.as_ref(),
+            nnlm_model,
+            &cases,
+            &opts,
+        );
+        if failed {
+            eprintln!("有不变量被违反了");
+            std::process::exit(1);
+        }
+        return;
     }
 
     let mut results: Vec<GroupResult> = Vec::new();

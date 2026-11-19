@@ -62,6 +62,9 @@ pub struct Feature {
     pub other_completion: f32,
     pub typo: f32,
     pub force_emit: f32,
+    /// 不是排序特征（不进 [`Feature::to_vector`]，权重里没有它）：这个候选是模糊音关着时
+    /// 模糊音兜底加进来的（`penyou` -> 朋友），不是照着打的读音。排序规则用它区分「照着打的整词」。
+    pub fuzzy: bool,
 }
 
 impl Feature {

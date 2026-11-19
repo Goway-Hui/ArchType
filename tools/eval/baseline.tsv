@@ -2,14 +2,14 @@
 # 改了排序、要更新它：scripts/eval.sh <数据目录> --update-baseline，提交说明里贴前后对比（见 tools/eval/README.md）。
 # 数据	2026.11.11.7	927e1cf1d3eeb9bf4be85e3f684dba4dd485b6f6
 # 组	用例	top1	top3	top9	通过
-regress	69	63	65	69	69
+regress	72	64	68	72	72
 common	1000	967	998	1000	967
-mid	1000	938	990	999	938
+mid	1000	942	997	1000	942
 rare	1000	888	986	1000	888
 jianpin	1000	630	810	914	630
 trunc	1000	922	984	994	922
-trunc_exact	1000	967	982	994	967
+trunc_exact	1000	984	1000	1000	984
 homophone2	300	300	300	300	300
 homophone3	200	199	200	200	200
 daily	138	127	130	132	127
-context	533	471	524	532	471
+context	533	471	525	532	471
