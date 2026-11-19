@@ -52,3 +52,9 @@ test("menu opens with the four actions", async () => {
   expect(app.texts()).toContain("导出日志…");
   expect(app.texts()).toContain("用文本编辑器打开自定义词");
 });
+
+test("window buttons take presses", async () => {
+  const app = await open("./App.tsx");
+  await app.press("label:最小化");
+  await app.press("label:最大化");
+});

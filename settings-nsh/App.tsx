@@ -4,11 +4,29 @@ import menuIcon from "./icons/menu.svg";
 import minusIcon from "./icons/minus.svg";
 import squareIcon from "./icons/square.svg";
 import xIcon from "./icons/x.svg";
+import settingsIcon from "./icons/settings.svg";
+import keyboardIcon from "./icons/keyboard.svg";
+import smileIcon from "./icons/smile.svg";
+import micIcon from "./icons/mic.svg";
+import languagesIcon from "./icons/languages.svg";
+import bookIcon from "./icons/book-text.svg";
+import chartIcon from "./icons/chart-column.svg";
+import refreshIcon from "./icons/refresh-cw.svg";
 import { AlertDialog, Button, Input, Popover, Select, Switch } from "nsh/base";
 import type { JSX } from "nsh/jsx-runtime";
 import { Config } from "archtype/native";
 
 const pages = ["常规", "输入", "表情", "语音", "翻译", "自定义词", "统计", "更新"];
+const pageIcons = [
+  settingsIcon,
+  keyboardIcon,
+  smileIcon,
+  micIcon,
+  languagesIcon,
+  bookIcon,
+  chartIcon,
+  refreshIcon,
+];
 
 const lightUi = {
   page: "#f5f7f6",
@@ -1069,6 +1087,8 @@ function boolOf(value: string, fallback: boolean): boolean {
 let voicePollStarted = false;
 
 function App() {
+  // 窗口引用要在渲染时取:回调里再调 currentWindow() 会抛 "call it while rendering"。
+  const win = currentWindow();
   const current = signal(0);
 
   const layout = signal(Config.get("CandidateLayout") || "Vertical");
@@ -1594,6 +1614,9 @@ function App() {
           <View
             onPress={() => current.set(i)}
             style={{
+              flexDirection: "row",
+              alignItems: "center",
+              gap: 10,
               paddingTop: 8,
               paddingBottom: 8,
               paddingLeft: 12,
@@ -1602,6 +1625,10 @@ function App() {
               backgroundColor: current() === i ? ui().accent : "transparent",
             }}
           >
+            <Image
+              src={pageIcons[i]}
+              style={{ width: 16, height: 16, tintColor: current() === i ? "white" : ui().muted }}
+            />
             <Text style={{ color: current() === i ? "white" : ui().text, fontSize: 14 }}>{p}</Text>
           </View>
         ))}
@@ -1639,7 +1666,7 @@ function App() {
                     gap: 3,
                   }}
                 >
-                  <Image src={menuIcon} style={{ width: 16, height: 16 }} />
+                  <Image src={menuIcon} style={{ width: 16, height: 16, tintColor: ui().muted }} />
                 </View>
               }
               popupStyle={{
@@ -1674,21 +1701,19 @@ function App() {
                 ))}
               </View>
             </Popover>
-            <WindowButton title="最小化" onPress={() => currentWindow().minimize()}>
-              <Image src={minusIcon} style={{ width: 14, height: 14 }} />
+            <WindowButton title="最小化" onPress={() => win.minimize()}>
+              <Image src={minusIcon} style={{ width: 14, height: 14, tintColor: ui().muted }} />
             </WindowButton>
             <WindowButton
               title="最大化"
               onPress={() =>
-                currentWindow().setMode(
-                  currentWindow().state()?.mode === "maximized" ? "normal" : "maximized",
-                )
+                win.setMode(win.state()?.mode === "maximized" ? "normal" : "maximized")
               }
             >
-              <Image src={squareIcon} style={{ width: 13, height: 13 }} />
+              <Image src={squareIcon} style={{ width: 13, height: 13, tintColor: ui().muted }} />
             </WindowButton>
-            <WindowButton title="关闭" onPress={() => currentWindow().close()}>
-              <Image src={xIcon} style={{ width: 14, height: 14 }} />
+            <WindowButton title="关闭" onPress={() => win.close()}>
+              <Image src={xIcon} style={{ width: 14, height: 14, tintColor: ui().muted }} />
             </WindowButton>
         </View>
         <Scroll style={{ flex: 1 }}>
