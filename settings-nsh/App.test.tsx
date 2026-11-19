@@ -19,7 +19,8 @@ test("shows the stats page", async () => {
   expect(app.texts()).toContain("今日输入");
   expect(app.texts().join("")).toContain("按键热力图");
   await app.press("趋势");
-  expect(app.texts()).toContain("最近 14 天");
+  expect(app.texts()).toContain("每日趋势 · 近 30 天");
+  expect(app.texts().join("")).toContain("最高一天");
   await app.press("方案");
   expect(app.texts()).toContain("方案 · 累计");
   await app.press("候选");

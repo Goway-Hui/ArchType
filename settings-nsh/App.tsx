@@ -233,10 +233,6 @@ function countRows(
     .map(([key, count]) => ({ label: names[key] ?? key, count }));
 }
 
-function maxRecent(summary: StatsSummary): number {
-  return Math.max(1, ...summary.recent.map((day) => day.chars));
-}
-
 function SmallButton(props: {
   title: string;
   onPress: () => void;
@@ -889,7 +885,7 @@ function summarizeStats(days: Record<string, StatsDay>, today: string): StatsSum
     previous = key;
   }
   const recent: { day: string; chars: number }[] = [];
-  for (let offset = 13; offset >= 0; offset -= 1) {
+  for (let offset = 29; offset >= 0; offset -= 1) {
     const key = shiftDay(today, -offset);
     recent.push({ day: key, chars: days[key]?.chars ?? 0 });
   }
@@ -1117,6 +1113,12 @@ function App() {
   const clearState = signal("");
   const summary = computed(() =>
     summarizeStats(parseStats(statsRaw()).days ?? {}, dayKey(new Date())),
+  );
+  const trendPeak = computed(() =>
+    Math.max(0, ...summary().recent.map((day) => day.chars)),
+  );
+  const trendTotal = computed(() =>
+    summary().recent.reduce((sum, day) => sum + day.chars, 0),
   );
 
   const shuangpinShowKeys = signal(boolOf(Config.get("ShuangpinShowKeys"), false));
@@ -2108,40 +2110,50 @@ function App() {
                 </>
               ) : statsTab() === "trend" ? (
                 <Card>
-                  <Text style={{ color: ui().muted, fontSize: 12 }}>最近 14 天</Text>
-                  {summary().recent.map((day) => (
-                    <View
-                      style={{
-                        flexDirection: "row",
-                        alignItems: "center",
-                        gap: 10,
-                        paddingTop: 3,
-                        paddingBottom: 3,
-                      }}
-                    >
-                      <Text style={{ color: ui().muted, fontSize: 12, width: 70 }}>{day.day.slice(5)}</Text>
-                      <View style={{ flex: 1, height: 8, borderRadius: 4, backgroundColor: ui().page }}>
-                        <View
-                          style={{
-                            width: `${Math.round((day.chars / maxRecent(summary())) * 100)}%`,
-                            height: 8,
-                            borderRadius: 4,
-                            backgroundColor: ui().accent,
-                          }}
-                        />
-                      </View>
-                      <Text
+                  <Text style={{ color: ui().muted, fontSize: 12 }}>每日趋势 · 近 30 天</Text>
+                  {trendPeak() === 0 ? (
+                    <Text style={{ color: ui().muted, fontSize: 12, paddingTop: 10 }}>
+                      这 30 天还没有输入记录。
+                    </Text>
+                  ) : (
+                    <>
+                      <View
                         style={{
-                          color: ui().text,
-                          fontSize: 12,
-                          width: 60,
-                          textAlign: "right",
+                          flexDirection: "row",
+                          alignItems: "flex-end",
+                          width: "100%",
+                          height: 140,
+                          gap: 3,
+                          paddingTop: 14,
                         }}
                       >
-                        {formatNumber(day.chars)}
+                        {summary().recent.map((day) => (
+                          <View
+                            style={{
+                              flex: 1,
+                              height: Math.round((day.chars / Math.max(1, trendPeak())) * 140),
+                              backgroundColor: ui().accent,
+                              borderRadius: 2,
+                            }}
+                          />
+                        ))}
+                      </View>
+                      <View style={{ height: 1, backgroundColor: ui().border, marginTop: 3 }} />
+                      <View
+                        style={{ flexDirection: "row", justifyContent: "space-between", paddingTop: 6 }}
+                      >
+                        <Text style={{ color: ui().muted, fontSize: 12 }}>
+                          {summary().recent[0].day.slice(5)}
+                        </Text>
+                        <Text style={{ color: ui().muted, fontSize: 12 }}>
+                          {summary().recent[summary().recent.length - 1].day.slice(5)}
+                        </Text>
+                      </View>
+                      <Text style={{ color: ui().muted, fontSize: 12, paddingTop: 6 }}>
+                        共 {formatNumber(trendTotal())} 字符 · 最高一天 {formatNumber(trendPeak())} 字符
                       </Text>
-                    </View>
-                  ))}
+                    </>
+                  )}
                 </Card>
               ) : statsTab() === "types" ? (
                 <Card>
