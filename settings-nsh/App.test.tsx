@@ -34,11 +34,14 @@ test("fuzzy groups are hidden until the master switch is on", async () => {
   expect(app.texts()).not.toContain("z = zh");
 });
 
-test("offline model group appears for the local engine", async () => {
+// 离线模型组只在引擎选「本地翻译」时出现,而引擎是用户配置:这里只验证翻译页
+// 与当前引擎无关的部分,免得测试跟着个人配置时好时坏。
+test("translation page shows the provider and its test action", async () => {
   const app = await open("./App.tsx");
   await app.press("翻译");
-  expect(app.texts()).toContain("离线翻译模型");
-  expect(app.texts().join("")).toContain("腾讯混元社区许可协议");
+  expect(app.texts()).toContain("翻译服务");
+  expect(app.texts()).toContain("测试连接");
+  expect(app.texts().join("")).toContain("单按 Shift 切到「译」");
 });
 
 test("menu opens with the four actions", async () => {

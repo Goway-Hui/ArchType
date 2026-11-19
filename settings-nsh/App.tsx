@@ -224,15 +224,6 @@ function otherKeys(keys: Record<string, number>): { label: string; count: number
     .map(([code, count]) => ({ label: keyLabel(code), count }));
 }
 
-function countRows(
-  counts: Record<string, number>,
-  names: Record<string, string>,
-): { label: string; count: number }[] {
-  return Object.entries(counts)
-    .sort((a, b) => b[1] - a[1])
-    .map(([key, count]) => ({ label: names[key] ?? key, count }));
-}
-
 function SmallButton(props: {
   title: string;
   onPress: () => void;
@@ -342,6 +333,79 @@ function KeyCap(props: { label: string; weight: number; count: number; max: numb
     >
       <Text style={{ color: level >= 3 ? (colorScheme() === "dark" ? "#0B1B33" : "white") : ui().text, fontSize: 11 }}>
         {props.label}
+      </Text>
+    </View>
+  );
+}
+
+// 类型 / 模式页的固定分类色,取值与旧版 stats_ratio_page 一致。
+const kindColors: Record<string, string> = {
+  han: "#0EAF76",
+  latin: "#4C9AFF",
+  number: "#F5A623",
+  punct: "#8A93A6",
+  emoji: "#E86AA6",
+  other: "#C4C9C7",
+};
+
+const sourceColors: Record<string, string> = {
+  quanpin: "#0EAF76",
+  shuangpin: "#4C9AFF",
+  english: "#F5A623",
+  translate: "#E86AA6",
+};
+
+/* 旧版的比例页:一条按份额着色的横条,下面每项色块 + 名称 + 「次数 · 占比」。 */
+function RatioChart(props: {
+  parts: { label: string; value: number; color: string }[];
+  empty: string;
+}) {
+  const present = props.parts.filter((part) => part.value > 0);
+  if (present.length === 0) {
+    return <Text style={{ color: ui().muted, fontSize: 12, paddingTop: 10 }}>{props.empty}</Text>;
+  }
+  const total = present.reduce((sum, part) => sum + part.value, 0);
+  return (
+    <View style={{ gap: 8, paddingTop: 10 }}>
+      <View style={{ flexDirection: "row", width: "100%", height: 14, borderRadius: 7 }}>
+        {present.map((part) => (
+          <View style={{ flex: part.value, backgroundColor: part.color }} />
+        ))}
+      </View>
+      {present.map((part) => (
+        <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+          <View
+            style={{ width: 10, height: 10, borderRadius: 2, backgroundColor: part.color }}
+          />
+          <Text style={{ color: ui().text, fontSize: 12, flex: 1 }}>{part.label}</Text>
+          <Text style={{ color: ui().muted, fontSize: 12 }}>
+            {formatNumber(part.value)} · {Math.round((part.value / total) * 100)}%
+          </Text>
+        </View>
+      ))}
+    </View>
+  );
+}
+
+/* 旧版 stats_bar_row:名称 + 横条 + 右侧次数。 */
+function BarRow(props: { label: string; value: number; max: number; suffix: string }) {
+  return (
+    <View
+      style={{ flexDirection: "row", alignItems: "center", gap: 10, paddingTop: 3, paddingBottom: 3 }}
+    >
+      <Text style={{ color: ui().text, fontSize: 12, width: 96 }}>{props.label}</Text>
+      <View style={{ flex: 1, height: 8, borderRadius: 4, backgroundColor: ui().page }}>
+        <View
+          style={{
+            width: `${Math.round((props.value / props.max) * 100)}%`,
+            height: 8,
+            borderRadius: 4,
+            backgroundColor: ui().accent,
+          }}
+        />
+      </View>
+      <Text style={{ color: ui().muted, fontSize: 12, width: 64, textAlign: "right" }}>
+        {props.suffix}
       </Text>
     </View>
   );
@@ -1123,6 +1187,34 @@ function App() {
   const trendTotal = computed(() =>
     summary().recent.reduce((sum, day) => sum + day.chars, 0),
   );
+  // 方案页:全拼来自 sources,其余是 schemes 里的双拼方案(旧版顺序,没用过的也列)。
+  const schemeChart = computed(() => {
+    const rows = [
+      { label: "全拼", value: summary().sources["quanpin"] ?? 0 },
+      ...["ziranma", "xiaohe", "microsoft", "sogou", "abc", "ziguang", "pinyinjiajia"].map(
+        (key) => ({ label: schemeNames[key], value: summary().schemes[key] ?? 0 }),
+      ),
+    ];
+    const total = Math.max(1, rows.reduce((sum, row) => sum + row.value, 0));
+    return { rows, total };
+  });
+  // 今日候选:与累计页同一套条形,没有记录时补 9 个 0 的空行留给占位判断。
+  const todayRankChart = computed(() => {
+    const source = summary().todaySelections;
+    const ranks = source.length > 0 ? source : [0, 0, 0, 0, 0, 0, 0, 0, 0];
+    const beyond = summary().todayBeyond;
+    const total = ranks.reduce((sum, count) => sum + count, 0) + beyond;
+    const maximum = Math.max(1, ...ranks, beyond);
+    return { ranks, beyond, total, maximum };
+  });
+  // 候选页:各名次与「超过候选数」的命中次数。
+  const rankChart = computed(() => {
+    const ranks = summary().selections;
+    const beyond = summary().beyond;
+    const total = ranks.reduce((sum, count) => sum + count, 0) + beyond;
+    const maximum = Math.max(1, ...ranks, beyond);
+    return { ranks, beyond, total, maximum };
+  });
 
   const shuangpinShowKeys = signal(boolOf(Config.get("ShuangpinShowKeys"), false));
   const wubiAutoCommit = signal(boolOf(Config.get("WubiAutoCommit"), true));
@@ -2269,41 +2361,103 @@ function App() {
               ) : statsTab() === "types" ? (
                 <Card>
                   <Text style={{ color: ui().muted, fontSize: 12 }}>字符类型 · 累计</Text>
-                  {countRows(summary().kinds, kindNames).map((row) => (
-                    <Row title={row.label} subtitle={`${formatNumber(row.count)} 次`} />
-                  ))}
+                  <RatioChart
+                    parts={Object.entries(kindNames).map(([key, label]) => ({
+                      label,
+                      value: summary().kinds[key] ?? 0,
+                      color: kindColors[key] ?? "#C4C9C7",
+                    }))}
+                    empty="还没有字符记录。"
+                  />
                 </Card>
               ) : statsTab() === "modes" ? (
                 <Card>
                   <Text style={{ color: ui().muted, fontSize: 12 }}>输入模式 · 累计</Text>
-                  {countRows(summary().sources, sourceNames).map((row) => (
-                    <Row title={row.label} subtitle={`${formatNumber(row.count)} 字符`} />
-                  ))}
+                  <RatioChart
+                    parts={Object.entries(sourceNames).map(([key, label]) => ({
+                      label,
+                      value: summary().sources[key] ?? 0,
+                      color: sourceColors[key] ?? "#C4C9C7",
+                    }))}
+                    empty="还没有输入记录。"
+                  />
                 </Card>
               ) : statsTab() === "schemes" ? (
                 <Card>
                   <Text style={{ color: ui().muted, fontSize: 12 }}>方案 · 累计</Text>
-                  {countRows(summary().schemes, schemeNames).map((row) => (
-                    <Row title={row.label} subtitle={`${formatNumber(row.count)} 字符`} />
-                  ))}
+                  <View style={{ paddingTop: 6 }}>
+                    {schemeChart().rows.map((row) => (
+                      <BarRow
+                        label={row.label}
+                        value={row.value}
+                        max={schemeChart().total}
+                        suffix={`${formatNumber(row.value)} 字符`}
+                      />
+                    ))}
+                  </View>
                 </Card>
               ) : (
                 <>
                   <Card>
                     <Text style={{ color: ui().muted, fontSize: 12 }}>候选位置 · 累计</Text>
-                    {summary().selections.map((count, index) => (
-                      <Row title={`第 ${index + 1} 个候选`} subtitle={`${formatNumber(count)} 次`} />
-                    ))}
-                    <Row title="超过候选数" subtitle={`${formatNumber(summary().beyond)} 次`} />
+                    {rankChart().total === 0 ? (
+                      <Text style={{ color: ui().muted, fontSize: 12, paddingTop: 10 }}>
+                        还没有候选记录。选几次候选再回来看看。
+                      </Text>
+                    ) : (
+                      <>
+                        <Text style={{ color: ui().muted, fontSize: 12, paddingTop: 6 }}>
+                          首选命中{" "}
+                          {Math.round(((rankChart().ranks[0] ?? 0) / rankChart().total) * 100)}%
+                          {" · "}共 {formatNumber(rankChart().total)} 次上屏
+                        </Text>
+                        <View style={{ paddingTop: 6 }}>
+                          {rankChart().ranks.map((count, index) => (
+                            <BarRow
+                              label={`第 ${index + 1} 个`}
+                              value={count}
+                              max={rankChart().maximum}
+                              suffix={`${formatNumber(count)} 次`}
+                            />
+                          ))}
+                          {rankChart().beyond > 0 ? (
+                            <BarRow
+                              label="第 10 个以后"
+                              value={rankChart().beyond}
+                              max={rankChart().maximum}
+                              suffix={`${formatNumber(rankChart().beyond)} 次`}
+                            />
+                          ) : null}
+                        </View>
+                      </>
+                    )}
                   </Card>
                   <Card>
                     <Text style={{ color: ui().muted, fontSize: 12 }}>候选位置 · 今日</Text>
-                    {(summary().todaySelections.length > 0
-                      ? summary().todaySelections
-                      : [0, 0, 0, 0, 0, 0, 0, 0, 0]
-                    ).map((count, index) => (
-                      <Row title={`第 ${index + 1} 个候选`} subtitle={`${formatNumber(count)} 次`} />
-                    ))}
+                    {todayRankChart().total === 0 ? (
+                      <Text style={{ color: ui().muted, fontSize: 12, paddingTop: 10 }}>
+                        今天还没有候选记录。
+                      </Text>
+                    ) : (
+                      <View style={{ paddingTop: 6 }}>
+                        {todayRankChart().ranks.map((count, index) => (
+                          <BarRow
+                            label={`第 ${index + 1} 个`}
+                            value={count}
+                            max={todayRankChart().maximum}
+                            suffix={`${formatNumber(count)} 次`}
+                          />
+                        ))}
+                        {todayRankChart().beyond > 0 ? (
+                          <BarRow
+                            label="第 10 个以后"
+                            value={todayRankChart().beyond}
+                            max={todayRankChart().maximum}
+                            suffix={`${formatNumber(todayRankChart().beyond)} 次`}
+                          />
+                        ) : null}
+                      </View>
+                    )}
                   </Card>
                 </>
               )}
