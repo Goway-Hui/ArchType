@@ -12,7 +12,7 @@ VERSION=${1:?用法: package-settings-nsh.sh <版本> [输出目录]}
 OUT=$(realpath -m "${2:-dist/pkg}")
 mkdir -p "$OUT"
 
-command -v nsh >/dev/null || { echo "需要 nsh 0.6.x（cargo install nsh --version 0.6.0）" >&2; exit 1; }
+command -v nsh >/dev/null || { echo "需要 nsh 0.6.x（curl -fsSL https://nsh.dev/install.sh | NSH_VERSION=v0.6.0 sh）" >&2; exit 1; }
 
 rm -rf settings-nsh/.nsh/out
 (cd settings-nsh && nsh package --target linux --app-version "$VERSION" -o .nsh/out >/dev/null)
