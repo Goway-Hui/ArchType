@@ -3165,22 +3165,23 @@ function App() {
                 <Row title={`当前版本 ${Config.version()}`} subtitle={updateSource}>
                   <SmallButton title="检查更新" onPress={runCheckUpdate} />
                 </Row>
-                <Row title={updateTitle()} subtitle={updateState()}>
+                <Row
+                  title={updateTitle()}
+                  subtitle={
+                    updateTag() !== "" && updatePlanData()?.reason
+                      ? `${updateState()}｜${updatePlanData()?.reason}`
+                      : updateState()
+                  }
+                >
                   {updatePlanData()?.can_install ? (
                     <SmallButton title="下载并安装" tone="accent" onPress={startUpdateInstall} />
-                  ) : updateUrl() ? (
+                  ) : updateTag() !== "" && updateUrl() ? (
                     <SmallButton
                       title="打开安装说明"
                       onPress={() => Config.openUrl(installGuideUrl)}
                     />
                   ) : null}
                 </Row>
-                {updatePlanData()?.can_install && updatePlanData()?.reason ? (
-                  <Text style={{ color: ui().muted, fontSize: 11 }}>{updatePlanData()?.reason}</Text>
-                ) : null}
-                {updatePlanData() && updatePlanData()?.can_install === false ? (
-                  <Text style={{ color: ui().muted, fontSize: 11 }}>{updatePlanData()?.reason}</Text>
-                ) : null}
                 {installStatusText() !== "" ? (
                   <Row
                     title={installStatusText()}
