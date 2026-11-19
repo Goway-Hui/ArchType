@@ -305,7 +305,7 @@ pub fn beam_search(
             per_span,
             config,
             false,
-            true,
+            false,
         );
 
         for state in states {
