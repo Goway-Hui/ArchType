@@ -1433,10 +1433,12 @@ function App() {
     if (provider.base) {
       translateBase.set(provider.base);
       Config.set("TranslateBaseUrl", provider.base);
+      reloadSoon();
     }
     if (provider.model) {
       translateModel.set(provider.model);
       Config.set("TranslateModel", provider.model);
+      reloadSoon();
     }
   };
 
@@ -1586,9 +1588,19 @@ function App() {
     }
   };
 
+  // 改设置后让插件重新读配置。连着改几项(输入框每敲一下就写)时合成一次。
+  let reloadTimer: ReturnType<typeof setTimeout> | null = null;
+  const reloadSoon = () => {
+    if (reloadTimer !== null) clearTimeout(reloadTimer);
+    reloadTimer = setTimeout(() => {
+      reloadTimer = null;
+      Config.reloadConfig();
+    }, 400);
+  };
+
   const save = (key: string, value: string) => {
     Config.set(key, value);
-    Config.restartFcitx();
+    reloadSoon();
   };
 
   const applyTheme = (value: string) => {
@@ -2685,7 +2697,7 @@ function App() {
                         translateLocal.set(false);
                         Config.set("TranslateLocal", "False");
                       }
-                      Config.restartFcitx();
+                      reloadSoon();
                     }}
                   />
                 </Row>
@@ -2711,6 +2723,7 @@ function App() {
                             onChange={(value) => {
                               translateBase.set(value);
                               Config.set("TranslateBaseUrl", value);
+                              reloadSoon();
                             }}
                           />
                         </Row>
@@ -2721,6 +2734,7 @@ function App() {
                             onChange={(value) => {
                               translateKey.set(value);
                               Config.setTranslateKey(value);
+                              reloadSoon();
                             }}
                           />
                         </Row>
@@ -2731,6 +2745,7 @@ function App() {
                             onChange={(value) => {
                               translateModel.set(value);
                               Config.set("TranslateModel", value);
+                              reloadSoon();
                             }}
                           />
                         </Row>

@@ -619,13 +619,49 @@ impl Config {
         set_key(&classicui_path(), &key, &value)
     }
 
-    /// 重启 fcitx5 让配置生效。
-    pub fn restart_fcitx() -> bool {
-        std::process::Command::new("fcitx5-remote")
-            .arg("-r")
+    /// 让插件重新读 archtype.conf：改任何一项设置后调它，不用重启输入法。
+    /// 走 fcitx5 的 ReloadAddonConfig（旧版设置界面每次保存都调）；`fcitx5-remote -r`
+    /// 只重载输入法配置，插件不会重新读。
+    pub fn reload_config() -> bool {
+        std::process::Command::new("gdbus")
+            .args([
+                "call",
+                "--session",
+                "--dest",
+                "org.fcitx.Fcitx5",
+                "--object-path",
+                "/controller",
+                "--method",
+                "org.fcitx.Fcitx.Controller1.ReloadAddonConfig",
+                "archtype",
+            ])
             .status()
             .map(|s| s.success())
             .unwrap_or(false)
+    }
+
+    /// 重启 fcitx5（换字体、换主题这类要整个进程重来的地方）。
+    pub fn restart_fcitx() -> bool {
+        std::process::Command::new("gdbus")
+            .args([
+                "call",
+                "--session",
+                "--dest",
+                "org.fcitx.Fcitx5",
+                "--object-path",
+                "/controller",
+                "--method",
+                "org.fcitx.Fcitx.Controller1.Restart",
+            ])
+            .status()
+            .map(|s| s.success())
+            .unwrap_or_else(|_| {
+                std::process::Command::new("fcitx5-remote")
+                    .arg("-r")
+                    .status()
+                    .map(|s| s.success())
+                    .unwrap_or(false)
+            })
     }
 
     /// 版本行副标题：包管理器装的显示「X 管理的安装」，否则说明是源码安装。
