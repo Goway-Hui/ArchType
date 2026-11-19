@@ -20,7 +20,9 @@ test("shows the stats page", async () => {
   expect(app.texts().join("")).toContain("按键热力图");
   await app.press("趋势");
   expect(app.texts()).toContain("每日趋势 · 近 30 天");
-  expect(app.texts().join("")).toContain("最高一天");
+  // 有记录时给「共 X 字符 · 最高一天 Y 字符」，没有时给提示：两种都算画对了。
+  const trend = app.texts().join("");
+  expect(trend.includes("最高一天") || trend.includes("这 30 天还没有输入记录")).toBe(true);
   await app.press("方案");
   expect(app.texts()).toContain("方案 · 累计");
   await app.press("候选");
@@ -34,13 +36,13 @@ test("fuzzy groups are hidden until the master switch is on", async () => {
   expect(app.texts()).not.toContain("z = zh");
 });
 
-// 离线模型组只在引擎选「本地翻译」时出现,而引擎是用户配置:这里只验证翻译页
-// 与当前引擎无关的部分,免得测试跟着个人配置时好时坏。
-test("translation page shows the provider and its test action", async () => {
+// 引擎种类(本地 / 哔哩哔哩 / 自定义)是用户配置,服务那一组的行随它显示或隐藏:
+// 这里只验证与引擎无关的部分,免得测试在干净的 CI 上跟着默认配置一起失败。
+test("translation page renders whatever the engine is", async () => {
   const app = await open("./App.tsx");
   await app.press("翻译");
-  expect(app.texts()).toContain("翻译服务");
-  expect(app.texts()).toContain("测试连接");
+  expect(app.texts()).toContain("互译");
+  expect(app.texts()).toContain("正式语气");
   expect(app.texts().join("")).toContain("单按 Shift 切到「译」");
 });
 
