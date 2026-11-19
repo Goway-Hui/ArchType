@@ -224,7 +224,14 @@ SPEC
 } > "$work/SPECS/archtype.spec"
 
 nsh_define=()
-[[ -n "${ARCHTYPE_NSH_ARCHIVE:-}" ]] && nsh_define+=(--define "archtype_nsh_archive $ARCHTYPE_NSH_ARCHIVE")
+if [[ -n "${ARCHTYPE_NSH_ARCHIVE:-}" ]]; then
+  # rpmbuild 的 %install 在 BUILDROOT 里跑，相对路径会失效：先转成绝对路径。
+  [[ -f "$ARCHTYPE_NSH_ARCHIVE" ]] || {
+    echo "找不到 NSH 设置界面产物：$ARCHTYPE_NSH_ARCHIVE" >&2
+    exit 1
+  }
+  nsh_define+=(--define "archtype_nsh_archive $(realpath "$ARCHTYPE_NSH_ARCHIVE")")
+fi
 rpmbuild -bb "$work/SPECS/archtype.spec" \
   --define "_topdir $work" \
   --define "_rpmdir $OUT" \
