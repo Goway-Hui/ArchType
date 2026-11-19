@@ -1700,7 +1700,7 @@ function App() {
               src={pageIcons[i]}
               style={{ width: 18, height: 18, tintColor: current() === i ? "white" : ui().muted }}
             />
-            <Text style={{ color: current() === i ? "white" : ui().text, fontSize: 15 }}>{p}</Text>
+            <Text style={{ color: current() === i ? "white" : ui().text, fontSize: 15, fontWeight: "600" }}>{p}</Text>
           </View>
         ))}
       </View>
