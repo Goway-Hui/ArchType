@@ -1,5 +1,9 @@
-import { mount, setColorScheme, colorScheme, computed, signal, Scroll, Text, View } from "nsh";
+import { mount, setColorScheme, colorScheme, computed, signal, Image, Scroll, Text, View } from "nsh";
 import { currentWindow } from "nsh/desktop";
+import menuIcon from "./icons/menu.svg";
+import minusIcon from "./icons/minus.svg";
+import squareIcon from "./icons/square.svg";
+import xIcon from "./icons/x.svg";
 import { AlertDialog, Button, Input, Popover, Select, Switch } from "nsh/base";
 import type { JSX } from "nsh/jsx-runtime";
 import { Config } from "archtype/native";
@@ -576,7 +580,7 @@ function WindowButton(props: { title: string; onPress: () => void; children: JSX
         width: 26,
         height: 26,
         borderRadius: 13,
-        backgroundColor: ui().page,
+        backgroundColor: ui().border,
         alignItems: "center",
         justifyContent: "center",
       }}
@@ -1635,9 +1639,7 @@ function App() {
                     gap: 3,
                   }}
                 >
-                  <View style={{ width: 14, height: 2, borderRadius: 1, backgroundColor: ui().text }} />
-                  <View style={{ width: 14, height: 2, borderRadius: 1, backgroundColor: ui().text }} />
-                  <View style={{ width: 14, height: 2, borderRadius: 1, backgroundColor: ui().text }} />
+                  <Image src={menuIcon} style={{ width: 16, height: 16 }} />
                 </View>
               }
               popupStyle={{
@@ -1673,7 +1675,7 @@ function App() {
               </View>
             </Popover>
             <WindowButton title="最小化" onPress={() => currentWindow().minimize()}>
-              <View style={{ width: 10, height: 2, borderRadius: 1, backgroundColor: ui().muted }} />
+              <Image src={minusIcon} style={{ width: 14, height: 14 }} />
             </WindowButton>
             <WindowButton
               title="最大化"
@@ -1683,12 +1685,10 @@ function App() {
                 )
               }
             >
-              <View
-                style={{ width: 9, height: 9, borderWidth: 1, borderColor: ui().muted, borderRadius: 1 }}
-              />
+              <Image src={squareIcon} style={{ width: 13, height: 13 }} />
             </WindowButton>
             <WindowButton title="关闭" onPress={() => currentWindow().close()}>
-              <Text style={{ color: ui().muted, fontSize: 13 }}>✕</Text>
+              <Image src={xIcon} style={{ width: 14, height: 14 }} />
             </WindowButton>
         </View>
         <Scroll style={{ flex: 1 }}>
