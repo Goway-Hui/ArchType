@@ -953,7 +953,7 @@ impl Config {
             return json_error("GitHub 上没有找到发布版本");
         }
         let url = value["html_url"].as_str().unwrap_or("").to_string();
-        let notes: String = value["body"].as_str().unwrap_or("").chars().take(2000).collect();
+        let notes: String = value["body"].as_str().unwrap_or("").chars().take(20000).collect();
         serde_json::json!({
             "ok": true,
             "current": current,

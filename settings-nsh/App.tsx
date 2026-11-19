@@ -12,7 +12,7 @@ import languagesIcon from "./icons/languages.svg";
 import bookIcon from "./icons/book-text.svg";
 import chartIcon from "./icons/chart-column.svg";
 import refreshIcon from "./icons/refresh-cw.svg";
-import { AlertDialog, Button, Input, Popover, Select, Switch } from "nsh/base";
+import { AlertDialog, Button, Input, Popover, Select, Switch, TextView } from "nsh/base";
 import type { JSX } from "nsh/jsx-runtime";
 import { Config } from "archtype/native";
 
@@ -1633,8 +1633,10 @@ function App() {
     updateTag.set(result.newer ? (result.tag ?? "") : "");
     updateState.set(result.newer ? "可以下载安装" : "已是最新");
     updateUrl.set(result.url ?? "");
-    updateNotes.set(result.notes ?? "");
+    // 已是最新时那一版说明不是「要更新到的东西」,不显示。
+    updateNotes.set(result.newer ? (result.notes ?? "") : "");
   };
+
 
   const menuOpen = signal(false);
   // 右上角菜单,与旧版一致:打开自定义词、导出日志、恢复默认、关于。
@@ -3116,7 +3118,11 @@ function App() {
                 <>
                   <Text style={{ color: ui().muted, fontSize: 12 }}>更新内容</Text>
                   <Card>
-                    <Text style={{ color: ui().text, fontSize: 13 }}>{updateNotes()}</Text>
+                    <TextView
+                      markdown={updateNotes()}
+                      selectable
+                      onLinkPress={(event) => Config.openUrl(event.url)}
+                    />
                   </Card>
                 </>
               ) : null}
