@@ -1665,7 +1665,7 @@ function App() {
           gap: 2,
         }}
       >
-        <View style={{ flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 14 }}>
+        <View style={{ flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 30 }}>
           <View
             style={{
               width: 26,
@@ -1687,9 +1687,9 @@ function App() {
             style={{
               flexDirection: "row",
               alignItems: "center",
-              gap: 10,
-              paddingTop: 8,
-              paddingBottom: 8,
+              gap: 11,
+              paddingTop: 10,
+              paddingBottom: 10,
               paddingLeft: 12,
               paddingRight: 12,
               borderRadius: 8,
@@ -1698,9 +1698,9 @@ function App() {
           >
             <Image
               src={pageIcons[i]}
-              style={{ width: 16, height: 16, tintColor: current() === i ? "white" : ui().muted }}
+              style={{ width: 18, height: 18, tintColor: current() === i ? "white" : ui().muted }}
             />
-            <Text style={{ color: current() === i ? "white" : ui().text, fontSize: 14 }}>{p}</Text>
+            <Text style={{ color: current() === i ? "white" : ui().text, fontSize: 15 }}>{p}</Text>
           </View>
         ))}
       </View>
