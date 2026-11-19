@@ -1161,6 +1161,17 @@ function App() {
   const translateTarget = signal(Config.get("TranslateTarget") || "en");
   const customWords = signal(Config.customWords());
   const translateModel = signal(Config.get("TranslateModel") || "");
+  // 自定义引擎自己的地址 / 模型:切到哔哩哔哩或本地时留着,切回来照原样写回(旧版同此)。
+  const customBase = signal(
+    (Config.get("TranslateBaseUrl") || "").includes("index-translate.bilibili.com")
+      ? ""
+      : Config.get("TranslateBaseUrl") || "",
+  );
+  const customModel = signal(
+    (Config.get("TranslateBaseUrl") || "").includes("index-translate.bilibili.com")
+      ? ""
+      : Config.get("TranslateModel") || "",
+  );
   const keyVisible = signal(false);
   const modelsOpen = signal(false);
   const modelsText = signal("");
@@ -1452,13 +1463,16 @@ function App() {
   const applyProvider = (value: string) => {
     translateProvider.set(Number(value));
     const provider = translateProviders[Number(value)];
+    // 「其他（自己填地址）」不清空已填的地址和模型,只等用户自己改。
     if (provider.base) {
       translateBase.set(provider.base);
+      customBase.set(provider.base);
       Config.set("TranslateBaseUrl", provider.base);
       reloadSoon();
     }
     if (provider.model) {
       translateModel.set(provider.model);
+      customModel.set(provider.model);
       Config.set("TranslateModel", provider.model);
       reloadSoon();
     }
@@ -2718,6 +2732,10 @@ function App() {
                       } else {
                         translateLocal.set(false);
                         Config.set("TranslateLocal", "False");
+                        translateBase.set(customBase());
+                        translateModel.set(customModel());
+                        Config.set("TranslateBaseUrl", customBase());
+                        Config.set("TranslateModel", customModel());
                       }
                       reloadSoon();
                     }}
@@ -2744,6 +2762,7 @@ function App() {
                             placeholder="https://api.example.com/v1"
                             onChange={(value) => {
                               translateBase.set(value);
+                              customBase.set(value);
                               Config.set("TranslateBaseUrl", value);
                               reloadSoon();
                             }}
@@ -2772,6 +2791,7 @@ function App() {
                             placeholder="deepseek-chat"
                             onChange={(value) => {
                               translateModel.set(value);
+                              customModel.set(value);
                               Config.set("TranslateModel", value);
                               reloadSoon();
                             }}
@@ -2836,6 +2856,7 @@ function App() {
                                           <View
                                             onPress={() => {
                                               translateModel.set(name);
+                                              customModel.set(name);
                                               Config.set("TranslateModel", name);
                                               reloadSoon();
                                               modelsOpen.set(false);
