@@ -832,6 +832,27 @@ const shiftItems = [
   { value: "Off", title: "不用 Shift 切换" },
 ];
 
+// 另设的切换 / 互译快捷键:只列 fcitx5 没占的键(Ctrl+空格 是它切输入法用的)。
+const toggleKeyItems = [
+  { value: "", title: "不用（单按 Shift 照常）" },
+  { value: "Control+Shift+space", title: "Ctrl + Shift + 空格" },
+];
+
+const translateModeKeyItems = [
+  { value: "", title: "不用" },
+  { value: "Control+Shift+Y", title: "Ctrl + Shift + Y" },
+];
+
+// 配置文件里写了别的键也认:补一项显示出来,不把它变成空。
+function withCurrentKey(
+  items: { value: string; title: string }[],
+  current: string,
+): { value: string; title: string }[] {
+  return current !== "" && !items.some((item) => item.value === current)
+    ? [...items, { value: current, title: current }]
+    : items;
+}
+
 const initialModeItems = [
   { value: "Chinese", title: "中文" },
   { value: "English", title: "英文" },
@@ -1265,6 +1286,8 @@ function App() {
   const wubiAutoCommit = signal(boolOf(Config.get("WubiAutoCommit"), true));
   const wubiHint = signal(boolOf(Config.get("WubiHint"), true));
   const initialMode = signal(Config.get("InitialMode") || "Chinese");
+  const toggleKey = signal(Config.get("ToggleKey"));
+  const translateModeKey = signal(Config.get("TranslateModeKey"));
   const traditional = signal(boolOf(Config.get("Traditional"), false));
   const rareChars = signal(boolOf(Config.get("RareExtChars"), false));
   const punctStyle = signal(Config.get("PunctuationStyle") || "Fullwidth");
@@ -1984,6 +2007,32 @@ function App() {
                     onChange={(value) => {
                       shiftToggle.set(value);
                       save("ShiftToggle", value);
+                    }}
+                  />
+                </Row>
+                <Row
+                  title="另设一个切换键"
+                  subtitle="按它在中文、英文之间切（在「译」里按回到中文）。单按 Shift 照常能用。"
+                >
+                  <SelectBox
+                    items={withCurrentKey(toggleKeyItems, toggleKey())}
+                    value={toggleKey()}
+                    onChange={(value) => {
+                      toggleKey.set(value);
+                      save("ToggleKey", value);
+                    }}
+                  />
+                </Row>
+                <Row
+                  title="互译的快捷键"
+                  subtitle="按它进「译」，在「译」里再按回到原来的模式。设了它，单按 Shift 就只在中文、英文之间切。"
+                >
+                  <SelectBox
+                    items={withCurrentKey(translateModeKeyItems, translateModeKey())}
+                    value={translateModeKey()}
+                    onChange={(value) => {
+                      translateModeKey.set(value);
+                      save("TranslateModeKey", value);
                     }}
                   />
                 </Row>
