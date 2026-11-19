@@ -25,3 +25,10 @@ test("shows the stats page", async () => {
   await app.press("候选");
   expect(app.texts()).toContain("候选位置 · 累计");
 });
+
+test("fuzzy groups are hidden until the master switch is on", async () => {
+  const app = await open("./App.tsx");
+  await app.press("输入");
+  expect(app.texts()).toContain("比如 n 和 l 不分");
+  expect(app.texts()).not.toContain("z = zh");
+});

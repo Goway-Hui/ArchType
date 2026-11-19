@@ -600,23 +600,23 @@ const emojiKeyItems = [
   { value: "", title: "不用快捷键" },
 ];
 
-const fuzzyGroups = [
-  { key: "FuzzyZh", label: "z = zh" },
-  { key: "FuzzyCh", label: "c = ch" },
-  { key: "FuzzySh", label: "s = sh" },
-  { key: "FuzzyNL", label: "n = l" },
-  { key: "FuzzyFH", label: "f = h" },
-  { key: "FuzzyRL", label: "r = l" },
-  { key: "FuzzyAn", label: "an = ang" },
-  { key: "FuzzyAnAi", label: "an = ai" },
-  { key: "FuzzyIan", label: "ian = iang" },
-  { key: "FuzzyUan", label: "uan = uang" },
-  { key: "FuzzyHuangWang", label: "huang = wang" },
-  { key: "FuzzyEn", label: "en = eng" },
-  { key: "FuzzyEngOng", label: "eng = ong" },
-  { key: "FuzzyIn", label: "in = ing" },
-  { key: "FuzzyUn", label: "un = ong" },
-  { key: "FuzzyUnIong", label: "un = iong" },
+const fuzzyGroups: { key: string; label: string; default: boolean }[] = [
+  { key: "FuzzyZh", label: "z = zh", default: true },
+  { key: "FuzzyCh", label: "c = ch", default: true },
+  { key: "FuzzySh", label: "s = sh", default: true },
+  { key: "FuzzyNL", label: "n = l", default: false },
+  { key: "FuzzyFH", label: "f = h", default: false },
+  { key: "FuzzyRL", label: "r = l", default: false },
+  { key: "FuzzyAn", label: "an = ang", default: true },
+  { key: "FuzzyAnAi", label: "an = ai", default: false },
+  { key: "FuzzyIan", label: "ian = iang", default: true },
+  { key: "FuzzyUan", label: "uan = uang", default: true },
+  { key: "FuzzyHuangWang", label: "huang = wang", default: false },
+  { key: "FuzzyEn", label: "en = eng", default: true },
+  { key: "FuzzyEngOng", label: "eng = ong", default: false },
+  { key: "FuzzyIn", label: "in = ing", default: true },
+  { key: "FuzzyUn", label: "un = ong", default: false },
+  { key: "FuzzyUnIong", label: "un = iong", default: false },
 ];
 
 const inputSchemeItems = [
@@ -870,8 +870,9 @@ function App() {
   const typo = signal(boolOf(Config.get("TypoCorrection"), true));
   const shiftToggle = signal(Config.get("ShiftToggle") || "Both");
   const autoPair = signal(boolOf(Config.get("AutoPairPunct"), false));
+  const fuzzyOn = signal(boolOf(Config.get("Fuzzy"), false));
   const fuzzy = signal<Record<string, boolean>>(
-    Object.fromEntries(fuzzyGroups.map((group) => [group.key, boolOf(Config.get(group.key), false)])),
+    Object.fromEntries(fuzzyGroups.map((group) => [group.key, boolOf(Config.get(group.key), group.default)])),
   );
   const emojiSuggest = signal(boolOf(Config.get("EmojiSuggest"), true));
   const emojiKey = signal(Config.get("EmojiKey") || "Super+period");
@@ -1207,17 +1208,28 @@ function App() {
 
               <Text style={{ color: ui().muted, fontSize: 12 }}>模糊音</Text>
               <Card>
-                {fuzzyGroups.map((group) => (
-                  <Row title={group.label}>
-                    <Toggle
-                      checked={fuzzy()[group.key] ?? false}
-                      onChange={(on) => {
-                        fuzzy.update((current) => ({ ...current, [group.key]: on }));
-                        save(group.key, on ? "True" : "False");
-                      }}
-                    />
-                  </Row>
-                ))}
+                <Row title="模糊音" subtitle="比如 n 和 l 不分">
+                  <Toggle
+                    checked={fuzzyOn()}
+                    onChange={(on) => {
+                      fuzzyOn.set(on);
+                      save("Fuzzy", on ? "True" : "False");
+                    }}
+                  />
+                </Row>
+                {fuzzyOn()
+                  ? fuzzyGroups.map((group) => (
+                      <Row title={group.label}>
+                        <Toggle
+                          checked={fuzzy()[group.key] ?? group.default}
+                          onChange={(on) => {
+                            fuzzy.update((current) => ({ ...current, [group.key]: on }));
+                            save(group.key, on ? "True" : "False");
+                          }}
+                        />
+                      </Row>
+                    ))
+                  : null}
               </Card>
 
               <Text style={{ color: ui().muted, fontSize: 12 }}>其他</Text>
