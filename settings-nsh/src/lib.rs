@@ -472,6 +472,28 @@ impl Config {
             .unwrap_or(false)
     }
 
+    /// 版本行副标题：包管理器装的显示「X 管理的安装」，否则说明是源码安装。
+    /// 只识别 pacman、dpkg、rpm；其余发行版的完整判定（NixOS、deepin、不可变系统）未移植。
+    pub fn install_source() -> String {
+        for (manager, query) in [
+            ("pacman", vec!["-Qq", "archtype"]),
+            ("dpkg", vec!["-s", "archtype"]),
+            ("rpm", vec!["-q", "archtype"]),
+        ] {
+            let installed = std::process::Command::new(manager)
+                .args(&query)
+                .stdout(std::process::Stdio::null())
+                .stderr(std::process::Stdio::null())
+                .status()
+                .map(|s| s.success())
+                .unwrap_or(false);
+            if installed {
+                return format!("{manager} 管理的安装");
+            }
+        }
+        "源码安装，请按安装说明手动更新".to_string()
+    }
+
     /// fcitx5 是否在运行（pgrep -x fcitx5，同旧版 _fcitx_running）。
     pub fn fcitx_running() -> bool {
         std::process::Command::new("pgrep")

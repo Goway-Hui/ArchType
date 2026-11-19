@@ -502,6 +502,26 @@ function SelectBox(props: {
   );
 }
 
+function RadioDot(props: { selected: boolean }) {
+  return (
+    <View
+      style={{
+        width: 18,
+        height: 18,
+        borderRadius: 9,
+        borderWidth: 2,
+        borderColor: props.selected ? ui().accent : ui().muted,
+        alignItems: "center",
+        justifyContent: "center",
+      }}
+    >
+      {props.selected ? (
+        <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: ui().accent }} />
+      ) : null}
+    </View>
+  );
+}
+
 function Toggle(props: { checked: boolean; disabled?: boolean; onChange: (on: boolean) => void }) {
   return (
     <Switch
@@ -950,6 +970,12 @@ function App() {
     if (voiceModel()) return `已下载（${voiceModel()}）`;
     return "在本机识别，录音不上传。要下载 102.9 MB，解开后约 130 MB";
   });
+  const checkUpdate = signal(boolOf(Config.get("CheckUpdate"), true));
+  const betaUpdates = signal(boolOf(Config.get("BetaUpdates"), false));
+  const updateNotes = signal("");
+  const updateTag = signal("");
+  const updateTitle = computed(() => (updateTag() ? `有新版本 ${updateTag()}` : "最新版本"));
+  const updateSource = Config.installSource();
   const updateState = signal("");
   const updateUrl = signal("");
 
@@ -1088,14 +1114,16 @@ function App() {
 
   const runCheckUpdate = () => {
     updateState.set("检查中…");
-    const result: { ok: boolean; tag?: string; newer?: boolean; url?: string; error?: string } =
+    const result: { ok: boolean; tag?: string; newer?: boolean; url?: string; notes?: string; error?: string } =
       JSON.parse(Config.checkUpdate());
     if (!result.ok) {
       updateState.set(`失败：${result.error ?? "未知错误"}`);
       return;
     }
-    updateState.set(result.newer ? `有新版 ${result.tag}` : "已是最新");
+    updateTag.set(result.newer ? (result.tag ?? "") : "");
+    updateState.set(result.newer ? "可以下载安装" : "已是最新");
     updateUrl.set(result.url ?? "");
+    updateNotes.set(result.notes ?? "");
   };
 
   const save = (key: string, value: string) => {
@@ -1310,26 +1338,26 @@ function App() {
             <>
               <Text style={{ color: ui().muted, fontSize: 12 }}>输入方案</Text>
               <Card>
-                <Row title="拼音输入" subtitle="全拼，也能只打声母">
-                  <SmallButton
-                    title={inputScheme() === "Quanpin" ? "当前" : "选用"}
-                    tone={inputScheme() === "Quanpin" ? "accent" : "plain"}
-                    onPress={() => {
-                      inputScheme.set("Quanpin");
-                      save("InputScheme", "Quanpin");
-                    }}
-                  />
-                </Row>
-                <Row title="双拼输入" subtitle="每个字打两个键">
-                  <SmallButton
-                    title={inputScheme() === "Shuangpin" ? "当前" : "选用"}
-                    tone={inputScheme() === "Shuangpin" ? "accent" : "plain"}
-                    onPress={() => {
-                      inputScheme.set("Shuangpin");
-                      save("InputScheme", "Shuangpin");
-                    }}
-                  />
-                </Row>
+                <View
+                  onPress={() => {
+                    inputScheme.set("Quanpin");
+                    save("InputScheme", "Quanpin");
+                  }}
+                >
+                  <Row title="拼音输入" subtitle="全拼，也能只打声母">
+                    <RadioDot selected={inputScheme() === "Quanpin"} />
+                  </Row>
+                </View>
+                <View
+                  onPress={() => {
+                    inputScheme.set("Shuangpin");
+                    save("InputScheme", "Shuangpin");
+                  }}
+                >
+                  <Row title="双拼输入" subtitle="每个字打两个键">
+                    <RadioDot selected={inputScheme() === "Shuangpin"} />
+                  </Row>
+                </View>
                 {inputScheme() === "Shuangpin" ? (
                   <>
                     <Row title="双拼方案">
@@ -1353,16 +1381,16 @@ function App() {
                     </Row>
                   </>
                 ) : null}
-                <Row title="五笔输入" subtitle="86 版，z 键临时打拼音">
-                  <SmallButton
-                    title={inputScheme() === "Wubi86" ? "当前" : "选用"}
-                    tone={inputScheme() === "Wubi86" ? "accent" : "plain"}
-                    onPress={() => {
-                      inputScheme.set("Wubi86");
-                      save("InputScheme", "Wubi86");
-                    }}
-                  />
-                </Row>
+                <View
+                  onPress={() => {
+                    inputScheme.set("Wubi86");
+                    save("InputScheme", "Wubi86");
+                  }}
+                >
+                  <Row title="五笔输入" subtitle="86 版，z 键临时打拼音">
+                    <RadioDot selected={inputScheme() === "Wubi86"} />
+                  </Row>
+                </View>
                 {inputScheme() === "Wubi86" ? (
                   <>
                     <Row title="四码唯一自动上屏" subtitle="打满四码、只有一个字词时直接上屏">
@@ -2095,17 +2123,47 @@ function App() {
             </>
           ) : current() === 7 ? (
             <>
-              <Text style={{ color: ui().muted, fontSize: 12 }}>更新</Text>
+              <Text style={{ color: ui().muted, fontSize: 12 }}>版本</Text>
               <Card>
-                <Row title="当前版本" subtitle={Config.version()} />
-                <Row title="检查更新" subtitle={updateState() || "从 GitHub 查最新发布"}>
-                  <SmallButton title="检查" onPress={runCheckUpdate} />
+                <Row title={`当前版本 ${Config.version()}`} subtitle={updateSource}>
+                  <SmallButton title="检查更新" onPress={runCheckUpdate} />
                 </Row>
-                {updateUrl() ? (
-                  <Row title="打开下载页" subtitle={updateUrl()}>
-                    <SmallButton title="打开" onPress={() => Config.openUrl(updateUrl())} />
-                  </Row>
-                ) : null}
+                <Row title={updateTitle()} subtitle={updateState()}>
+                  {updateUrl() ? (
+                    <SmallButton title="打开下载页" onPress={() => Config.openUrl(updateUrl())} />
+                  ) : null}
+                </Row>
+              </Card>
+
+              {updateNotes() ? (
+                <>
+                  <Text style={{ color: ui().muted, fontSize: 12 }}>更新内容</Text>
+                  <Card>
+                    <Text style={{ color: ui().text, fontSize: 13 }}>{updateNotes()}</Text>
+                  </Card>
+                </>
+              ) : null}
+
+              <Text style={{ color: ui().muted, fontSize: 12 }}>自动</Text>
+              <Card>
+                <Row title="自动检查更新" subtitle="有新版本时发通知">
+                  <Toggle
+                    checked={checkUpdate()}
+                    onChange={(on) => {
+                      checkUpdate.set(on);
+                      save("CheckUpdate", on ? "True" : "False");
+                    }}
+                  />
+                </Row>
+                <Row title="Beta 计划" subtitle="也接收预发布版的更新">
+                  <Toggle
+                    checked={betaUpdates()}
+                    onChange={(on) => {
+                      betaUpdates.set(on);
+                      save("BetaUpdates", on ? "True" : "False");
+                    }}
+                  />
+                </Row>
               </Card>
             </>
           ) : (
