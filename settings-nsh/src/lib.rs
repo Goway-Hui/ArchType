@@ -805,6 +805,43 @@ impl Config {
         json_ok(line)
     }
 
+    /// 拉服务商的模型列表（GET {base}/models），每行一个名字；失败返回 "ERR:…"。
+    pub fn translate_models(base: String, key: String) -> String {
+        let mut base = base.trim().trim_end_matches('/').to_string();
+        if let Some(stripped) = base.strip_suffix("/chat/completions") {
+            base = stripped.trim_end_matches('/').to_string();
+        }
+        if base.is_empty() {
+            return "ERR:还没填接口地址".to_string();
+        }
+        let text = match curl(&format!("{base}/models"), key.trim(), None, 15) {
+            Ok(text) => text,
+            Err(error) => return format!("ERR:{error}"),
+        };
+        let Ok(value) = serde_json::from_str::<serde_json::Value>(&text) else {
+            return "ERR:看不懂服务的返回（是 OpenAI 格式的接口吗？）".to_string();
+        };
+        let Some(items) = value["data"]
+            .as_array()
+            .or_else(|| value["models"].as_array())
+        else {
+            return "ERR:返回里没有模型列表".to_string();
+        };
+        let mut ids: Vec<String> = items
+            .iter()
+            .filter_map(|item| {
+                item["id"]
+                    .as_str()
+                    .or_else(|| item["name"].as_str())
+                    .map(str::to_string)
+            })
+            .filter(|id| !id.is_empty())
+            .collect();
+        ids.sort_by_key(|id| id.to_lowercase());
+        ids.dedup();
+        ids.join("\n")
+    }
+
     /// 查 GitHub 最新版本；返回 {"ok":true,"current","tag","url","notes","newer"}。
     pub fn check_update() -> String {
         let current = Config::version();

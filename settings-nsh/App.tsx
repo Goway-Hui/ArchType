@@ -286,16 +286,22 @@ function InputBox(props: {
   placeholder?: string;
   masked?: boolean;
   width?: number;
+  suffix?: JSX.Element;
   onChange: (value: string) => void;
 }) {
   return (
     <View
       style={{
+        flexDirection: "row",
+        alignItems: "center",
+        gap: 4,
         backgroundColor: ui().page,
         borderWidth: 1,
         borderColor: ui().border,
         borderRadius: 8,
-        width: props.width ?? 280,
+        width: props.width ?? 240,
+        flexShrink: 0,
+        paddingRight: props.suffix ? 6 : 0,
       }}
     >
       <Input
@@ -303,6 +309,7 @@ function InputBox(props: {
         placeholder={props.placeholder}
         masked={props.masked}
         style={{
+          flex: 1,
           color: ui().text,
           paddingLeft: 10,
           paddingRight: 10,
@@ -312,6 +319,7 @@ function InputBox(props: {
         }}
         onChange={(event) => props.onChange(event.value)}
       />
+      {props.suffix ? props.suffix : null}
     </View>
   );
 }
@@ -1153,6 +1161,20 @@ function App() {
   const translateTarget = signal(Config.get("TranslateTarget") || "en");
   const customWords = signal(Config.customWords());
   const translateModel = signal(Config.get("TranslateModel") || "");
+  const keyVisible = signal(false);
+  const modelsOpen = signal(false);
+  const modelsText = signal("");
+  const modelsLoading = signal(false);
+  const modelSearch = signal("");
+  const loadModels = () => {
+    modelsLoading.set(true);
+    modelsText.set("");
+    // 同步网络调用会卡住界面一瞬:让出一帧再拉。
+    setTimeout(() => {
+      modelsText.set(Config.translateModels(translateBase(), translateKey()));
+      modelsLoading.set(false);
+    }, 16);
+  };
   const translateFormal = signal(boolOf(Config.get("TranslateFormal"), false));
   const translateKey = signal(Config.translateKey());
   const translateProvider = signal(providerIndexOf(Config.get("TranslateBaseUrl") || ""));
@@ -2730,12 +2752,18 @@ function App() {
                         <Row title="API Key" subtitle="只存在这台电脑上；本机服务可以不填">
                           <InputBox
                             value={translateKey()}
-                            masked
+                            masked={!keyVisible()}
                             onChange={(value) => {
                               translateKey.set(value);
                               Config.setTranslateKey(value);
                               reloadSoon();
                             }}
+                            suffix={
+                              <SmallButton
+                                title={keyVisible() ? "隐藏" : "显示"}
+                                onPress={() => keyVisible.set(!keyVisible())}
+                              />
+                            }
                           />
                         </Row>
                         <Row title="模型" subtitle="留空用服务商的默认模型">
@@ -2747,6 +2775,89 @@ function App() {
                               Config.set("TranslateModel", value);
                               reloadSoon();
                             }}
+                            suffix={
+                              <Popover
+                                open={modelsOpen()}
+                                onOpenChange={(event) => {
+                                  modelsOpen.set(event.open);
+                                  if (event.open) {
+                                    modelSearch.set("");
+                                    loadModels();
+                                  }
+                                }}
+                                placement="bottom"
+                                align="end"
+                                offset={6}
+                                trigger={
+                                  <SmallButton
+                                    title="列表"
+                                    onPress={() => {
+                                      modelsOpen.set(!modelsOpen());
+                                    }}
+                                  />
+                                }
+                                popupStyle={{
+                                  width: 300,
+                                  backgroundColor: ui().card,
+                                  borderWidth: 1,
+                                  borderColor: ui().border,
+                                  borderRadius: 10,
+                                  padding: 8,
+                                }}
+                              >
+                                <View style={{ gap: 6 }}>
+                                  <InputBox
+                                    value={modelSearch()}
+                                    placeholder="搜模型"
+                                    width={284}
+                                    onChange={(value) => modelSearch.set(value)}
+                                  />
+                                  <Text style={{ color: ui().muted, fontSize: 11 }}>
+                                    {modelsLoading()
+                                      ? "正在拉模型列表…"
+                                      : modelsText().startsWith("ERR:")
+                                        ? modelsText().slice(4)
+                                        : ""}
+                                  </Text>
+                                  <Scroll style={{ maxHeight: 240 }}>
+                                    <View>
+                                      {modelsText()
+                                        .split("\n")
+                                        .filter((name) => name !== "")
+                                        .filter(
+                                          (name) =>
+                                            modelSearch().trim() === "" ||
+                                            name
+                                              .toLowerCase()
+                                              .includes(modelSearch().trim().toLowerCase()),
+                                        )
+                                        .slice(0, 200)
+                                        .map((name) => (
+                                          <View
+                                            onPress={() => {
+                                              translateModel.set(name);
+                                              Config.set("TranslateModel", name);
+                                              reloadSoon();
+                                              modelsOpen.set(false);
+                                            }}
+                                            style={{
+                                              paddingTop: 6,
+                                              paddingBottom: 6,
+                                              paddingLeft: 8,
+                                              paddingRight: 8,
+                                              borderRadius: 6,
+                                            }}
+                                          >
+                                            <Text style={{ color: ui().text, fontSize: 12 }}>
+                                              {name}
+                                            </Text>
+                                          </View>
+                                        ))}
+                                    </View>
+                                  </Scroll>
+                                </View>
+                              </Popover>
+                            }
                           />
                         </Row>
                       </>
