@@ -1769,10 +1769,6 @@ fn version_tuple(text: &str) -> Vec<u64> {
         .collect()
 }
 
-fn version_newer(candidate: &str, installed: &str) -> bool {
-    version_tuple(candidate) > version_tuple(installed)
-}
-
 /// GitHub 最新发布里找万象词库资产：(文件名, 版本, 地址)。没有返回 None。
 fn latest_lexicon_asset() -> Option<(String, String, String)> {
     let output = std::process::Command::new("curl")

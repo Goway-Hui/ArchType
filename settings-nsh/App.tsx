@@ -1,5 +1,5 @@
 import { mount, setColorScheme, colorScheme, computed, signal, Scroll, Text, View } from "nsh";
-import { Button, Input, NumberInput, Select, Switch } from "nsh/base";
+import { Button, Input, Select, Switch } from "nsh/base";
 import type { JSX } from "nsh/jsx-runtime";
 import { Config } from "archtype/native";
 
@@ -499,6 +499,42 @@ function SelectBox(props: {
         </View>
       }
     />
+  );
+}
+
+/* 带加减号的数字输入：nsh 的 NumberInput 把数字夹在两个按钮中间，自己排一行。 */
+function StepInput(props: {
+  value: number;
+  min: number;
+  max: number;
+  onChange: (value: number) => void;
+}) {
+  const buttonStyle = {
+    width: 24,
+    height: 24,
+    alignItems: "center" as const,
+    justifyContent: "center" as const,
+    backgroundColor: ui().card,
+    borderWidth: 1,
+    borderColor: ui().border,
+    borderRadius: 6,
+  };
+  return (
+    <View style={{ flexDirection: "row", alignItems: "center" }}>
+      <View style={buttonStyle}>
+        <Button onPress={() => props.onChange(Math.max(props.min, props.value - 1))}>
+          <Text style={{ color: ui().text, fontSize: 15 }}>−</Text>
+        </Button>
+      </View>
+      <Text style={{ color: ui().text, fontSize: 13, width: 34, textAlign: "center" }}>
+        {props.value}
+      </Text>
+      <View style={buttonStyle}>
+        <Button onPress={() => props.onChange(Math.min(props.max, props.value + 1))}>
+          <Text style={{ color: ui().text, fontSize: 15 }}>+</Text>
+        </Button>
+      </View>
+    </View>
   );
 }
 
@@ -1435,13 +1471,11 @@ function App() {
                   />
                 </Row>
                 <Row title="每页个数" subtitle="3–9">
-                  <NumberInput
+                  <StepInput
                     value={pageSize()}
                     min={3}
                     max={9}
-                    step={1}
-                    onChange={(e) => {
-                      const value = e.value ?? 9;
+                    onChange={(value) => {
                       pageSize.set(value);
                       save("PageSize", String(value));
                     }}
@@ -1508,13 +1542,11 @@ function App() {
                   <Toggle checked={blue()} onChange={(on) => applyBlue(on)} />
                 </Row>
                 <Row title="候选字号" subtitle="8–32 磅，改了马上生效">
-                  <NumberInput
+                  <StepInput
                     value={fontSize()}
                     min={8}
                     max={32}
-                    step={1}
-                    onChange={(e) => {
-                      const value = e.value ?? 10;
+                    onChange={(value) => {
                       fontSize.set(value);
                       Config.setFontSize(String(value));
                       Config.restartFcitx();
@@ -1545,6 +1577,46 @@ function App() {
             </>
           ) : current() === 1 ? (
             <>
+              <Text style={{ color: ui().muted, fontSize: 12 }}>词库</Text>
+              <Card>
+                <View onPress={() => { if (lexiconKind() !== "rime-ice" && !lexiconBusy()) useLexicon(""); }}>
+                  <Row title="雾凇拼音（默认）" subtitle="在安装包里，不用下载">
+                    <RadioDot selected={lexiconKind() === "rime-ice"} />
+                  </Row>
+                </View>
+                <View
+                  onPress={() => {
+                    if (lexiconKind() === "wanxiang" || lexiconBusy()) return;
+                    if (lexiconWanxiangVersion()) useLexicon(wanxiangPath());
+                    else downloadLexicon();
+                  }}
+                >
+                  <Row title="万象拼音" subtitle={lexiconSubtitle()}>
+                    <RadioDot selected={lexiconKind() === "wanxiang"} />
+                  </Row>
+                </View>
+                <View style={{ flexDirection: "row", justifyContent: "flex-end", gap: 8, paddingBottom: 10 }}>
+                  {lexiconBusy() ? (
+                    <SmallButton title="取消" onPress={cancelLexicon} />
+                  ) : lexiconWanxiangVersion() && lexiconLatestVersion() && versionNewer(lexiconLatestVersion(), lexiconWanxiangVersion()) ? (
+                    <SmallButton title="更新" tone="accent" onPress={downloadLexicon} />
+                  ) : !lexiconWanxiangVersion() ? (
+                    <SmallButton title="下载万象" tone="accent" onPress={downloadLexicon} />
+                  ) : null}
+                  {lexiconWanxiangVersion() && lexiconKind() !== "wanxiang" && !lexiconBusy() ? (
+                    <SmallButton title="删除万象" onPress={deleteLexicon} />
+                  ) : null}
+                </View>
+                {lexiconKind() === "custom" ? (
+                  <Row title="自定义词库" subtitle={lexiconCustomPath()}>
+                    <RadioDot selected />
+                  </Row>
+                ) : null}
+                <Text style={{ color: ui().muted, fontSize: 11 }}>
+                  万象拼音词更多，比雾凇多占约 300 MB 内存；从 amzxyz/rime_wanxiang（CC BY 4.0）转换，只用了它的词条。
+                </Text>
+              </Card>
+
               <Text style={{ color: ui().muted, fontSize: 12 }}>输入方案</Text>
               <Card>
                 <View
@@ -1827,70 +1899,6 @@ function App() {
                 ) : null}
               </Card>
 
-              <Text style={{ color: ui().muted, fontSize: 12 }}>词库</Text>
-              <Card>
-                <View
-                  onPress={() => {
-                    if (lexiconKind() !== "rime-ice" && !lexiconBusy()) useLexicon("");
-                  }}
-                >
-                  <Row title="雾凇拼音（默认）" subtitle="在安装包里，不用下载">
-                    <RadioDot selected={lexiconKind() === "rime-ice"} />
-                  </Row>
-                </View>
-                <View
-                  onPress={() => {
-                    if (lexiconKind() !== "wanxiang" && !lexiconBusy() && lexiconWanxiangVersion()) {
-                      useLexicon(wanxiangPath());
-                    }
-                    if (lexiconKind() !== "wanxiang" && !lexiconBusy() && !lexiconWanxiangVersion()) {
-                      downloadLexicon();
-                    }
-                  }}
-                >
-                  <Row title="万象拼音" subtitle={lexiconSubtitle()}>
-                  <SmallButton
-                    title={
-                      lexiconBusy()
-                        ? "取消"
-                        : lexiconWanxiangVersion()
-                          ? lexiconLatestVersion() && versionNewer(lexiconLatestVersion(), lexiconWanxiangVersion())
-                            ? "更新"
-                            : ""
-                          : "下载"
-                    }
-                    tone="accent"
-                    onPress={lexiconBusy() ? cancelLexicon : downloadLexicon}
-                  />
-                  {lexiconWanxiangVersion() && lexiconKind() !== "wanxiang" && !lexiconBusy() ? (
-                    <SmallButton title="删除" onPress={deleteLexicon} />
-                  ) : null}
-                  </Row>
-                </View>
-                {lexiconKind() === "custom" ? (
-                  <Row title="自定义词库" subtitle={lexiconCustomPath()}>
-                    <RadioDot selected />
-                  </Row>
-                ) : null}
-                <Row title="切换" subtitle="点一行切换词库，几秒后生效；自定义词和学到的习惯都会保留">
-                  <SmallButton
-                    title="切回雾凇拼音"
-                    onPress={() => useLexicon("")}
-                    disabled={lexiconKind() !== "wanxiang" && lexiconKind() !== "custom"}
-                  />
-                  <SmallButton
-                    title="切到万象拼音"
-                    onPress={() => useLexicon(wanxiangPath())}
-                    disabled={
-                      lexiconKind() === "wanxiang" ||
-                      (lexiconWanxiangVersion() === "" && !lexiconBusy())
-                    }
-                  />
-                </Row>
-                <Text style={{ color: ui().muted, fontSize: 11 }}>
-                  万象拼音词更多，比雾凇多占约 300 MB 内存；从 amzxyz/rime_wanxiang（CC BY 4.0）转换，只用了它的词条。
-                </Text>
-              </Card>
             </>
           ) : current() === 2 ? (
             <>
