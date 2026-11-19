@@ -40,3 +40,12 @@ test("offline model group appears for the local engine", async () => {
   expect(app.texts()).toContain("离线翻译模型");
   expect(app.texts().join("")).toContain("腾讯混元社区许可协议");
 });
+
+test("menu opens with the four actions", async () => {
+  const app = await open("./App.tsx");
+  await app.press("label:菜单");
+  expect(app.texts()).toContain("恢复默认设置");
+  expect(app.texts()).toContain("关于 ArchType");
+  expect(app.texts()).toContain("导出日志…");
+  expect(app.texts()).toContain("用文本编辑器打开自定义词");
+});

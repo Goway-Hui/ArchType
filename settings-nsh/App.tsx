@@ -1,5 +1,5 @@
 import { mount, setColorScheme, colorScheme, computed, signal, Scroll, Text, View } from "nsh";
-import { Button, Input, Select, Switch } from "nsh/base";
+import { AlertDialog, Button, Input, Popover, Select, Switch } from "nsh/base";
 import type { JSX } from "nsh/jsx-runtime";
 import { Config } from "archtype/native";
 
@@ -1377,6 +1377,55 @@ function App() {
     updateNotes.set(result.notes ?? "");
   };
 
+  const menuOpen = signal(false);
+  // 右上角菜单,与旧版一致:打开自定义词、导出日志、恢复默认、关于。
+  const menuItems = [
+    { id: "custom", label: "用文本编辑器打开自定义词" },
+    { id: "log", label: "导出日志…" },
+    { id: "reset", label: "恢复默认设置" },
+    { id: "about", label: "关于 ArchType" },
+  ];
+  const runMenu = async (id: string) => {
+    if (id === "custom") {
+      Config.customWordsOpen();
+    } else if (id === "log") {
+      const path = Config.diagnosticsExport();
+      await AlertDialog.show({
+        title: path ? "日志已导出" : "导出失败",
+        description: path || "写不进下载目录，检查一下权限。",
+        actions: [{ id: "ok", label: "好", role: "default" }],
+      });
+    } else if (id === "reset") {
+      const answer = await AlertDialog.show({
+        title: "恢复默认设置？",
+        description:
+          "排列方向、模糊音、语音键等回到默认值。自定义词和翻译服务（地址、模型、Key）不受影响。",
+        actions: [
+          { id: "cancel", label: "取消", role: "cancel" },
+          { id: "reset", label: "恢复默认", role: "destructive" },
+        ],
+      });
+      if (answer.action !== "reset") return;
+      if (!Config.resetDefaults()) return;
+      Config.restartFcitx();
+      await AlertDialog.show({
+        title: "已恢复默认",
+        description: "重开这个设置窗口后，各项会显示默认值。",
+        actions: [{ id: "ok", label: "好", role: "default" }],
+      });
+    } else if (id === "about") {
+      await AlertDialog.show({
+        title: "ArchType",
+        description:
+          `版本 ${Config.version() || "dev"}\n` +
+          "好用的拼音输入法：整句、简拼、按错键纠正、语音输入。\n\n" +
+          "代码按 MIT 或 Apache-2.0 双许可证发布。\n" +
+          "词库数据来自 rime-ice（GPL-3.0）。",
+        actions: [{ id: "ok", label: "好", role: "default" }],
+      });
+    }
+  };
+
   const save = (key: string, value: string) => {
     Config.set(key, value);
     Config.restartFcitx();
@@ -1443,7 +1492,64 @@ function App() {
 
       <Scroll style={{ flex: 1 }}>
         <View style={{ padding: 28, gap: 16 }}>
-          <Text style={{ color: ui().text, fontWeight: "800", fontSize: 24 }}>{pages[current()]}</Text>
+          <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
+            <Text style={{ color: ui().text, fontWeight: "800", fontSize: 24 }}>{pages[current()]}</Text>
+            <Popover
+              open={menuOpen()}
+              onOpenChange={(event) => menuOpen.set(event.open)}
+              placement="bottom"
+              align="end"
+              offset={6}
+              trigger={
+                <View
+                  accessibilityLabel="菜单"
+                  style={{
+                    width: 32,
+                    height: 32,
+                    borderRadius: 8,
+                    alignItems: "center",
+                    justifyContent: "center",
+                    gap: 3,
+                  }}
+                >
+                  <View style={{ width: 14, height: 2, borderRadius: 1, backgroundColor: ui().text }} />
+                  <View style={{ width: 14, height: 2, borderRadius: 1, backgroundColor: ui().text }} />
+                  <View style={{ width: 14, height: 2, borderRadius: 1, backgroundColor: ui().text }} />
+                </View>
+              }
+              popupStyle={{
+                minWidth: 210,
+                backgroundColor: ui().card,
+                borderWidth: 1,
+                borderColor: ui().border,
+                borderRadius: 10,
+                paddingTop: 6,
+                paddingBottom: 6,
+                paddingLeft: 6,
+                paddingRight: 6,
+              }}
+            >
+              <View style={{ gap: 2 }}>
+                {menuItems.map((item) => (
+                  <View
+                    onPress={() => {
+                      menuOpen.set(false);
+                      runMenu(item.id);
+                    }}
+                    style={{
+                      paddingTop: 8,
+                      paddingBottom: 8,
+                      paddingLeft: 10,
+                      paddingRight: 10,
+                      borderRadius: 6,
+                    }}
+                  >
+                    <Text style={{ color: ui().text, fontSize: 13 }}>{item.label}</Text>
+                  </View>
+                ))}
+              </View>
+            </Popover>
+          </View>
 
           {current() === 0 ? (
             <>

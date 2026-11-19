@@ -899,6 +899,52 @@ impl Config {
         if atomic_write(&path, &text) { path } else { String::new() }
     }
 
+    /// 用系统默认程序打开自定义词表；没有就先建一个空的。
+    pub fn custom_words_open() -> bool {
+        let dir = Config::data_dir();
+        let path = format!("{dir}/custom.tsv");
+        if !Path::new(&path).exists() {
+            let _ = fs::create_dir_all(&dir);
+            let _ = fs::write(&path, "");
+        }
+        std::process::Command::new("xdg-open")
+            .arg(&path)
+            .status()
+            .map(|status| status.success())
+            .unwrap_or(false)
+    }
+
+    /// 恢复默认设置：删掉 archtype.conf 里的键，只留翻译服务和词库（与旧版同口径），
+    /// 插件读不到就用自身的默认值。
+    pub fn reset_defaults() -> bool {
+        const KEEP: &[&str] = &[
+            "TranslateBaseUrl",
+            "TranslateModel",
+            "TranslateLocal",
+            "TranslateLocalModel",
+            "TranslateLlamaServer",
+            "TranslateIdleMinutes",
+            "Lexicon",
+        ];
+        let path = Config::config_path();
+        let mut out = String::new();
+        for line in read(&path).lines() {
+            let trimmed = line.trim();
+            if trimmed.is_empty() || trimmed.starts_with('#') || trimmed.starts_with('[') {
+                out.push_str(line);
+                out.push('\n');
+                continue;
+            }
+            if let Some((key, _)) = trimmed.split_once('=') {
+                if KEEP.contains(&key.trim()) {
+                    out.push_str(line);
+                    out.push('\n');
+                }
+            }
+        }
+        atomic_write(&path, &out)
+    }
+
     /// fcitx5 全局快捷键里占着 ArchType 要用的 Shift 的按键，返回 "选项=按键" 每行一条。
     /// 读取走 D-Bus GetConfig（fcitx://config/global）；fcitx5 没在跑或读不到返回空串。
     /// 只读，不改 fcitx5 的任何设置。
