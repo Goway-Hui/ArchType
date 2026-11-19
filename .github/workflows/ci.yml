@@ -58,8 +58,10 @@ jobs:
       - name: 系统依赖
         run: |
           sudo apt-get update
-          sudo apt-get install -y --no-install-recommends build-essential pkg-config \
-            libgtk-4-dev libadwaita-1-dev ca-certificates curl
+          # nsh 的 release runner 要 GTK 4 和 GStreamer 的开发包（sound/video），还要 clang
+          sudo apt-get install -y --no-install-recommends build-essential pkg-config clang \
+            libgtk-4-dev libadwaita-1-dev libgstreamer1.0-dev \
+            libgstreamer-plugins-base1.0-dev ca-certificates curl
       - name: Rust
         run: |
           curl -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal
