@@ -1101,6 +1101,100 @@ impl Config {
         model.is_ok() || llama.is_ok() || !local_model_path().exists()
     }
 
+    /// 词库状态，JSON：{"kind","path","wanxiangVersion","latestAsset","latestVersion"}。
+    /// kind 是 rime-ice / wanxiang / custom；latestAsset 为空表示发布页上没有万象包。
+    pub fn lexicon_state() -> String {
+        let lexicon = Config::get("Lexicon".to_string()).trim().to_string();
+        let (kind, path) = if lexicon.is_empty() || !Path::new(&lexicon).is_file() {
+            ("rime-ice", "")
+        } else if Path::new(&lexicon) == wanxiang_lexicon_path() {
+            ("wanxiang", lexicon.as_str())
+        } else {
+            ("custom", lexicon.as_str())
+        };
+        let version = lexicon_pack_version();
+        let latest = latest_lexicon_asset();
+        serde_json::json!({
+            "kind": kind,
+            "path": path,
+            "wanxiangVersion": version,
+            "latestAsset": latest.as_ref().map(|a| a.0.clone()).unwrap_or_default(),
+            "latestVersion": latest.as_ref().map(|a| a.1.clone()).unwrap_or_default(),
+        })
+        .to_string()
+    }
+
+    /// 万象词库主文件的完整路径（切换时传给 lexicon_use）。
+    pub fn lexicon_wanxiang_path() -> String {
+        wanxiang_lexicon_path().to_string_lossy().to_string()
+    }
+
+    /// 切词库：传万象路径切过去，传空串切回雾凇。写完让插件重读。
+    pub fn lexicon_use(path: String) -> bool {
+        Config::set("Lexicon".to_string(), path.trim().to_string());
+        Config::restart_fcitx()
+    }
+
+    /// 删除已装的万象词库包；正在用它时先切回雾凇。
+    pub fn lexicon_delete() -> bool {
+        if Config::get("Lexicon".to_string()).trim() == wanxiang_lexicon_path().to_string_lossy() {
+            Config::set("Lexicon".to_string(), String::new());
+        }
+        let dir = wanxiang_dir();
+        let gone = !dir.exists() || fs::remove_dir_all(&dir).is_ok();
+        Config::restart_fcitx();
+        gone
+    }
+
+    /// 后台下载并安装万象词库包（GitHub 发布资产，按 SHA256SUMS 校验），装好自动切过去。
+    /// 立即返回 true；已在下载返回 false。进度与结果用 lexicon_download_state 轮询。
+    pub fn lexicon_download_start() -> bool {
+        {
+            let Ok(state) = LEXICON_STATE.lock() else {
+                return false;
+            };
+            if state.starts_with("downloading") || state.starts_with("installing") {
+                return false;
+            }
+        }
+        LEXICON_CANCEL.store(false, std::sync::atomic::Ordering::SeqCst);
+        set_lexicon_state("downloading");
+        std::thread::spawn(|| {
+            let result = lexicon_download_work();
+            match result {
+                Ok(version) => {
+                    set_lexicon_state(&format!("done:{version}"));
+                    Config::set("Lexicon".to_string(), wanxiang_lexicon_path().to_string_lossy().to_string());
+                    Config::restart_fcitx();
+                }
+                Err(error) => set_lexicon_state(&format!("error:{error}")),
+            }
+        });
+        true
+    }
+
+    /// 取消正在进行的万象词库下载（.part 保留，下次接着下）。
+    pub fn lexicon_download_cancel() -> bool {
+        LEXICON_CANCEL.store(true, std::sync::atomic::Ordering::SeqCst);
+        true
+    }
+
+    /// 万象词库下载状态：idle / downloading / installing / done:版本 / error:…
+    pub fn lexicon_download_state() -> String {
+        LEXICON_STATE
+            .lock()
+            .map(|s| s.clone())
+            .unwrap_or_else(|_| "error:状态锁坏了".to_string())
+    }
+
+    /// 万象词库下载进度，"已下载/总大小"（字节）。
+    pub fn lexicon_download_progress() -> String {
+        LEXICON_PROGRESS
+            .lock()
+            .map(|p| format!("{}/{}", p.0, p.1))
+            .unwrap_or_else(|_| "0/0".to_string())
+    }
+
     /// 拼音猜测接口（给 TSX 用）：词 → 编码，猜不出返回空串。
     pub fn pinyin_guess_word(word: String) -> String {
         pinyin_guess(word)
@@ -1640,6 +1734,277 @@ fn local_download_work() -> Result<(), String> {
         install_llama()?;
     }
     Ok(())
+}
+
+
+const RELEASE_API: &str = "https://api.github.com/repos/Goway-Hui/ArchType/releases/latest";
+
+/// 万象词库目录与主文件。
+fn wanxiang_dir() -> std::path::PathBuf {
+    std::path::PathBuf::from(format!("{}/dicts/wanxiang", Config::data_dir()))
+}
+
+fn wanxiang_lexicon_path() -> std::path::PathBuf {
+    wanxiang_dir().join("lexicon.tsv")
+}
+
+/// 万象词库包状态：None 没装；Some(版本号文字，"?" 表示 VERSION 缺失或读不了)。
+fn lexicon_pack_version() -> Option<String> {
+    if !wanxiang_lexicon_path().is_file() {
+        return None;
+    }
+    let version = fs::read_to_string(wanxiang_dir().join("VERSION"))
+        .map(|v| v.trim().to_string())
+        .unwrap_or_else(|_| "?".to_string());
+    Some(if version.is_empty() { "?".to_string() } else { version })
+}
+
+/// 版本号文字 → 数字元组（同旧版 parse_version）。
+fn version_tuple(text: &str) -> Vec<u64> {
+    let cleaned = text.trim().trim_start_matches(['v', 'V']).split('-').next().unwrap_or("");
+    cleaned
+        .split(|c: char| !c.is_ascii_digit())
+        .filter(|part| !part.is_empty())
+        .filter_map(|part| part.parse::<u64>().ok())
+        .collect()
+}
+
+fn version_newer(candidate: &str, installed: &str) -> bool {
+    version_tuple(candidate) > version_tuple(installed)
+}
+
+/// GitHub 最新发布里找万象词库资产：(文件名, 版本, 地址)。没有返回 None。
+fn latest_lexicon_asset() -> Option<(String, String, String)> {
+    let output = std::process::Command::new("curl")
+        .args(["-sL", "--max-time", "20", "-A", &format!("ArchType/{}", Config::version()),
+               RELEASE_API])
+        .output()
+        .ok()?;
+    if !output.status.success() {
+        return None;
+    }
+    let data: serde_json::Value = serde_json::from_slice(&output.stdout).ok()?;
+    let assets = data.get("assets")?.as_array()?;
+    let mut found: Vec<(Vec<u64>, String, String, String)> = Vec::new();
+    for asset in assets {
+        let name = asset.get("name")?.as_str()?.to_string();
+        let url = asset.get("browser_download_url")?.as_str()?.to_string();
+        // archtype-data-wanxiang-<版本>.tar.gz
+        let Some(rest) = name.strip_prefix("archtype-data-wanxiang-") else {
+            continue;
+        };
+        let Some(version) = rest.strip_suffix(".tar.gz") else {
+            continue;
+        };
+        if version.is_empty() || !version.starts_with(|c: char| c.is_ascii_digit()) {
+            continue;
+        }
+        found.push((version_tuple(version), version.to_string(), name, url));
+    }
+    found.sort();
+    found.last().map(|(_, version, name, url)| (name.clone(), version.clone(), url.clone()))
+}
+
+/// 万象词库下载状态。
+static LEXICON_STATE: LazyLock<Mutex<String>> = LazyLock::new(|| Mutex::new("idle".to_string()));
+static LEXICON_PROGRESS: LazyLock<Mutex<(u64, u64)>> = LazyLock::new(|| Mutex::new((0, 0)));
+static LEXICON_CANCEL: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+fn set_lexicon_state(state: &str) {
+    if let Ok(mut guard) = LEXICON_STATE.lock() {
+        *guard = state.to_string();
+    }
+}
+
+/// 后台线程：找资产 → 下载（带 SHA256SUMS 校验）→ 安装校验 → 换入。
+fn lexicon_download_work() -> Result<String, String> {
+    use std::io::{Read, Write};
+    let Some((name, version, url)) = latest_lexicon_asset() else {
+        return Err("发布页上没有万象词库包".to_string());
+    };
+    let cache = format!("{}/updates/lexicon", Config::data_dir());
+    fs::create_dir_all(&cache).map_err(|e| e.to_string())?;
+    let dest = format!("{cache}/{name}");
+    let part = format!("{dest}.part");
+
+    // SHA256SUMS 里这个文件的校验值
+    let sums_url = latest_sha256_sums_url()?;
+    let sums_output = std::process::Command::new("curl")
+        .args(["-sL", "--max-time", "20", "-A", &format!("ArchType/{}", Config::version()), &sums_url])
+        .output()
+        .map_err(|e| format!("跑不了 curl：{e}"))?;
+    if !sums_output.status.success() {
+        return Err("下不了 SHA256SUMS，暂不安装".to_string());
+    }
+    let sums_text = String::from_utf8_lossy(&sums_output.stdout);
+    let mut expected = String::new();
+    for line in sums_text.lines() {
+        let mut fields = line.trim().splitn(2, ' ');
+        let (Some(digest), Some(file)) = (fields.next(), fields.next()) else {
+            continue;
+        };
+        let file = file.trim().trim_start_matches('*');
+        if file == name {
+            expected = digest.to_lowercase();
+            break;
+        }
+    }
+    if expected.is_empty() {
+        return Err(format!("SHA256SUMS 里没有 {name}，不安装"));
+    }
+
+    // 下载到 .part（续传），边下边算 SHA256
+    set_lexicon_state("downloading");
+    let agent = ureq::Agent::config_builder()
+        .timeout_connect(Some(std::time::Duration::from_secs(10)))
+        .timeout_global(Some(std::time::Duration::from_secs(60 * 30)))
+        .build()
+        .new_agent();
+    let have = fs::metadata(&part).map(|m| m.len()).unwrap_or(0);
+    let mut request = agent
+        .get(&url)
+        .header("User-Agent", &format!("ArchType/{}", Config::version()));
+    if have > 0 {
+        request = request.header("Range", &format!("bytes={have}-"));
+    }
+    let response = match request.call() {
+        Ok(response) => response,
+        Err(error) => return Err(format!("下载失败（网络不通？）：{error}")),
+    };
+    let resumed = have > 0 && response.status().as_u16() == 206;
+    let mut done = if resumed { have } else { 0 };
+    use sha2::{Digest, Sha256};
+    let mut digest = Sha256::new();
+    if resumed {
+        // 续传：先把已有的部分算进校验
+        let mut existing = fs::File::open(&part).map_err(|e| e.to_string())?;
+        let mut buffer = vec![0u8; 1 << 16];
+        loop {
+            let read = existing.read(&mut buffer).map_err(|e| e.to_string())?;
+            if read == 0 { break; }
+            digest.update(&buffer[..read]);
+        }
+    }
+    let mut reader = response.into_body().into_reader();
+    let mut out = fs::OpenOptions::new()
+        .create(true)
+        .write(true)
+        .truncate(!resumed)
+        .append(resumed)
+        .open(&part)
+        .map_err(|e| e.to_string())?;
+    let mut buffer = vec![0u8; 1 << 16];
+    loop {
+        if LEXICON_CANCEL.load(std::sync::atomic::Ordering::SeqCst) {
+            return Err("已取消".to_string());
+        }
+        let read = reader.read(&mut buffer).map_err(|e| format!("下载中断：{e}"))?;
+        if read == 0 { break; }
+        out.write_all(&buffer[..read]).map_err(|e| e.to_string())?;
+        Digest::update(&mut digest, &buffer[..read]);
+        done += read as u64;
+        if let Ok(mut p) = LEXICON_PROGRESS.lock() {
+            *p = (done, 0);
+        }
+    }
+    drop(out);
+    if format!("{:x}", digest.finalize()) != expected {
+        let _ = fs::remove_file(&part);
+        return Err("下载的词库包校验和不对，可能没下完整，已删除，请重试".to_string());
+    }
+    fs::rename(&part, &dest).map_err(|e| e.to_string())?;
+
+    // 安装：解到临时目录，检查好再换入（同旧版 install_lexicon_pack）
+    set_lexicon_state("installing");
+    install_lexicon_pack(&dest)?;
+    let _ = fs::remove_file(&dest);
+    Ok(version)
+}
+
+/// SHA256SUMS 资产的地址（与词库包同属最新发布）。
+fn latest_sha256_sums_url() -> Result<String, String> {
+    let output = std::process::Command::new("curl")
+        .args(["-sL", "--max-time", "20", "-A", &format!("ArchType/{}", Config::version()),
+               RELEASE_API])
+        .output()
+        .map_err(|e| format!("跑不了 curl：{e}"))?;
+    if !output.status.success() {
+        return Err("下不了发布信息".to_string());
+    }
+    let data: serde_json::Value = serde_json::from_slice(&output.stdout).ok().ok_or("看不懂发布信息")?;
+    for asset in data.get("assets").and_then(|v| v.as_array()).into_iter().flatten() {
+        if asset.get("name").and_then(|v| v.as_str()) == Some("SHA256SUMS") {
+            return Ok(asset
+                .get("browser_download_url")
+                .and_then(|v| v.as_str())
+                .unwrap_or_default()
+                .to_string());
+        }
+    }
+    Err("发布页缺少 SHA256SUMS，暂不安装".to_string())
+}
+
+/// 安装词库包：只认 lexicon.tsv / LICENSE / SOURCE.txt / VERSION 四个普通文件，
+/// lexicon.tsv 至少 10 万条才换入；旧目录连同词库快照一起删掉。返回装好的版本。
+fn install_lexicon_pack(tarball: &str) -> Result<String, String> {
+    const PACK_FILES: [&str; 4] = ["lexicon.tsv", "LICENSE", "SOURCE.txt", "VERSION"];
+    const PACK_MIN: usize = 100_000;
+    let folder = wanxiang_dir();
+    let parent = folder.parent().ok_or("路径不对")?;
+    fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+    let staging = wanxiang_dir().with_extension("new");
+    let _ = fs::remove_dir_all(&staging);
+    fs::create_dir_all(&staging).map_err(|e| e.to_string())?;
+    let status = std::process::Command::new("tar")
+        .arg("-xzf")
+        .arg(tarball)
+        .arg("-C")
+        .arg(&staging)
+        .status()
+        .map_err(|e| format!("跑不了 tar：{e}"))?;
+    if !status.success() {
+        let _ = fs::remove_dir_all(&staging);
+        return Err("解压词库包失败".to_string());
+    }
+    // 只保留认识的文件，别的一律不要（目录、链接、../ 之类直接拒绝）
+    for entry in fs::read_dir(&staging).map_err(|e| e.to_string())? {
+        let entry = entry.map_err(|e| e.to_string())?;
+        let file_name = entry.file_name().to_string_lossy().to_string();
+        if !PACK_FILES.contains(&file_name.as_str()) {
+            let _ = fs::remove_dir_all(&staging);
+            return Err(format!("词库包里有不认识的文件 {file_name}，不安装"));
+        }
+    }
+    let lexicon = staging.join("lexicon.tsv");
+    if !lexicon.is_file() {
+        let _ = fs::remove_dir_all(&staging);
+        return Err("词库包里没有 lexicon.tsv，不安装".to_string());
+    }
+    let text = fs::read_to_string(&lexicon).map_err(|e| e.to_string())?;
+    let mut count = 0;
+    for line in text.lines() {
+        if line.starts_with('#') || line.trim().is_empty() {
+            continue;
+        }
+        if line.split('\t').count() < 2 {
+            let _ = fs::remove_dir_all(&staging);
+            return Err("lexicon.tsv 格式不对（应为 拼音<TAB>词<TAB>频次），不安装".to_string());
+        }
+        count += 1;
+    }
+    if count < PACK_MIN {
+        let _ = fs::remove_dir_all(&staging);
+        return Err(format!("lexicon.tsv 只有 {count} 条，像是不完整，不安装"));
+    }
+    // 换入：旧的挪到 .old，删掉（旧版还删词库快照 lexicon.tsv.wcache）
+    let old = wanxiang_dir().with_extension("old");
+    let _ = fs::remove_dir_all(&old);
+    if folder.exists() {
+        fs::rename(&folder, &old).map_err(|e| e.to_string())?;
+    }
+    fs::rename(&staging, &folder).map_err(|e| e.to_string())?;
+    let _ = fs::remove_dir_all(&old);
+    lexicon_pack_version().ok_or_else(|| "装好了但读不到版本".to_string())
 }
 
 #[cfg(test)]

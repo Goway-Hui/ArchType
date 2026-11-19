@@ -891,6 +891,24 @@ function summarizeStats(days: Record<string, StatsDay>, today: string): StatsSum
   };
 }
 
+function versionNewer(candidate: string, installed: string): boolean {
+  const parse = (text: string) =>
+    text
+      .trim()
+      .replace(/^[vV]/, "")
+      .split("-")[0]
+      .match(/\d+/g)
+      ?.map(Number) ?? [];
+  const left = parse(candidate);
+  const right = parse(installed);
+  for (let i = 0; i < Math.max(left.length, right.length); i += 1) {
+    const a = left[i] ?? 0;
+    const b = right[i] ?? 0;
+    if (a !== b) return a > b;
+  }
+  return false;
+}
+
 function humanSize(bytes: number): string {
   return bytes >= 1e9 ? `${(bytes / 1e9).toFixed(2)} GB` : `${Math.round(bytes / 1e6)} MB`;
 }
@@ -1045,6 +1063,11 @@ function App() {
       voicePartial.set(Config.voicePartialBytes());
       const local = Config.localDownloadState();
       localState.set(local);
+      if (lexiconBusy()) {
+        lexiconBusyState.set(Config.lexiconDownloadState());
+        lexiconProgress.set(Config.lexiconDownloadProgress());
+        if (Config.lexiconDownloadState().startsWith("done:")) refreshLexicon();
+      }
       localProgress.set(Config.localDownloadProgress());
       if (local === "done") localMissing.set(Config.localMissing());
       if (state === "done") voiceModel.set(Config.voiceModel());
@@ -1115,6 +1138,72 @@ function App() {
     if (result !== "ok" && result !== "没有要让出的 Shift" && result !== "没有记录要加回的 Shift") {
       shiftFreeOnState.set(!on);
     }
+  };
+
+  const wanxiangPath = signal(Config.lexiconWanxiangPath());
+  const lexiconRaw = signal(Config.lexiconState());
+  const lexiconBusyState = signal(Config.lexiconDownloadState());
+  const lexiconProgress = signal(Config.lexiconDownloadProgress());
+  const lexiconData = computed(() => {
+    try {
+      const value: unknown = JSON.parse(lexiconRaw());
+      return typeof value === "object" && value !== null
+        ? (value as { kind?: string; path?: string; wanxiangVersion?: string; latestVersion?: string })
+        : {};
+    } catch {
+      return {};
+    }
+  });
+  const lexiconKind = computed(() => lexiconData().kind ?? "rime-ice");
+  const lexiconWanxiangVersion = computed(() => lexiconData().wanxiangVersion ?? "");
+  const lexiconLatestVersion = computed(() => lexiconData().latestVersion ?? "");
+  const lexiconCustomPath = computed(() => lexiconData().path ?? "");
+  const lexiconBusy = computed(
+    () =>
+      lexiconBusyState().startsWith("downloading") || lexiconBusyState().startsWith("installing"),
+  );
+  const lexiconSubtitle = computed(() => {
+    const state = lexiconBusyState();
+    const [doneText, totalText] = lexiconProgress().split("/");
+    const done = Number(doneText) || 0;
+    const total = Number(totalText) || 0;
+    if (state === "downloading" && total > 0) {
+      return `正在下载：${humanSize(done)} / ${humanSize(total)}（${Math.floor((done * 100) / total)}%）`;
+    }
+    if (state === "downloading") return "正在连接…";
+    if (state === "installing") return "正在安装…";
+    if (state.startsWith("done:")) return `装好了 ${state.slice(5)}，已切过去，几秒后生效`;
+    if (state.startsWith("error:")) return `没装好：${state.slice(6)}`;
+    const version = lexiconWanxiangVersion();
+    if (!version) return "词更多，要下载约 20 MB";
+    return lexiconLatestVersion() && versionNewer(lexiconLatestVersion(), version)
+      ? `已下载 ${version}，有新版 ${lexiconLatestVersion()}`
+      : `已下载 ${version}`;
+  });
+
+  const refreshLexicon = () => {
+    lexiconRaw.set(Config.lexiconState());
+    lexiconBusyState.set(Config.lexiconDownloadState());
+    lexiconProgress.set(Config.lexiconDownloadProgress());
+  };
+
+  const useLexicon = (path: string) => {
+    Config.lexiconUse(path);
+    refreshLexicon();
+  };
+
+  const cancelLexicon = () => {
+    Config.lexiconDownloadCancel();
+  };
+
+  const downloadLexicon = () => {
+    lexiconBusyState.set("downloading");
+    Config.lexiconDownloadStart();
+  };
+
+  const deleteLexicon = () => {
+    Config.lexiconDelete();
+    refreshLexicon();
   };
 
   const clearStats = () => {
@@ -1738,9 +1827,70 @@ function App() {
                 ) : null}
               </Card>
 
-              <Text style={{ color: ui().muted, fontSize: 12 }}>
-                词库：{Config.get("Lexicon") || "雾凇拼音（默认）"}
-              </Text>
+              <Text style={{ color: ui().muted, fontSize: 12 }}>词库</Text>
+              <Card>
+                <View
+                  onPress={() => {
+                    if (lexiconKind() !== "rime-ice" && !lexiconBusy()) useLexicon("");
+                  }}
+                >
+                  <Row title="雾凇拼音（默认）" subtitle="在安装包里，不用下载">
+                    <RadioDot selected={lexiconKind() === "rime-ice"} />
+                  </Row>
+                </View>
+                <View
+                  onPress={() => {
+                    if (lexiconKind() !== "wanxiang" && !lexiconBusy() && lexiconWanxiangVersion()) {
+                      useLexicon(wanxiangPath());
+                    }
+                    if (lexiconKind() !== "wanxiang" && !lexiconBusy() && !lexiconWanxiangVersion()) {
+                      downloadLexicon();
+                    }
+                  }}
+                >
+                  <Row title="万象拼音" subtitle={lexiconSubtitle()}>
+                  <SmallButton
+                    title={
+                      lexiconBusy()
+                        ? "取消"
+                        : lexiconWanxiangVersion()
+                          ? lexiconLatestVersion() && versionNewer(lexiconLatestVersion(), lexiconWanxiangVersion())
+                            ? "更新"
+                            : ""
+                          : "下载"
+                    }
+                    tone="accent"
+                    onPress={lexiconBusy() ? cancelLexicon : downloadLexicon}
+                  />
+                  {lexiconWanxiangVersion() && lexiconKind() !== "wanxiang" && !lexiconBusy() ? (
+                    <SmallButton title="删除" onPress={deleteLexicon} />
+                  ) : null}
+                  </Row>
+                </View>
+                {lexiconKind() === "custom" ? (
+                  <Row title="自定义词库" subtitle={lexiconCustomPath()}>
+                    <RadioDot selected />
+                  </Row>
+                ) : null}
+                <Row title="切换" subtitle="点一行切换词库，几秒后生效；自定义词和学到的习惯都会保留">
+                  <SmallButton
+                    title="切回雾凇拼音"
+                    onPress={() => useLexicon("")}
+                    disabled={lexiconKind() !== "wanxiang" && lexiconKind() !== "custom"}
+                  />
+                  <SmallButton
+                    title="切到万象拼音"
+                    onPress={() => useLexicon(wanxiangPath())}
+                    disabled={
+                      lexiconKind() === "wanxiang" ||
+                      (lexiconWanxiangVersion() === "" && !lexiconBusy())
+                    }
+                  />
+                </Row>
+                <Text style={{ color: ui().muted, fontSize: 11 }}>
+                  万象拼音词更多，比雾凇多占约 300 MB 内存；从 amzxyz/rime_wanxiang（CC BY 4.0）转换，只用了它的词条。
+                </Text>
+              </Card>
             </>
           ) : current() === 2 ? (
             <>
