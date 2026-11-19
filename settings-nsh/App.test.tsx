@@ -32,3 +32,10 @@ test("fuzzy groups are hidden until the master switch is on", async () => {
   expect(app.texts()).toContain("比如 n 和 l 不分");
   expect(app.texts()).not.toContain("z = zh");
 });
+
+test("offline model group appears for the local engine", async () => {
+  const app = await open("./App.tsx");
+  await app.press("翻译");
+  expect(app.texts()).toContain("离线翻译模型");
+  expect(app.texts().join("")).toContain("腾讯混元社区许可协议");
+});

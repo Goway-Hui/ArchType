@@ -129,6 +129,28 @@ const VOICE_MODEL_INNER: &str = "ime_asr_decoder_model.zip";
 const VOICE_MODEL_DICT: &str = "dict.decoder.utf8.txt";
 
 static VOICE_STATE: LazyLock<Mutex<String>> = LazyLock::new(|| Mutex::new("idle".to_string()));
+/// 离线翻译模型（腾讯 HY-MT，GGUF），与旧版 LOCAL_MODEL_* 一致。
+const LOCAL_MODEL_FILE: &str = "HY-MT1.5-1.8B-Q4_K_M.gguf";
+const LOCAL_MODEL_URL: &str =
+    "https://huggingface.co/tencent/HY-MT1.5-1.8B-GGUF/resolve/main/HY-MT1.5-1.8B-Q4_K_M.gguf";
+const LOCAL_MODEL_SHA256: &str = "4383ac0c3c8e476de98ff979c2a3f069f8c4fb385e7860cf2d28da896cc477c7";
+const LOCAL_MODEL_SIZE: u64 = 1_133_080_512;
+
+/// llama.cpp 运行程序（x86_64），与旧版 LLAMA_BUILD / LLAMA_ASSETS 一致。
+const LLAMA_BUILD: &str = "b12110";
+const LLAMA_URL: &str =
+    "https://github.com/ggml-org/llama.cpp/releases/download/b12110/llama-b12110-bin-ubuntu-x64.tar.gz";
+const LLAMA_SHA256: &str = "368227edcc229be5f9bed16a2223d79b5e41d0ac2e19bcf5825e82291c060e55";
+const LLAMA_SIZE: u64 = 23_051_958;
+
+/// 离线翻译下载进度（字节），与语音包的进度分开，避免互相覆盖。
+static LOCAL_PROGRESS: LazyLock<Mutex<(u64, u64)>> = LazyLock::new(|| Mutex::new((0, 0)));
+static LOCAL_CANCEL: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+static VOICE_CANCEL: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+/// 语音包下载的字节进度：(已下载, 总大小)，供界面副标题显示。
+static VOICE_PROGRESS: LazyLock<Mutex<(u64, u64)>> = LazyLock::new(|| Mutex::new((0, 0)));
 
 fn set_voice_state(state: &str) {
     if let Ok(mut guard) = VOICE_STATE.lock() {
@@ -369,33 +391,167 @@ fn unzip_voice(pack: &str, folder: &str) -> Result<(), String> {
     Ok(())
 }
 
+/// 下载语音包到 `pack`：先写 `pack.part`，断了能用 Range 接着下；取消时保留 `.part`。
+/// 完整后改名。与旧版 download_model 的语义一致。
+fn download_voice_pack(pack: &str) -> Result<(), String> {
+    use std::io::{Read, Write};
+    let part = format!("{pack}.part");
+    fs::create_dir_all(Config::data_dir()).map_err(|e| e.to_string())?;
+    let have = fs::metadata(&part).map(|m| m.len()).unwrap_or(0);
+    let agent = ureq::Agent::config_builder()
+        .timeout_global(Some(std::time::Duration::from_secs(60 * 30)))
+        .build()
+        .new_agent();
+    let mut request = agent
+        .get(VOICE_MODEL_URL)
+        .header("User-Agent", &format!("ArchType/{}", Config::version()));
+    if have > 0 {
+        request = request.header("Range", &format!("bytes={have}-"));
+    }
+    let response = match request.call() {
+        Ok(response) => response,
+        Err(ureq::Error::StatusCode(416)) if have > 0 => {
+            // .part 已经下完整了，只差校验
+            *VOICE_PROGRESS.lock().map_err(|e| e.to_string())? = (have, VOICE_MODEL_SIZE);
+            fs::rename(&part, pack).map_err(|e| e.to_string())?;
+            return Ok(());
+        }
+        Err(error) => return Err(format!("下载失败（网络不通？）：{error}")),
+    };
+    // 服务不支持续传（没返回 206）：从头写
+    let resumed = have > 0 && response.status().as_u16() == 206;
+    let mut done = if resumed { have } else { 0 };
+    let mut reader = response.into_body().into_reader();
+    let mut out = fs::OpenOptions::new()
+        .create(true)
+        .write(true)
+        .truncate(!resumed)
+        .append(resumed)
+        .open(&part)
+        .map_err(|e| e.to_string())?;
+    let mut buffer = vec![0u8; 1 << 16];
+    loop {
+        if VOICE_CANCEL.load(std::sync::atomic::Ordering::SeqCst) {
+            return Err("已取消".to_string());
+        }
+        let read = reader.read(&mut buffer).map_err(|e| format!("下载中断：{e}"))?;
+        if read == 0 {
+            break;
+        }
+        out.write_all(&buffer[..read]).map_err(|e| e.to_string())?;
+        done += read as u64;
+        if let Ok(mut progress) = VOICE_PROGRESS.lock() {
+            *progress = (done, VOICE_MODEL_SIZE);
+        }
+    }
+    out.flush().map_err(|e| e.to_string())?;
+    drop(out);
+    fs::rename(&part, pack).map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+/// 通用续传下载：先写 `dest.part`，断了用 Range 接着下；取消时保留 `.part`。
+/// 进度写进 `progress`，取消看 `cancel`。与旧版 download_model 语义一致（不做校验，调用方校验）。
+/// 416（.part 已完整）直接返回成功，交给调用方校验。
+fn download_resumable(
+    url: &str,
+    dest: &str,
+    expected_size: u64,
+    progress: &Mutex<(u64, u64)>,
+    cancel: &std::sync::atomic::AtomicBool,
+) -> Result<(), String> {
+    use std::io::{Read, Write};
+    let part = format!("{dest}.part");
+    if let Some(parent) = Path::new(dest).parent() {
+        fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+    }
+    let have = fs::metadata(&part).map(|m| m.len()).unwrap_or(0);
+    // 连接阶段单独设短超时：IPv6 不通时尽快失败，让 ureq 回退到 IPv4
+    let agent = ureq::Agent::config_builder()
+        .timeout_connect(Some(std::time::Duration::from_secs(10)))
+        .timeout_global(Some(std::time::Duration::from_secs(60 * 60)))
+        .build()
+        .new_agent();
+    let mut request = agent
+        .get(url)
+        .header("User-Agent", &format!("ArchType/{}", Config::version()));
+    if have > 0 {
+        request = request.header("Range", &format!("bytes={have}-"));
+    }
+    let response = match request.call() {
+        Ok(response) => response,
+        Err(ureq::Error::StatusCode(416)) if have > 0 => {
+            // .part 已经下完整了，只差校验
+            fs::rename(&part, dest).map_err(|e| e.to_string())?;
+            return Ok(());
+        }
+        Err(error) => return Err(format!("下载失败（网络不通？）：{error}")),
+    };
+    // 服务不支持续传（没返回 206）：从头写
+    let resumed = have > 0 && response.status().as_u16() == 206;
+    let mut done = if resumed { have } else { 0 };
+    let mut reader = response.into_body().into_reader();
+    let mut out = fs::OpenOptions::new()
+        .create(true)
+        .write(true)
+        .truncate(!resumed)
+        .append(resumed)
+        .open(&part)
+        .map_err(|e| e.to_string())?;
+    let mut buffer = vec![0u8; 1 << 16];
+    loop {
+        if cancel.load(std::sync::atomic::Ordering::SeqCst) {
+            return Err("已取消".to_string());
+        }
+        let read = reader.read(&mut buffer).map_err(|e| format!("下载中断：{e}"))?;
+        if read == 0 {
+            break;
+        }
+        out.write_all(&buffer[..read]).map_err(|e| e.to_string())?;
+        done += read as u64;
+        if let Ok(mut p) = progress.lock() {
+            *p = (done, expected_size);
+        }
+    }
+    out.flush().map_err(|e| e.to_string())?;
+    drop(out);
+    fs::rename(&part, dest).map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+/// 计算文件 SHA256（纯 Rust 实现，不依赖 sha256sum 命令）。
+fn sha256_of(path: &str) -> Result<String, String> {
+    use sha2::{Digest, Sha256};
+    use std::io::Read;
+    let mut file = fs::File::open(path).map_err(|e| e.to_string())?;
+    let mut hasher = Sha256::new();
+    let mut buffer = vec![0u8; 1 << 16];
+    loop {
+        let read = file.read(&mut buffer).map_err(|e| e.to_string())?;
+        if read == 0 {
+            break;
+        }
+        hasher.update(&buffer[..read]);
+    }
+    Ok(format!("{:x}", hasher.finalize()))
+}
+
 fn install_voice() -> Result<(), String> {
     let dir = format!("{}/wtlocal", Config::data_dir());
     let pack = format!("{}/wtlocal.apk", Config::data_dir());
     if !Path::new(&pack).exists() {
         set_voice_state("downloading");
-        let status = std::process::Command::new("curl")
-            .arg("-L")
-            .arg("--fail")
-            .arg("-sS")
-            .arg("-C")
-            .arg("-")
-            .arg("-o")
-            .arg(&pack)
-            .arg(VOICE_MODEL_URL)
-            .status()
-            .map_err(|error| format!("跑不了 curl：{error}"))?;
-        if !status.success() {
-            return Err("下载失败（网络不通？）".to_string());
-        }
+        download_voice_pack(&pack)?;
     }
     set_voice_state("verifying");
     let size = fs::metadata(&pack).map_err(|error| error.to_string())?.len();
     if size != VOICE_MODEL_SIZE {
-        return Err(format!("语音包大小不对：{size} 字节，应该是 {VOICE_MODEL_SIZE} 字节"));
+        let _ = fs::remove_file(&pack);
+        return Err(format!("语音包大小不对：{size} 字节，应该是 {VOICE_MODEL_SIZE} 字节，已删除，请重试"));
     }
     if md5_of(&pack)? != VOICE_MODEL_MD5 {
-        return Err("语音包校验不对（MD5 不一致）".to_string());
+        let _ = fs::remove_file(&pack);
+        return Err("语音包校验不对（MD5 不一致），已删除，请重试".to_string());
     }
     set_voice_state("extracting");
     unzip_voice(&pack, &dir)?;
@@ -649,6 +805,307 @@ impl Config {
         .to_string()
     }
 
+    /// 导出自定义词到 ~/Downloads（没有就放家目录）。返回写入的路径，失败返回空串。
+    pub fn custom_words_export() -> String {
+        let dir = {
+            let downloads = format!("{}/Downloads", home());
+            if Path::new(&downloads).is_dir() { downloads } else { home() }
+        };
+        let path = format!("{dir}/archtype-custom-words.tsv");
+        let text = read(&format!("{}/custom.tsv", Config::data_dir()));
+        let body: Vec<String> = text
+            .lines()
+            .filter(|line| !line.trim().is_empty() && !line.trim_start().starts_with('#'))
+            .map(|line| line.to_string())
+            .collect();
+        let mut out = vec![
+            "# ArchType 自定义词：编码<TAB>词".to_string(),
+        ];
+        out.extend(body);
+        if atomic_write(&path, &(out.join("\n") + "\n")) { path } else { String::new() }
+    }
+
+    /// 从 ~/Downloads/archtype-custom-words.tsv 导入（没有就读家目录的）。
+    /// 合并规则同旧版 merge_custom_words：同一个词改用新编码。返回 "新增数/更新数" 或错误文字。
+    pub fn custom_words_import() -> String {
+        let dir = {
+            let downloads = format!("{}/Downloads", home());
+            if Path::new(&downloads).is_dir() { downloads } else { home() }
+        };
+        let path = format!("{dir}/archtype-custom-words.tsv");
+        let Ok(raw) = fs::read_to_string(&path) else {
+            return format!("没找到 {path}");
+        };
+        // 去掉 UTF-8 BOM（旧版用 utf-8-sig 读）
+        let text = raw.strip_prefix('\u{feff}').unwrap_or(&raw);
+        let incoming: Vec<(String, String)> = text
+            .lines()
+            .filter(|line| !line.trim().is_empty() && !line.trim_start().starts_with('#'))
+            .filter_map(|line| {
+                let mut cols = line.split('\t');
+                let code = cols.next()?.trim().to_string();
+                let word = cols.next()?.trim().to_string();
+                (!code.is_empty() && !word.is_empty()).then_some((code, word))
+            })
+            .collect();
+        if incoming.is_empty() {
+            return "文件里没有能用的词（每行：编码<TAB>词）".to_string();
+        }
+        let current_path = format!("{}/custom.tsv", Config::data_dir());
+        let mut words: Vec<(String, String)> = read(&current_path)
+            .lines()
+            .filter(|line| !line.trim().is_empty() && !line.trim_start().starts_with('#'))
+            .filter_map(|line| {
+                let mut cols = line.split('\t');
+                Some((cols.next()?.to_string(), cols.next()?.to_string()))
+            })
+            .collect();
+        let (mut added, mut updated) = (0, 0);
+        for (code, word) in incoming {
+            let existing: Vec<(String, String)> =
+                words.iter().filter(|(_, w)| *w == word).cloned().collect();
+            if existing.len() == 1 && existing[0].0 == code {
+                continue;
+            }
+            if existing.is_empty() {
+                added += 1;
+            } else {
+                updated += 1;
+            }
+            words.retain(|(_, w)| *w != word);
+            words.push((code, word));
+        }
+        let mut out = vec![
+            "# ArchType 自定义词：编码<TAB>词。编码是拼音（空格分开音节），也可以是 mail 这类字母；".to_string(),
+            "# 词里写 \\n 表示换行。由 ArchType 设置维护，也可以手动编辑。".to_string(),
+        ];
+        out.extend(words.iter().map(|(code, word)| format!("{code}\t{word}")));
+        if !atomic_write(&current_path, &(out.join("\n") + "\n")) {
+            return "写入自定义词失败".to_string();
+        }
+        format!("新增 {added} 个，更新 {updated} 个")
+    }
+
+    /// 导出诊断信息到 ~/Downloads（没有就放家目录）。返回写入的路径，失败返回空串。
+    /// 不含打过的字、自定义词内容（只写条数），URL 只留主机，互译 Key 只写「已设置/没设置」。
+    /// 不含 fcitx5 D-Bus 与 GNOME 扩展段，那两段在热键接口一起补。
+    pub fn diagnostics_export() -> String {
+        let dir = {
+            let downloads = format!("{}/Downloads", home());
+            if Path::new(&downloads).is_dir() { downloads } else { home() }
+        };
+        let path = format!("{dir}/archtype-log.txt");
+        let text = build_diagnostics();
+        if atomic_write(&path, &text) { path } else { String::new() }
+    }
+
+    /// fcitx5 全局快捷键里占着 ArchType 要用的 Shift 的按键，返回 "选项=按键" 每行一条。
+    /// 读取走 D-Bus GetConfig（fcitx://config/global）；fcitx5 没在跑或读不到返回空串。
+    /// 只读，不改 fcitx5 的任何设置。
+    pub fn shift_conflicts() -> String {
+        let toggle = Config::get("ShiftToggle".to_string());
+        let sides: &[&str] = match toggle.as_str() {
+            "Left" => &["Shift_L"],
+            "Right" => &["Shift_R"],
+            "Off" => &[],
+            _ => &["Shift_L", "Shift_R"],
+        };
+        let Some(hotkey) = fcitx_global_hotkey() else {
+            return String::new();
+        };
+        let mut lines = Vec::new();
+        for (option, keys) in hotkey {
+            // 只看快捷键选项（同旧版 FCITX_OPTION_NAMES），忽略 Tooltip 之类的其他配置
+            if !FCITX_KEY_OPTIONS.contains(&option.as_str()) {
+                continue;
+            }
+            for key in keys {
+                let bare = bare_shift(&key);
+                if !bare.is_empty() && sides.contains(&bare.as_str()) {
+                    lines.push(format!("{option}={key}"));
+                }
+            }
+        }
+        lines.join("\n")
+    }
+
+    /// 状态文件里记录的已让出 Shift 列表，非空表示开关应为开。空串表示没有让出。
+    pub fn shift_free_state() -> String {
+        let state_path = format!("{}/archtype/state.json", state_home());
+        let state: serde_json::Value = serde_json::from_str(&read(&state_path))
+            .unwrap_or_else(|_| serde_json::json!({}));
+        match state.get("fcitx_shift_freed").and_then(|v| v.as_array()) {
+            Some(list) if !list.is_empty() => list.len().to_string(),
+            _ => String::new(),
+        }
+    }
+
+    /// 让出 ArchType 要用的 Shift：把 fcitx5 快捷键里的单按 Shift 去掉，记录到状态文件。
+    /// 返回 "ok"（已写入并回读确认）、"memory"（只改了内存，没存进配置文件）或错误文字。
+    /// 对应旧版 on_shift_free_toggled（开启分支）。
+    pub fn shift_free_on() -> String {
+        let conflicts = shift_conflicts_lines();
+        if conflicts.is_empty() {
+            return "没有要让出的 Shift".to_string();
+        }
+        // 按选项分组，去掉要让出的键，写回 fcitx5
+        let mut by_option: std::collections::BTreeMap<String, Vec<String>> = Default::default();
+        for line in conflicts.lines() {
+            if let Some((option, key)) = line.split_once('=') {
+                by_option.entry(option.to_string()).or_default().push(key.to_string());
+            }
+        }
+        let mut freed: Vec<(String, String)> = Vec::new();
+        let mut updates: Vec<(String, Vec<String>)> = Vec::new();
+        for (option, removed) in &by_option {
+            let current = fcitx_option_keys(option);
+            let kept: Vec<String> = current.iter().filter(|k| !removed.contains(k)).cloned().collect();
+            for key in removed {
+                freed.push((option.clone(), key.clone()));
+            }
+            updates.push((option.clone(), kept));
+        }
+        if !fcitx_set_hotkeys(&updates) {
+            return "写入 fcitx5 失败（D-Bus SetConfig 没成功）".to_string();
+        }
+        // 回读：确认真的存进了配置文件，而不是只改了内存（同旧版 saved_fcitx_hotkey 检查）
+        let persisted = fcitx_file_hotkey_has_shift_conflict();
+        let freed_json: Vec<serde_json::Value> = freed
+            .iter()
+            .map(|(option, key)| serde_json::json!([option, key]))
+            .collect();
+        let state_path = format!("{}/archtype/state.json", state_home());
+        let mut state: serde_json::Value = serde_json::from_str(&read(&state_path))
+            .unwrap_or_else(|_| serde_json::json!({}));
+        state["fcitx_shift_freed"] = serde_json::Value::Array(freed_json);
+        let _ = atomic_write(&state_path, &state.to_string());
+        if persisted { "memory".to_string() } else { "ok".to_string() }
+    }
+
+    /// 关闭时加回：把状态文件里记下的 Shift 按键加回 fcitx5。返回 "ok" 或错误文字。
+    /// 对应旧版 on_shift_free_toggled（关闭分支）。
+    pub fn shift_free_off() -> String {
+        let state_path = format!("{}/archtype/state.json", state_home());
+        let state: serde_json::Value = serde_json::from_str(&read(&state_path))
+            .unwrap_or_else(|_| serde_json::json!({}));
+        let freed: Vec<(String, String)> = state
+            .get("fcitx_shift_freed")
+            .and_then(|v| v.as_array())
+            .map(|arr| {
+                arr.iter()
+                    .filter_map(|pair| {
+                        let option = pair.get(0)?.as_str()?.to_string();
+                        let key = pair.get(1)?.as_str()?.to_string();
+                        Some((option, key))
+                    })
+                    .collect()
+            })
+            .unwrap_or_default();
+        if freed.is_empty() {
+            return "没有记录要加回的 Shift".to_string();
+        }
+        let mut by_option: std::collections::BTreeMap<String, Vec<String>> = Default::default();
+        for (option, key) in &freed {
+            by_option.entry(option.clone()).or_default().push(key.clone());
+        }
+        let mut updates: Vec<(String, Vec<String>)> = Vec::new();
+        for (option, keys) in by_option {
+            let mut current = fcitx_option_keys(&option);
+            for key in keys {
+                if !current.contains(&key) {
+                    current.push(key);
+                }
+            }
+            updates.push((option, current));
+        }
+        if !fcitx_set_hotkeys(&updates) {
+            return "加回 fcitx5 失败（D-Bus SetConfig 没成功）".to_string();
+        }
+        let mut state = state;
+        state["fcitx_shift_freed"] = serde_json::Value::Array(vec![]);
+        let _ = atomic_write(&state_path, &state.to_string());
+        "ok".to_string()
+    }
+
+    /// 离线翻译是否就绪：模型与 llama-server 都在。返回 "ready" 或 "missing"。
+    pub fn local_ready() -> String {
+        if local_model_path().is_file() && llama_server_path().is_file() {
+            "ready".to_string()
+        } else {
+            "missing".to_string()
+        }
+    }
+
+    /// 离线翻译还差什么："model"、"llama"、"both" 或 "ready"。
+    pub fn local_missing() -> String {
+        let model = !local_model_path().is_file();
+        let llama = !llama_server_path().is_file();
+        match (model, llama) {
+            (true, true) => "both",
+            (true, false) => "model",
+            (false, true) => "llama",
+            (false, false) => "ready",
+        }
+        .to_string()
+    }
+
+    /// 离线翻译下载进度，"已下载/总大小"（字节）。
+    pub fn local_download_progress() -> String {
+        LOCAL_PROGRESS
+            .lock()
+            .map(|p| format!("{}/{}", p.0, p.1))
+            .unwrap_or_else(|_| "0/0".to_string())
+    }
+
+    /// 取消离线翻译下载（.part 保留）。
+    pub fn local_download_cancel() -> bool {
+        LOCAL_CANCEL.store(true, std::sync::atomic::Ordering::SeqCst);
+        true
+    }
+
+    /// 后台下载并校验离线翻译所需的文件（缺哪个下哪个）。立即返回 true；已在下载返回 false。
+    /// 进度与结果用 local_download_state 轮询。
+    pub fn local_download_start() -> bool {
+        {
+            let Ok(state) = LOCAL_STATE.lock() else {
+                return false;
+            };
+            if state.starts_with("downloading") || state.starts_with("installing") {
+                return false;
+            }
+        }
+        LOCAL_CANCEL.store(false, std::sync::atomic::Ordering::SeqCst);
+        set_local_state("downloading");
+        std::thread::spawn(|| {
+            let result = local_download_work();
+            set_local_state(&match result {
+                Ok(()) => "done".to_string(),
+                Err(error) => format!("error:{error}"),
+            });
+        });
+        true
+    }
+
+    /// 离线翻译下载状态：idle / downloading / installing / done / error:…
+    pub fn local_download_state() -> String {
+        LOCAL_STATE
+            .lock()
+            .map(|s| s.clone())
+            .unwrap_or_else(|_| "error:状态锁坏了".to_string())
+    }
+
+    /// 删除离线翻译的模型与运行程序。
+    pub fn local_delete() -> bool {
+        let model = fs::remove_file(local_model_path());
+        let llama = fs::remove_dir_all(local_llama_dir());
+        model.is_ok() || llama.is_ok() || !local_model_path().exists()
+    }
+
+    /// 拼音猜测接口（给 TSX 用）：词 → 编码，猜不出返回空串。
+    pub fn pinyin_guess_word(word: String) -> String {
+        pinyin_guess(word)
+    }
+
     /// 加一个自定义词（编码<TAB>词），已有的改编码；写完重启 fcitx5。
     pub fn custom_word_add(word: String, pinyin: String) -> bool {
         let word = word.trim();
@@ -713,6 +1170,7 @@ impl Config {
                 return false;
             }
         }
+        VOICE_CANCEL.store(false, std::sync::atomic::Ordering::SeqCst);
         set_voice_state("downloading");
         std::thread::spawn(|| {
             let result = install_voice();
@@ -722,6 +1180,26 @@ impl Config {
             });
         });
         true
+    }
+
+    /// 取消正在进行的语音包下载（.part 保留，下次接着下）。
+    pub fn voice_download_cancel() -> bool {
+        VOICE_CANCEL.store(true, std::sync::atomic::Ordering::SeqCst);
+        true
+    }
+
+    /// 下载字节进度，格式 "已下载/总大小"（字节）；没有在下时是 "0/0"。
+    pub fn voice_download_progress() -> String {
+        VOICE_PROGRESS
+            .lock()
+            .map(|progress| format!("{}/{}", progress.0, progress.1))
+            .unwrap_or_else(|_| "0/0".to_string())
+    }
+
+    /// 已经下到的 .part 字节数（没有 .part 时是 0），用来显示「可以接着下」。
+    pub fn voice_partial_bytes() -> String {
+        let part = format!("{}/wtlocal.apk.part", Config::data_dir());
+        fs::metadata(part).map(|m| m.len().to_string()).unwrap_or_else(|_| "0".to_string())
     }
 
     /// 语音模型下载状态：idle / downloading / verifying / extracting / done / error:…
@@ -778,6 +1256,392 @@ impl Config {
     }
 }
 
+
+/// 诊断信息正文（纯文本，隐私约束同旧版 collect_diagnostics）。
+fn build_diagnostics() -> String {
+    let mut out: Vec<String> = Vec::new();
+    out.push("# ArchType 诊断信息".to_string());
+    out.push(format!("导出时间：{}", std::process::Command::new("date")
+        .arg("+%Y-%m-%d %H:%M:%S %z")
+        .output()
+        .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
+        .unwrap_or_default()));
+    out.push("不含你打过的字、自定义词和输入习惯的内容（只有条数和大小）。".to_string());
+    out.push(String::new());
+
+    out.push("## 版本".to_string());
+    out.push(format!("设置界面：{}", Config::version()));
+    let os_release = read("/etc/os-release");
+    let pretty = os_release
+        .lines()
+        .find_map(|line| line.strip_prefix("PRETTY_NAME="))
+        .map(|v| v.trim_matches('"').to_string())
+        .unwrap_or_default();
+    out.push(format!("系统：{pretty}"));
+    out.push(format!(
+        "架构：{}",
+        std::env::consts::ARCH
+    ));
+    for key in [
+        "XDG_CURRENT_DESKTOP",
+        "XDG_SESSION_TYPE",
+        "LANG",
+        "GTK_IM_MODULE",
+        "QT_IM_MODULE",
+        "XMODIFIERS",
+    ] {
+        out.push(format!("{key}={}", std::env::var(key).unwrap_or_default()));
+    }
+    out.push(String::new());
+
+    out.push("## ArchType 设置（archtype.conf）".to_string());
+    let config = read(&Config::config_path());
+    for line in config.lines() {
+        let trimmed = line.trim();
+        if trimmed.is_empty() || trimmed.starts_with('#') || trimmed.starts_with('[') {
+            continue;
+        }
+        if let Some((key, value)) = trimmed.split_once('=') {
+            let value = if key.trim() == "TranslateBaseUrl" {
+                mask_url(value.trim())
+            } else {
+                value.trim().to_string()
+            };
+            out.push(format!("{}={value}", key.trim()));
+        }
+    }
+    let key_set = !translate_key_text().is_empty();
+    out.push(format!("互译 Key：{}", if key_set { "已设置" } else { "没设置" }));
+    out.push(String::new());
+
+    out.push("## 数据文件".to_string());
+    let lexicon = std::env::var("ARCHTYPE_LEXICON")
+        .ok()
+        .filter(|p| !p.is_empty())
+        .or_else(|| {
+            [format!("{}/lexicon.tsv", Config::data_dir()), "/usr/share/archtype/lexicon.tsv".to_string()]
+                .into_iter()
+                .find(|p| Path::new(p).exists())
+        });
+    match lexicon {
+        Some(path) => out.push(format!("  词库：{}", path)),
+        None => out.push("  词库：没找到".to_string()),
+    }
+    let custom_count = read(&format!("{}/custom.tsv", Config::data_dir()))
+        .lines()
+        .filter(|line| !line.trim().is_empty() && !line.trim_start().starts_with('#'))
+        .count();
+    out.push(format!("  自定义词：{custom_count} 条"));
+    let learned = read(&format!("{}/user.tsv", Config::data_dir())).lines().count();
+    out.push(format!("  自动学到的词：{learned} 条"));
+    out.push(String::new());
+
+    out.push("## ArchType 日志（最近 400 行）".to_string());
+    let log_path = format!("{}/archtype/archtype.log", state_home());
+    let mut log_lines: Vec<String> = Vec::new();
+    for path in [format!("{log_path}.1"), log_path.clone()] {
+        let text = read(&path);
+        log_lines.extend(text.lines().map(|l| l.to_string()));
+    }
+    let start = log_lines.len().saturating_sub(400);
+    if log_lines.is_empty() {
+        out.push("（还没有日志：要用新版的 ArchType 打过一次字才会有）".to_string());
+    } else {
+        out.extend(log_lines[start..].iter().cloned());
+    }
+    out.push(String::new());
+
+    out.push("## 未包含".to_string());
+    out.push("fcitx5 的 D-Bus 状态（输入法组、经典界面主题）与 GNOME 扩展状态，".to_string());
+    out.push("以及 fcitx5 的 journalctl 日志，需要 D-Bus 能力，本版本暂不导出。".to_string());
+    out.join("\n") + "\n"
+}
+
+/// 诊断信息里的 URL：只留协议和主机（有的代理把 Key 放在路径里）。同旧版 mask_url。
+fn mask_url(url: &str) -> String {
+    let Some((scheme, rest)) = url.split_once("://") else {
+        return String::new();
+    };
+    let host = rest.split('/').next().unwrap_or("");
+    let host = host.rsplit('@').next().unwrap_or("");
+    if host.is_empty() {
+        return String::new();
+    }
+    format!("{scheme}://{host}/…")
+}
+
+/// 互译 Key 的文字（只用来判断是否设置，不写进诊断）。
+fn translate_key_text() -> String {
+    read(&translate_key_path()).trim().to_string()
+}
+
+
+/// fcitx5 里的快捷键选项，与旧版 FCITX_OPTION_NAMES 一致。冲突扫描只看这几项。
+const FCITX_KEY_OPTIONS: [&str; 8] = [
+    "AltTriggerKeys",
+    "TriggerKeys",
+    "EnumerateForwardKeys",
+    "EnumerateBackwardKeys",
+    "EnumerateGroupForwardKeys",
+    "EnumerateGroupBackwardKeys",
+    "ActivateKeys",
+    "DeactivateKeys",
+];
+
+/// 读 fcitx5 全局配置的 Hotkey 段：{选项: [按键…]}。
+/// 调用 gdbus 走 D-Bus GetConfig；返回空表示没读到（fcitx5 没在跑，或 D-Bus 不通）。
+fn fcitx_global_hotkey() -> Option<Vec<(String, Vec<String>)>> {
+    let output = std::process::Command::new("gdbus")
+        .args([
+            "call", "--session", "--dest", "org.fcitx.Fcitx5",
+            "--object-path", "/controller",
+            "--method", "org.fcitx.Fcitx.Controller1.GetConfig",
+            "fcitx://config/global",
+        ])
+        .output()
+        .ok()?;
+    if !output.status.success() {
+        return None;
+    }
+    let text = String::from_utf8_lossy(&output.stdout);
+    Some(parse_hotkey_section(&text))
+}
+
+/// 从 gdbus 打印的 GetConfig 文本里取 Hotkey 段的各选项。
+/// 格式形如 'AltTriggerKeys': <{'0': <'Shift_L'>, '1': <'Shift_R'>}>，逐项抽出单引号里的按键。
+fn parse_hotkey_section(text: &str) -> Vec<(String, Vec<String>)> {
+    let mut result = Vec::new();
+    let Some(start) = text.find("'Hotkey'") else {
+        return result;
+    };
+    // Hotkey 段是 {选项: 值}，值是 <{...}>（按键列表，花括号内是 '0': <'键'> 这样的项）。
+    // 只认顶层的 'Name': <{ ... }> 形式：花括号配对取到结束，不靠 '>' 猜结束位置。
+    let body = &text[start..];
+    let mut i = 0;
+    let bytes = body.as_bytes();
+    while i < bytes.len() {
+        // 找下一个顶层的 'Name'
+        let Some(rel) = body[i..].find('\'') else {
+            break;
+        };
+        let name_start = i + rel + 1;
+        let Some(name_len) = body[name_start..].find('\'') else {
+            break;
+        };
+        let name = &body[name_start..name_start + name_len];
+        let after_name = name_start + name_len + 1;
+        // 只有紧跟 ':' 且值以 <{ 开头的才是选项（跳过内层的数字键 '0' 等）
+        let tail = body[after_name..].trim_start();
+        let Some(after_colon) = tail.strip_prefix(':') else {
+            i = after_name;
+            continue;
+        };
+        let value_src = after_colon.trim_start();
+        let Some(inner) = value_src.strip_prefix("<{") else {
+            i = after_name;
+            continue;
+        };
+        // 花括号配对，取到对应的 '}'
+        let mut depth = 1;
+        let mut end_idx = None;
+        for (k, c) in inner.char_indices() {
+            match c {
+                '{' => depth += 1,
+                '}' => {
+                    depth -= 1;
+                    if depth == 0 {
+                        end_idx = Some(k);
+                        break;
+                    }
+                }
+                _ => {}
+            }
+        }
+        let Some(end_idx) = end_idx else {
+            break;
+        };
+        let inside = &inner[..end_idx];
+        // inside 形如 '0': <'Shift_L'>, '1': <'Shift_R'>，单引号里的是按键
+        let keys: Vec<String> = inside
+            .split('\'')
+            .enumerate()
+            .filter(|(k, _)| k % 2 == 1)
+            .map(|(_, v)| v.to_string())
+            .filter(|v| !v.is_empty())
+            .collect();
+        if name != "Hotkey" {
+            result.push((name.to_string(), keys));
+        }
+        i = after_name;
+    }
+    result
+}
+
+/// Shift 单键（Shift_L / Shift_R，或 Shift+Shift_L 这种带修饰的），是单按的那个就返回它，否则空串。
+fn bare_shift(key: &str) -> String {
+    let name = key.rsplit('+').next().unwrap_or("");
+    if name == "Shift_L" || name == "Shift_R" {
+        name.to_string()
+    } else {
+        String::new()
+    }
+}
+
+
+/// 冲突行（"选项=按键" 每行一条）的内部版本，供 shift_free_on 用。
+fn shift_conflicts_lines() -> String {
+    Config::shift_conflicts()
+}
+
+/// 某个快捷键选项当前的按键列表（读自 D-Bus GetConfig）。
+fn fcitx_option_keys(option: &str) -> Vec<String> {
+    fcitx_global_hotkey()
+        .unwrap_or_default()
+        .into_iter()
+        .find(|(name, _)| name == option)
+        .map(|(_, keys)| keys)
+        .unwrap_or_default()
+}
+
+/// 通过 D-Bus SetConfig 写入快捷键列表。updates 是 (选项, 按键列表)。成功返回 true。
+/// 格式与旧版 hotkey_config_variant 一致：外层 {"Hotkey": {选项: {"0": 键, "1": 键}}}，
+/// 每个按键列表是下标为字符串的字典（不是数组）。
+fn fcitx_set_hotkeys(updates: &[(String, Vec<String>)]) -> bool {
+    let mut options = Vec::new();
+    for (option, keys) in updates {
+        let items: Vec<String> = keys
+            .iter()
+            .enumerate()
+            .map(|(i, k)| format!("'{i}': <'{k}'>"))
+            .collect();
+        options.push(format!("'{option}': <{{{}}}>", items.join(", ")));
+    }
+    let hotkey = format!("{{{}}}", options.join(", "));
+    // SetConfig 的第二个参数是 variant，外层必须用 <...> 包住
+    let payload = format!("<{{'Hotkey': <{hotkey}>}}>");
+    let output = std::process::Command::new("gdbus")
+        .args([
+            "call", "--session", "--dest", "org.fcitx.Fcitx5",
+            "--object-path", "/controller",
+            "--method", "org.fcitx.Fcitx.Controller1.SetConfig",
+            "fcitx://config/global",
+            &payload,
+        ])
+        .output();
+    match output {
+        Ok(out) => out.status.success(),
+        Err(_) => false,
+    }
+}
+
+/// 配置文件里（而不是内存里）是否仍有 Shift 冲突。
+/// 按 [Hotkey/选项] 段解析（同旧版 parse_fcitx_hotkey），只看快捷键选项，忽略注释行。
+fn fcitx_file_hotkey_has_shift_conflict() -> bool {
+    let text = read(&format!("{}/fcitx5/config", config_home()));
+    let mut current_option: Option<String> = None;
+    for raw in text.lines() {
+        let line = raw.trim();
+        if line.is_empty() || line.starts_with('#') {
+            continue;
+        }
+        if let Some(section) = line.strip_prefix("[Hotkey/").and_then(|r| r.strip_suffix(']')) {
+            current_option = Some(section.to_string());
+            continue;
+        }
+        if line.starts_with('[') {
+            current_option = None;
+            continue;
+        }
+        let Some(option) = current_option.as_ref() else {
+            continue;
+        };
+        if !FCITX_KEY_OPTIONS.contains(&option.as_str()) {
+            continue;
+        }
+        // 列表项形如 0=Shift_L
+        if let Some((_, key)) = line.split_once('=') {
+            if !bare_shift(key.trim()).is_empty() {
+                return true;
+            }
+        }
+    }
+    false
+}
+
+
+/// 离线翻译模型所在路径：~/.local/share/archtype/models/HY-MT1.5-1.8B-Q4_K_M.gguf
+fn local_model_path() -> std::path::PathBuf {
+    std::path::PathBuf::from(format!("{}/models/{}", Config::data_dir(), LOCAL_MODEL_FILE))
+}
+
+/// llama.cpp 运行程序目录：~/.local/share/archtype/llama
+fn local_llama_dir() -> std::path::PathBuf {
+    std::path::PathBuf::from(format!("{}/llama", Config::data_dir()))
+}
+
+/// llama-server 可执行文件路径（解压后位于 llama-<build>/llama-server）
+fn llama_server_path() -> std::path::PathBuf {
+    local_llama_dir().join(format!("llama-{LLAMA_BUILD}")).join("llama-server")
+}
+
+/// 下载 → 校验 SHA256 → 才改名。校验不过删掉 .part（同旧版），不留坏文件。
+fn fetch_and_verify(url: &str, dest: &std::path::Path, size: u64, sha: &str) -> Result<(), String> {
+    let dest_str = dest.to_string_lossy().to_string();
+    download_resumable(url, &dest_str, size, &LOCAL_PROGRESS, &LOCAL_CANCEL)?;
+    let digest = sha256_of(&dest_str)?;
+    if digest != sha {
+        let _ = fs::remove_file(&dest_str);
+        return Err("下载的文件校验不对（SHA256 不一致），已删除，请重试".to_string());
+    }
+    Ok(())
+}
+
+/// 下载 llama.cpp 运行程序，校验后解压到 llama 目录，并设为可执行。
+fn install_llama() -> Result<(), String> {
+    let archive = local_llama_dir().join("llama.tar.gz");
+    fs::create_dir_all(local_llama_dir()).map_err(|e| e.to_string())?;
+    fetch_and_verify(LLAMA_URL, &archive, LLAMA_SIZE, LLAMA_SHA256)?;
+    let status = std::process::Command::new("tar")
+        .arg("-xzf")
+        .arg(&archive)
+        .arg("-C")
+        .arg(local_llama_dir())
+        .status()
+        .map_err(|e| format!("跑不了 tar：{e}"))?;
+    let _ = fs::remove_file(&archive);
+    if !status.success() {
+        return Err("解压 llama-server 失败".to_string());
+    }
+    let server = llama_server_path();
+    use std::os::unix::fs::PermissionsExt;
+    let mut perms = fs::metadata(&server).map_err(|e| e.to_string())?.permissions();
+    perms.set_mode(0o755);
+    fs::set_permissions(&server, perms).map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+
+/// 离线翻译下载状态（字符串，供轮询）。
+static LOCAL_STATE: LazyLock<Mutex<String>> = LazyLock::new(|| Mutex::new("idle".to_string()));
+
+fn set_local_state(state: &str) {
+    if let Ok(mut guard) = LOCAL_STATE.lock() {
+        *guard = state.to_string();
+    }
+}
+
+/// 后台线程里做的事：先模型，后运行程序；每步都校验。
+fn local_download_work() -> Result<(), String> {
+    if !local_model_path().is_file() {
+        fetch_and_verify(LOCAL_MODEL_URL, &local_model_path(), LOCAL_MODEL_SIZE, LOCAL_MODEL_SHA256)?;
+    }
+    if !llama_server_path().is_file() {
+        set_local_state("installing");
+        install_llama()?;
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -811,4 +1675,74 @@ mod tests {
         assert!(prompt.contains("你好"));
         assert!(prompt.contains("随意"));
     }
+}
+
+/// 拼音词库缓存（读入内存后查词快速）
+static LEXICON_DATA: LazyLock<Mutex<Option<String>>> = LazyLock::new(|| Mutex::new(None));
+
+/// 懒加载词库：尝试候选路径直到找到。
+fn load_lexicon() -> Option<String> {
+    if let Ok(mut cache) = LEXICON_DATA.lock() {
+        if cache.is_some() {
+            return cache.clone();
+        }
+    }
+    let candidates = [
+        std::env::var("ARCHTYPE_LEXICON").ok().filter(|p| !p.is_empty()),
+        Some(format!("{}/lexicon.tsv", Config::data_dir())),
+        Some("/usr/share/archtype/lexicon.tsv".to_string()),
+    ];
+    for path_opt in candidates.iter() {
+        if let Some(path) = path_opt {
+            if let Ok(text) = fs::read_to_string(path) {
+                if let Ok(mut cache) = LEXICON_DATA.lock() {
+                    *cache = Some(text.clone());
+                }
+                return Some(text);
+            }
+        }
+    }
+    None
+}
+
+/// 在词库里查一个词（或单字）的编码：行格式 "编码\t词\t频率"，取频率最高的一条。
+/// 只精确比较第二列，不会误中别的行。查不到返回 None。
+fn best_code_for(data: &str, word: &str) -> Option<String> {
+    let mut best: Option<(f64, &str)> = None;
+    for line in data.lines() {
+        let mut cols = line.split('\t');
+        let (Some(code), Some(text), Some(freq)) = (cols.next(), cols.next(), cols.next()) else {
+            continue;
+        };
+        if text != word {
+            continue;
+        }
+        let freq = freq.trim().parse::<f64>().unwrap_or(0.0);
+        if best.is_none_or(|(best_freq, _)| freq > best_freq) {
+            best = Some((freq, code));
+        }
+    }
+    best.map(|(_, code)| code.to_string())
+}
+
+/// 猜一个词的拼音编码：先整词查，查不到就逐字拼接；有字查不出返回 ""。
+/// 对应旧版 PinyinGuesser.guess。
+pub fn pinyin_guess(word: String) -> String {
+    if word.is_empty() {
+        return String::new();
+    }
+    let Some(data) = load_lexicon() else {
+        return String::new();
+    };
+    if let Some(code) = best_code_for(&data, &word) {
+        return code;
+    }
+    let mut readings = Vec::new();
+    for ch in word.chars() {
+        match best_code_for(&data, &ch.to_string()) {
+            Some(code) => readings.push(code),
+            None => return String::new(),
+        }
+    }
+    readings.join(" ")
 }

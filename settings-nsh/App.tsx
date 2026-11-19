@@ -891,6 +891,10 @@ function summarizeStats(days: Record<string, StatsDay>, today: string): StatsSum
   };
 }
 
+function humanSize(bytes: number): string {
+  return bytes >= 1e9 ? `${(bytes / 1e9).toFixed(2)} GB` : `${Math.round(bytes / 1e6)} MB`;
+}
+
 function formatNumber(value: number): string {
   return Math.round(value)
     .toString()
@@ -933,6 +937,21 @@ function App() {
   const shuangpin = signal(Config.get("ShuangpinScheme") || "Ziranma");
   const typo = signal(boolOf(Config.get("TypoCorrection"), true));
   const shiftToggle = signal(Config.get("ShiftToggle") || "Both");
+  const shiftConflicts = signal(Config.shiftConflicts());
+  const shiftFreed = signal(Config.shiftFreeState());
+  const shiftFreeOnState = signal(shiftFreed() !== "");
+  const shiftConflictVisible = computed(
+    () => shiftToggle() !== "Off" && (shiftConflicts() !== "" || shiftFreed() !== ""),
+  );
+  const shiftConflictText = computed(() => {
+    const names = shiftConflicts()
+      .split("\n")
+      .map((line) => line.split("=")[1] ?? "")
+      .filter((key) => key !== "")
+      .map((key) => (key === "Shift_L" ? "左 Shift" : key === "Shift_R" ? "右 Shift" : key));
+    const unique = Array.from(new Set(names));
+    return unique.length > 0 ? `${unique.join("、")} 已被 fcitx5 的「临时切换输入法」占用` : "";
+  });
   const autoPair = signal(boolOf(Config.get("AutoPairPunct"), false));
   const fuzzyOn = signal(boolOf(Config.get("Fuzzy"), false));
   const fuzzy = signal<Record<string, boolean>>(
@@ -957,17 +976,55 @@ function App() {
   const customWord = signal("");
   const customPinyin = signal("");
   const customMessage = signal("");
+  const customSearch = signal("");
+  const customPinyinEdited = signal(false);
   const voiceState = signal(Config.voiceDownloadState());
+  const voiceProgress = signal(Config.voiceDownloadProgress());
+  const voicePartial = signal(Config.voicePartialBytes());
   const voiceBusy = computed(
     () =>
       voiceState().startsWith("downloading") ||
       voiceState().startsWith("verifying") ||
       voiceState().startsWith("extracting"),
   );
+  const localMissing = signal(Config.localMissing());
+  const localState = signal(Config.localDownloadState());
+  const localProgress = signal(Config.localDownloadProgress());
+  const localBusy = computed(() => localState().startsWith("downloading") || localState().startsWith("installing"));
+  const localSubtitle = computed(() => {
+    const state = localState();
+    const [doneText, totalText] = localProgress().split("/");
+    const done = Number(doneText) || 0;
+    const total = Number(totalText) || 0;
+    if (state === "downloading" && total > 0) {
+      return `正在下载模型：${humanSize(done)} / ${humanSize(total)}（${Math.floor((done * 100) / total)}%）`;
+    }
+    if (state === "downloading") return "正在连接…";
+    if (state === "installing") return "正在安装运行程序…";
+    if (state === "done") return "已完成";
+    if (state.startsWith("error:")) return `没下载好：${state.slice(6)}`;
+    if (localMissing() === "ready") return "模型和运行程序都已就绪";
+    const missing = localMissing();
+    if (missing === "model") return "还差模型（约 1.1 GB）";
+    if (missing === "llama") return "还差运行程序（约 23 MB）";
+    return "要下载模型（约 1.1 GB）和运行程序（约 23 MB），翻译时占 1.5 GB 左右内存";
+  });
   const voiceModelSubtitle = computed(() => {
-    if (voiceBusy()) return voiceState();
-    if (voiceState().startsWith("error:")) return `没下载好：${voiceState().slice(6)}`;
-    if (voiceModel()) return `已下载（${voiceModel()}）`;
+    const state = voiceState();
+    const [doneText, totalText] = voiceProgress().split("/");
+    const done = Number(doneText) || 0;
+    const total = Number(totalText) || 0;
+    if (state === "downloading" && total > 0) {
+      return `正在下载：${humanSize(done)} / ${humanSize(total)}（${Math.floor((done * 100) / total)}%）`;
+    }
+    if (state === "downloading") return "正在连接…";
+    if (state === "verifying") return "正在校验…";
+    if (state === "extracting") return "正在解包…";
+    if (state === "done") return "已完成";
+    if (state.startsWith("error:")) return `没下载好：${state.slice(6)}`;
+    if (voiceModel()) return "已下载";
+    const partial = Number(voicePartial()) || 0;
+    if (partial > 0) return `下了 ${humanSize(partial)} / ${humanSize(102920639)}，可以接着下`;
     return "在本机识别，录音不上传。要下载 102.9 MB，解开后约 130 MB";
   });
   const checkUpdate = signal(boolOf(Config.get("CheckUpdate"), true));
@@ -984,6 +1041,12 @@ function App() {
     setInterval(() => {
       const state = Config.voiceDownloadState();
       voiceState.set(state);
+      voiceProgress.set(Config.voiceDownloadProgress());
+      voicePartial.set(Config.voicePartialBytes());
+      const local = Config.localDownloadState();
+      localState.set(local);
+      localProgress.set(Config.localDownloadProgress());
+      if (local === "done") localMissing.set(Config.localMissing());
       if (state === "done") voiceModel.set(Config.voiceModel());
     }, 1000);
   }
@@ -1040,6 +1103,20 @@ function App() {
   const keysComma = signal(boolOf(Config.get("PageKeysCommaPeriod"), false));
   const keysTab = signal(boolOf(Config.get("PageKeysTab"), false));
 
+  const setShiftFree = (on: boolean) => {
+    const result = on ? Config.shiftFreeOn() : Config.shiftFreeOff();
+    if (result === "memory") {
+      shiftFreeOnState.set(on);
+      return;
+    }
+    shiftFreeOnState.set(on);
+    shiftFreed.set(Config.shiftFreeState());
+    shiftConflicts.set(Config.shiftConflicts());
+    if (result !== "ok" && result !== "没有要让出的 Shift" && result !== "没有记录要加回的 Shift") {
+      shiftFreeOnState.set(!on);
+    }
+  };
+
   const clearStats = () => {
     if (clearState() !== "确认清除") {
       clearState.set("确认清除");
@@ -1086,12 +1163,36 @@ function App() {
     testState.set(result.ok ? `成功：${result.text ?? ""}` : `失败：${result.error ?? "未知错误"}`);
   };
 
+  const onCustomWordChange = (value: string) => {
+    customWord.set(value);
+    if (!customPinyinEdited()) {
+      customPinyin.set(value.trim() === "" ? "" : Config.pinyinGuessWord(value.trim()));
+    }
+  };
+
+  const onCustomPinyinChange = (value: string) => {
+    customPinyin.set(value);
+    customPinyinEdited.set(true);
+  };
+
+  const exportCustomWords = () => {
+    const path = Config.customWordsExport();
+    customMessage.set(path ? `已导出到 ${path}` : "导出失败");
+  };
+
+  const importCustomWords = () => {
+    const result = Config.customWordsImport();
+    customMessage.set(result);
+    customWords.set(Config.customWords());
+  };
+
   const addCustomWord = () => {
     const added = Config.customWordAdd(customWord(), customPinyin());
     customMessage.set(added ? "已添加" : "词和编码都要填");
     if (added) {
       customWord.set("");
       customPinyin.set("");
+      customPinyinEdited.set(false);
       customWords.set(Config.customWords());
     }
   };
@@ -1104,6 +1205,25 @@ function App() {
   const downloadVoice = () => {
     voiceState.set("downloading");
     Config.voiceDownloadStart();
+  };
+
+  const downloadLocal = () => {
+    localState.set("downloading");
+    Config.localDownloadStart();
+  };
+
+  const cancelLocal = () => {
+    Config.localDownloadCancel();
+  };
+
+  const deleteLocal = () => {
+    Config.localDelete();
+    localMissing.set(Config.localMissing());
+    localState.set("idle");
+  };
+
+  const cancelVoice = () => {
+    Config.voiceDownloadCancel();
   };
 
   const deleteVoice = () => {
@@ -1437,6 +1557,14 @@ function App() {
                     }}
                   />
                 </Row>
+                {shiftConflictVisible() ? (
+                  <Row title="Shift 只给 ArchType 用" subtitle={shiftConflictText()}>
+                    <Toggle
+                      checked={shiftFreeOnState()}
+                      onChange={(on) => setShiftFree(on)}
+                    />
+                  </Row>
+                ) : null}
               </Card>
 
               <Text style={{ color: ui().muted, fontSize: 12 }}>拼音</Text>
@@ -1943,8 +2071,7 @@ function App() {
                   <SmallButton
                     title={voiceBusy() ? "取消" : voiceModel() ? "删除" : "下载"}
                     tone={voiceModel() || voiceBusy() ? "plain" : "accent"}
-                    onPress={voiceBusy() ? () => {} : voiceModel() ? deleteVoice : downloadVoice}
-                    disabled={voiceBusy()}
+                    onPress={voiceBusy() ? cancelVoice : voiceModel() ? deleteVoice : downloadVoice}
                   />
                 </Row>
               </Card>
@@ -2079,23 +2206,47 @@ function App() {
                   </Text>
                 </>
               ) : null}
+
+              {engineOf(translateLocal(), translateBase()) === "local" ? (
+                <>
+                  <Text style={{ color: ui().muted, fontSize: 12 }}>离线翻译模型</Text>
+                  <Card>
+                    <Row title="翻译模型" subtitle={localSubtitle()}>
+                      <SmallButton
+                        title={localBusy() ? "取消" : localMissing() === "ready" ? "删除" : "下载"}
+                        tone={localMissing() === "ready" || localBusy() ? "plain" : "accent"}
+                        onPress={
+                          localBusy()
+                            ? cancelLocal
+                            : localMissing() === "ready"
+                              ? deleteLocal
+                              : downloadLocal
+                        }
+                      />
+                    </Row>
+                  </Card>
+                  <Text style={{ color: ui().muted, fontSize: 12 }}>
+                    模型属于腾讯，用的是《腾讯混元社区许可协议》：不适用于欧盟、英国和韩国境内，月活超过 1 亿的产品要另外向腾讯申请。模型从 Hugging Face 下载，ArchType 不分发它。
+                  </Text>
+                </>
+              ) : null}
             </>
           ) : current() === 5 ? (
             <>
               <Text style={{ color: ui().muted, fontSize: 12 }}>自定义词</Text>
               <Card>
-                <Row title="词">
+                <Row title="词" subtitle="编码会按词自动填好，多音字请检查">
                   <InputBox
                     value={customWord()}
                     placeholder="例如：ArchType"
-                    onChange={(value) => customWord.set(value)}
+                    onChange={onCustomWordChange}
                   />
                 </Row>
                 <Row title="编码" subtitle="拼音（空格分开音节），也可以是 mail 这类字母">
                   <InputBox
                     value={customPinyin()}
                     placeholder="例如：a r c h"
-                    onChange={(value) => customPinyin.set(value)}
+                    onChange={onCustomPinyinChange}
                   />
                 </Row>
                 <Row title="添加" subtitle={customMessage()}>
@@ -2103,19 +2254,45 @@ function App() {
                 </Row>
               </Card>
               <Card>
+                <Row title="搜索" subtitle="按词或编码过滤">
+                  <InputBox
+                    value={customSearch()}
+                    placeholder="输入词或编码"
+                    onChange={(value) => customSearch.set(value)}
+                  />
+                </Row>
+                <Row title="导入导出" subtitle="~/Downloads/archtype-custom-words.tsv">
+                  <SmallButton title="导出" onPress={exportCustomWords} />
+                  <SmallButton title="导入" onPress={importCustomWords} />
+                </Row>
+              </Card>
+              <Card>
                 {customWords().trim() ? (
-                  customWords()
-                    .split("\n")
-                    .filter((line) => line.trim() !== "" && !line.trimStart().startsWith("#"))
-                    .map((line) => {
-                      const parts = line.split("\t");
-                      const word = parts[1] ?? parts[0];
-                      return (
-                        <Row title={word} subtitle={`编码 ${parts[0] ?? ""}`}>
-                          <SmallButton title="删除" onPress={() => removeCustomWord(word)} />
-                        </Row>
-                      );
-                    })
+                  (() => {
+                    const query = customSearch().trim().toLowerCase();
+                    const rows = customWords()
+                      .split("\n")
+                      .filter((line) => line.trim() !== "" && !line.trimStart().startsWith("#"))
+                      .filter((line) => {
+                        if (query === "") return true;
+                        const parts = line.split("\t");
+                        return (parts[1] ?? "").toLowerCase().includes(query)
+                          || (parts[0] ?? "").toLowerCase().includes(query);
+                      });
+                    return rows.length > 0 ? (
+                      rows.map((line) => {
+                        const parts = line.split("\t");
+                        const word = parts[1] ?? parts[0];
+                        return (
+                          <Row title={word} subtitle={`编码 ${parts[0] ?? ""}`}>
+                            <SmallButton title="删除" onPress={() => removeCustomWord(word)} />
+                          </Row>
+                        );
+                      })
+                    ) : (
+                      <Row title="没找到" subtitle="换个词或编码再搜" />
+                    );
+                  })()
                 ) : (
                   <Row title="还没有自定义词" subtitle="在上面的卡片里添加" />
                 )}
