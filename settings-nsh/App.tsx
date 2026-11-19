@@ -351,6 +351,7 @@ function KeyChip(props: { label: string; count: number; max: number }) {
   return (
     <View
       style={{
+        alignSelf: "flex-start",
         flexDirection: "row",
         alignItems: "center",
         gap: 6,
@@ -2076,15 +2077,17 @@ function App() {
                     <Text style={{ color: ui().muted, fontSize: 12 }}>其他键</Text>
                     {Array.from({ length: Math.ceil(otherKeys(summary().keys).length / 5) }).map(
                       (_, rowIndex) => (
-                        <View style={{ flexDirection: "row", gap: 6 }}>
+                        <View style={{ flexDirection: "row", width: "100%", gap: 6 }}>
                           {otherKeys(summary().keys)
                             .slice(rowIndex * 5, rowIndex * 5 + 5)
                             .map((key) => (
-                              <KeyChip
-                                label={key.label}
-                                count={key.count}
-                                max={maxKeyCount(summary().keys)}
-                              />
+                              <View style={{ flex: 1 }}>
+                                <KeyChip
+                                  label={key.label}
+                                  count={key.count}
+                                  max={maxKeyCount(summary().keys)}
+                                />
+                              </View>
                             ))}
                         </View>
                       ),
