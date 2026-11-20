@@ -35,6 +35,19 @@ let
     hash = "sha256-s1pK92Vz67HHtALFKF0zu7HOKzJEdwvvnpCCbD/PyKo=";
   };
 
+  # 图形设置界面（NSH）：直接用发版时 CI 打好的包，hash 跟着发版更新
+  settingsAssets = {
+    x86_64-linux = {
+      url = "https://github.com/Goway-Hui/ArchType/releases/download/v${version}/archtype-settings-nsh-${version}-linux-x86_64.tar.gz";
+      hash = "sha256-GZ/Lb0J75bpQPbNJkQ9sUHqEiWtjpdknIDu6JPXckjo=";
+    };
+    aarch64-linux = {
+      url = "https://github.com/Goway-Hui/ArchType/releases/download/v${version}/archtype-settings-nsh-${version}-linux-aarch64.tar.gz";
+      hash = "sha256-p2lnzQDVvz1QYbALAWsYEHgXPmWVlDwk/mxQCrNfY/U=";
+    };
+  };
+  settingsPackage = fetchurl settingsAssets.${stdenv.hostPlatform.system};
+
 in
 stdenv.mkDerivation {
   pname = "archtype";
@@ -59,18 +72,6 @@ stdenv.mkDerivation {
 
   cargoDeps = rustPlatform.importCargoLock { lockFile = ../Cargo.lock; };
 
-  # 图形设置界面（NSH）：直接用发版时 CI 打好的包，hash 跟着发版更新
-  settingsAssets = {
-    x86_64-linux = {
-      url = "https://github.com/Goway-Hui/ArchType/releases/download/v${version}/archtype-settings-nsh-${version}-linux-x86_64.tar.gz";
-      hash = "sha256-GZ/Lb0J75bpQPbNJkQ9sUHqEiWtjpdknIDu6JPXckjo=";
-    };
-    aarch64-linux = {
-      url = "https://github.com/Goway-Hui/ArchType/releases/download/v${version}/archtype-settings-nsh-${version}-linux-aarch64.tar.gz";
-      hash = "sha256-p2lnzQDVvz1QYbALAWsYEHgXPmWVlDwk/mxQCrNfY/U=";
-    };
-  };
-  settingsPackage = fetchurl settingsAssets.${stdenv.hostPlatform.system};
 
   nativeBuildInputs = [
     rustPlatform.cargoSetupHook
