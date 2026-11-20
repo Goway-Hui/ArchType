@@ -66,16 +66,29 @@ jobs:
         run: |
           curl -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal
           echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
+      # settings-nsh 是独立 workspace（自己的 [workspace]），target 在 settings-nsh/target；
+      # rust-cache 默认只缓存仓库根的 target，不声明这里就会每次全量编译 nsh-core / nsh-base
       - uses: Swatinem/rust-cache@v2
         with:
+          workspaces: settings-nsh
           key: settings-nsh-${{ matrix.arch }}
       # nsh CLI 不在 crates.io（那里是同名的旧库），用官方安装脚本取 GitHub 发布；
-      # 版本要和在用的 nsh-core / nsh-base 对齐。
+      # 80 MB 的包装一次缓存起来，版本变了 key 跟着变
+
+      - uses: actions/cache@v4
+        id: nsh-cli
+        with:
+          path: |
+            ~/.nsh
+            ~/.local/bin/nsh
+          key: nsh-cli-${{ runner.os }}-${{ matrix.arch }}-v0.6.0
       - name: nsh
         env:
           NSH_VERSION: v0.6.0
         run: |
-          curl -fsSL https://nsh.dev/install.sh | sh
+          if [ "${{ steps.nsh-cli.outputs.cache-hit }}" != "true" ]; then
+            curl -fsSL https://nsh.dev/install.sh | sh
+          fi
           echo "$HOME/.local/bin" >> "$GITHUB_PATH"
       - name: 类型检查与无头测试
         working-directory: settings-nsh
