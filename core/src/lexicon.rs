@@ -1033,7 +1033,13 @@ impl UserLexicon {
     /// 把用户词写成 TSV（与 lexicon 格式一致）。空的也写（只有注释行）：
     /// 用户把学到的词都删掉以后，旧文件不能留着，不然重启又回来了。
     pub fn save_tsv<P: AsRef<Path>>(&self, path: P) -> Result<()> {
-        let out = user_dict_text(&self.words());
+        // 锁中毒时不能走 words()（它退化空表）：直接落盘会把用户词库清成只剩注释
+        let words = self
+            .user
+            .read()
+            .map(|u| u.list.clone())
+            .map_err(|_| anyhow::anyhow!("用户词库锁已损坏，拒绝写回"))?;
+        let out = user_dict_text(&words);
         // 输入法进程随时可能被系统杀掉：写一半的用户词库会把学到的词全弄丢
         crate::fsutil::write_atomic(path.as_ref(), out.as_bytes())
             .with_context(|| format!("写入用户词库失败: {}", path.as_ref().display()))

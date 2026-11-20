@@ -67,21 +67,57 @@ fn parse_group_info(reply: &str) -> (String, String, Vec<(String, String)>) {
     let strings = all_strings(reply);
     let group = strings.first().cloned().unwrap_or_default();
     let layout = strings.get(1).cloned().unwrap_or_default();
+    (group, layout, parse_items(reply))
+}
+
+/// 只取 `[` 与 `]` 之间的 `('name', 'layout')` 对。以前从 reply 开头找 `('`，命中的是外层
+/// `('Default', 'us', ...)`，解析出脏数据，回写时 `SetInputMethodGroupInfo` 必然失败。
+fn parse_items(reply: &str) -> Vec<(String, String)> {
+    let Some(open) = reply.find('[') else { return Vec::new() };
+    let Some(close) = reply[open..].find(']') else { return Vec::new() };
+    let inner = &reply[open + 1..open + close];
     let mut items = Vec::new();
-    let mut rest = reply;
-    while let Some(start) = rest.find("('") {
-        rest = &rest[start + 1..];
-        let Some(end) = rest.find("')") else { break };
-        let pair = &rest[1..end];
-        let mut parts = pair.splitn(2, "', '");
-        let name = parts.next().unwrap_or("").to_string();
-        let item_layout = parts.next().unwrap_or("").to_string();
+    let mut at = 0;
+    while let Some(start) = inner[at..].find("('") {
+        let start = at + start;
+        let Some((name, after_name)) = read_quoted(inner, start + 1) else { break };
+        // 跳过 `,` 与空白，读布局字符串
+        let mut j = after_name;
+        while inner.as_bytes().get(j).is_some_and(|b| *b == b' ' || *b == b',') {
+            j += 1;
+        }
+        let Some((item_layout, after_layout)) = read_quoted(inner, j) else { break };
         if !name.is_empty() {
             items.push((name, item_layout));
         }
-        rest = &rest[end + 1..];
+        at = after_layout;
     }
-    (group, layout, items)
+    items
+}
+
+/// 从 `at`（指向单引号）起读一个 GVariant 字符串，处理 `\\` 与 `\'` 转义。
+fn read_quoted(s: &str, at: usize) -> Option<(String, usize)> {
+    let bytes = s.as_bytes();
+    if bytes.get(at) != Some(&b'\'') {
+        return None;
+    }
+    let mut out = String::new();
+    let mut i = at + 1;
+    while i < bytes.len() {
+        match bytes[i] {
+            b'\'' => return Some((out, i + 1)),
+            b'\\' if i + 1 < bytes.len() => {
+                out.push(bytes[i + 1] as char);
+                i += 2;
+            }
+            _ => {
+                let ch = s[i..].chars().next()?;
+                out.push(ch);
+                i += ch.len_utf8();
+            }
+        }
+    }
+    None
 }
 
 fn all_strings(reply: &str) -> Vec<String> {
@@ -259,5 +295,44 @@ pub fn restart_needed(running: &Option<String>, installed: &str) -> bool {
     match running {
         None => false,
         Some(version) => !installed.starts_with('@') && version != installed,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parses_group_info_from_the_entry_list() {
+        let reply = "('Default', 'us', [('keyboard-us', ''), ('archtype', '')])";
+        let (group, layout, items) = parse_group_info(reply);
+        assert_eq!(group, "Default");
+        assert_eq!(layout, "us");
+        assert_eq!(
+            items,
+            vec![
+                ("keyboard-us".to_string(), String::new()),
+                ("archtype".to_string(), String::new()),
+            ]
+        );
+    }
+
+    #[test]
+    fn keeps_item_layouts_and_escapes() {
+        let reply = "('Default', 'us', [('keyboard-us', 'us'), ('archtype', 'de-nodeadkeys')])";
+        let (_, _, items) = parse_group_info(reply);
+        assert_eq!(items[1], ("archtype".to_string(), "de-nodeadkeys".to_string()));
+
+        let reply = "('Default', 'us', [('it\\'s', '')])";
+        let (_, _, items) = parse_group_info(reply);
+        assert_eq!(items[0].0, "it's");
+    }
+
+    #[test]
+    fn missing_entry_list_yields_no_items() {
+        let (group, layout, items) = parse_group_info("('Default', 'us', [])");
+        assert_eq!(group, "Default");
+        assert_eq!(layout, "us");
+        assert!(items.is_empty());
     }
 }

@@ -101,6 +101,9 @@ pub fn parse(d: &[u8]) -> Result<HashMap<String, Rec>> {
     if d.get(..4) != Some(b"XNET") {
         bail!("不是 xnet 模型文件");
     }
+    if d.len() < 8 {
+        bail!("xnet 模型文件被截断");
+    }
     // 只读记录表的首条名称以 "/" 或字母开头，前缀为 u32 长度；逐个候选尝试完整解析
     let mut p = 8;
     while let Some(i) = d[p..]

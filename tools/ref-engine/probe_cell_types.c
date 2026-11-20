@@ -12,10 +12,12 @@ static void set_verbosity(void* H){
   *(volatile int*)(base + (0x10361f3f8UL - 0x100000000UL)) = 9;
 }
 int main(int argc,char**argv){
+  if(argc<2){fprintf(stderr,"usage: %s <dylib>\n",argv[0]);return 1;}
   void*H=dlopen(argv[1],RTLD_NOW|RTLD_LOCAL);
   if(!H){puts("dlopen fail");return 1;}
   int(*init)(const void*)=dlsym(H,"wxime_initialize");
   int(*addcell)(const char*,int,const void*)=dlsym(H,"wxime_add_cell_dict");
+  if(!init||!addcell){puts("missing symbol");return 2;}
   static uint8_t c[512];
   *(const char**)(c+0x18)="/Library/Input Methods/WeType.app/Contents/Resources";
   *(void**)(c+0)=(void*)my_log;

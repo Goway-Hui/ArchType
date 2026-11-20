@@ -123,7 +123,9 @@ async function handle(cmd, arg, chatId) {
 }
 
 // ---------- 入群验证 ----------
-const MAX_TRIES = 3;
+// 只给 1 次机会：每次答对概率就是 1/选项数，机会越多随机点击的通过率越高
+// （4 选 1 × 3 次约为 58%）。提高选项数、降低机会数比「答错换新题」更有效。
+const MAX_TRIES = 1;
 
 // 出题：a + b，答案与干扰项都是两位数量级，干扰项与答案差 1~9 且互不相同。
 // 用文字题而非图片验证码：真正的门槛是"需要一次人工交互"，纯文字已能挡掉绝大多数自动化广告号，
@@ -133,7 +135,7 @@ function makeCaptcha() {
   const b = 10 + Math.floor(Math.random() * 90);
   const ans = a + b;
   const opts = new Set([ans]);
-  while (opts.size < 4) {
+  while (opts.size < 6) {
     const d = 1 + Math.floor(Math.random() * 9);
     opts.add(ans + (Math.random() < 0.5 ? -d : d));
   }

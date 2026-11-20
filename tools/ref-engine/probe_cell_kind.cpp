@@ -31,6 +31,7 @@ asm(
 static void on_segv(int, siginfo_t*, void*){ const char m[]="CRASH\n"; write(2,m,sizeof m-1); _exit(7); }
 
 int main(int argc,char**argv){
+  if(argc<3){fprintf(stderr,"usage: %s <dylib> <ctype> [cells...]\n",argv[0]);return 1;}
   struct sigaction sa; memset(&sa,0,sizeof sa); sa.sa_sigaction=on_segv; sa.sa_flags=SA_SIGINFO;
   sigaction(SIGSEGV,&sa,0); sigaction(SIGBUS,&sa,0);
   void* H = dlopen(argv[1], RTLD_NOW|RTLD_LOCAL);
@@ -39,6 +40,7 @@ int main(int argc,char**argv){
   Dl_info di; memset(&di,0,sizeof di); dladdr(vs,&di); g_base=(unsigned long)di.dli_fbase;
   auto init = (int(*)(const void*))dlsym(H,"wxime_initialize");
   auto cfg  = (int(*)(void*))dlsym(H,"wxime_config_dict");
+  if(!init || !cfg){ puts("missing symbol"); return 2; }
   static uint8_t c[512];
   *(const char**)(c+0x18)="/Library/Input Methods/WeType.app/Contents/Resources";
   *(void**)(c+0)=(void*)my_log;
@@ -52,6 +54,7 @@ int main(int argc,char**argv){
   static dictcfg_t dc; dc.items=items; dc.count=n; dc.user_dir="/tmp/archtype-ref/userdata";
   int rc=cfg(&dc); printf("config=%d items=%u", rc, n); putchar(10);
   auto addcell = (int(*)(const char*,int,const void*))dlsym(H,"wxime_add_cell_dict");
+  if(!addcell){ puts("missing symbol"); return 2; }
   int ctype = (int)strtoul(argv[2],0,0);
   for(int i=3;i<argc;i++){ printf("addcell %s type %d -> %d", argv[i], ctype, addcell(argv[i], ctype, 0)); putchar(10); }
 

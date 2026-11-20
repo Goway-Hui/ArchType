@@ -9,8 +9,12 @@ static void my_log(int level, const char* msg, int len){
 }
 
 int main(int argc, char** argv){
+    if(argc < 3){ fprintf(stderr, "usage: %s <dylib> <offset>\n", argv[0]); return 2; }
     long off = strtol(argv[2], 0, 0);
     static uint8_t cfg[512];
+    if(off < 0 || (unsigned long)off + sizeof(void*) > sizeof cfg){
+        fprintf(stderr, "offset out of range\n"); return 2;
+    }
     memset(cfg, 0, sizeof cfg);
     *(const char**)(cfg+0x18) = "/Library/Input Methods/WeType.app/Contents/Resources";
     *(void**)(cfg+off) = (void*)my_log;

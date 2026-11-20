@@ -19,8 +19,6 @@ pub enum KeyMsg {
 }
 
 pub fn run(opt: Options) -> Result<()> {
-    let cfg = crate::trigger_config(&opt);
-
     // 采集线程通过 channel 把 16k 单声道 PCM 送过来
     let (audio_tx, audio_rx) = channel::<Vec<i16>>();
     start_capture(opt.device.clone(), audio_tx).context("启动麦克风失败")?;
@@ -39,6 +37,11 @@ pub fn run(opt: Options) -> Result<()> {
                 KeyMsg::Down => {
                     let actions = session.on_key_down(now);
                     log_actions(&actions);
+                    // 点按模式下第二次按下会返回 Stop（voice/src/hotkey.rs）：和 Up 分支一样收尾，
+                    // 否则这一轮录音永远不走 finish()，残留音频混进下一次
+                    if stops(&actions) {
+                        finish_and_reset(&mut session, &opt);
+                    }
                 }
                 KeyMsg::Up => {
                     let actions = session.on_key_up(now);
@@ -228,6 +231,22 @@ fn hotkey_loop(name: &str, tx: Sender<KeyMsg>) -> Result<()> {
         }
     }
     let keycode = keycode.ok_or_else(|| anyhow!("键盘映射里找不到该键"))?;
+
+    // 打开 XKB 的「可检测自动重复」：否则按住热键超过重复延迟，X 会先发 Release 再发 Press，
+    // 长按模式会被当成松开、录音被截断重来
+    use x11rb::protocol::xkb::{self, ConnectionExt as XkbExt};
+    let _ = conn.xkb_use_extension(1, 0);
+    let _ = conn
+        .xkb_per_client_flags(
+            xkb::ID::USE_CORE_KBD.into(),
+            xkb::PerClientFlag::DETECTABLE_AUTO_REPEAT,
+            xkb::PerClientFlag::DETECTABLE_AUTO_REPEAT,
+            xkb::BoolCtrl::from(0u32),
+            xkb::BoolCtrl::from(0u32),
+            xkb::BoolCtrl::from(0u32),
+        )
+        .ok()
+        .and_then(|cookie| cookie.reply().ok());
 
     // 抢占用单键：任何修饰组合下都抓到
     conn.grab_key(

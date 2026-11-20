@@ -2372,11 +2372,46 @@ fn fetch_and_verify(url: &str, dest: &std::path::Path, size: u64, sha: &str) -> 
     Ok(())
 }
 
+/// 列出压缩包成员（tar -tzf）。解包前用它做安全检查。
+fn tar_members(archive: &str) -> Result<Vec<String>, String> {
+    let output = std::process::Command::new("tar")
+        .args(["-tzf", archive])
+        .output()
+        .map_err(|e| format!("跑不了 tar：{e}"))?;
+    if !output.status.success() {
+        return Err("读不了压缩包".to_string());
+    }
+    Ok(String::from_utf8_lossy(&output.stdout)
+        .lines()
+        .map(|line| line.trim_end_matches('/').to_string())
+        .filter(|line| !line.is_empty() && line != ".")
+        .collect())
+}
+
+/// 解包前逐个检查成员：绝对路径、`..`、不在白名单里的名字一律拒绝。
+fn check_tar_members(archive: &str, allowed: impl Fn(&str) -> bool) -> Result<(), String> {
+    for name in tar_members(archive)? {
+        let normalized = name.trim_start_matches("./");
+        let unsafe_name = normalized.starts_with('/')
+            || normalized.split('/').any(|part| part == "..")
+            || !allowed(normalized);
+        if unsafe_name {
+            return Err(format!("压缩包里有不安全的文件 {name}，不安装"));
+        }
+    }
+    Ok(())
+}
+
 /// 下载 llama.cpp 运行程序，校验后解压到 llama 目录，并设为可执行。
 fn install_llama() -> Result<(), String> {
     let archive = local_llama_dir().join("llama.tar.gz");
     fs::create_dir_all(local_llama_dir()).map_err(|e| e.to_string())?;
     fetch_and_verify(LLAMA_URL, &archive, LLAMA_SIZE, LLAMA_SHA256)?;
+    let archive_path = archive.to_string_lossy().to_string();
+    let folder = format!("llama-{LLAMA_BUILD}");
+    check_tar_members(&archive_path, |name| {
+        name == folder || name.starts_with(&format!("{folder}/"))
+    })?;
     let status = std::process::Command::new("tar")
         .arg("-xzf")
         .arg(&archive)
@@ -2637,6 +2672,8 @@ fn install_lexicon_pack(tarball: &str) -> Result<String, String> {
     let staging = wanxiang_dir().with_extension("new");
     let _ = fs::remove_dir_all(&staging);
     fs::create_dir_all(&staging).map_err(|e| e.to_string())?;
+    // 先看成员再解包：`../` 或链接会在 read_dir 校验之前就写到 staging 外面
+    check_tar_members(tarball, |name| PACK_FILES.contains(&name))?;
     let status = std::process::Command::new("tar")
         .arg("-xzf")
         .arg(tarball)

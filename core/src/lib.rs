@@ -338,8 +338,14 @@ impl Engine {
     fn add_learned_word(&self, word: &str, pinyin: &str, heat: f64) {
         // 候选带的拼音已经是全拼（双拼也翻好了）；以前的前端会传双拼键位串（如 "vsgo"），
         // 那样的要先展开，否则用户词会带着一串无效音节存进去，永远也打不出来。
-        let pinyin = if self.config.shuangpin && !pinyin.trim().contains(' ') {
-            crate::shuangpin::to_full_pinyin(self.config.shuangpin_scheme, pinyin.trim())
+        let trimmed = pinyin.trim();
+        // 会话传进来的已经是全拼：单音节词（shi、zhong）没有空格，不能再当双拼键位串展开
+        // （shi -> shang'ch，zhong -> 空），否则用户词会学坏
+        let pinyin = if self.config.shuangpin
+            && !trimmed.contains(' ')
+            && !crate::syllable::is_valid(trimmed)
+        {
+            crate::shuangpin::to_full_pinyin(self.config.shuangpin_scheme, trimmed)
         } else {
             pinyin.to_string()
         };

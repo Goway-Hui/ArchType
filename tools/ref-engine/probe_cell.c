@@ -11,11 +11,13 @@ static item_t items[] = {
 };
 static void my_log(int l,const char*m,int n){(void)l;(void)m;(void)n;}
 int main(int argc,char**argv){
+  if(argc<4){fprintf(stderr,"usage: %s <dylib> <cell_path> <slot>\n",argv[0]);return 1;}
   void*H=dlopen(argv[1],RTLD_NOW|RTLD_LOCAL);
   if(!H){puts("dlopen fail");return 1;}
   int(*init)(const void*)=dlsym(H,"wxime_initialize");
   int(*cfg)(void*)=dlsym(H,"wxime_config_dict");
   int(*addcell)(const char*,int,const void*)=dlsym(H,"wxime_add_cell_dict");
+  if(!init||!cfg||!addcell){puts("missing symbol");return 2;}
   static uint8_t c[512];
   *(const char**)(c+0x18)="/Library/Input Methods/WeType.app/Contents/Resources";
   *(void**)(c+0)=(void*)my_log;

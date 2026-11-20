@@ -165,6 +165,9 @@ fn split_command(cmdline: &str) -> Vec<String> {
 /// 命令行里可以用 \`{wav}\` 指定音频路径的位置；没写的话就追加到末尾。
 pub const WAV_PLACEHOLDER: &str = "{wav}";
 
+/// 外部识别器最多等这么久（秒）；超时就杀掉，避免把守护进程的主循环卡死。
+const ASR_TIMEOUT_SECS: u64 = 60;
+
 impl ProcessChannel {
     pub fn new(name: impl Into<String>, program: Vec<String>) -> Self {
         Self {
@@ -238,13 +241,36 @@ impl AsrChannel for ProcessChannel {
             argv.push(wav_path);
         }
         let (program, args) = argv.split_first()?;
-        let output = std::process::Command::new(program).args(args).output().ok();
+        // 外部识别器可能卡住（等 stdin、模型加载死锁、网络挂起）：带超时等，超时就杀掉。
+        // 以前同步 output() 会把守护进程的主循环（热键、音频 drain）一起卡死
+        let mut child = std::process::Command::new(program)
+            .args(args)
+            .stdin(std::process::Stdio::null())
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::piped())
+            .spawn()
+            .ok()?;
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(ASR_TIMEOUT_SECS);
+        loop {
+            match child.try_wait() {
+                Ok(Some(_)) => break,
+                Ok(None) if std::time::Instant::now() < deadline => {
+                    std::thread::sleep(std::time::Duration::from_millis(50));
+                }
+                _ => {
+                    let _ = child.kill();
+                    break;
+                }
+            }
+        }
+        let output = child.wait_with_output().ok();
         let _ = std::fs::remove_file(&path);
-        self.pcm.clear();
         let output = output?;
         if !output.status.success() {
+            // 识别失败时留着音频：下一次 finish 还能再试，不会把话静默丢掉
             return None;
         }
+        self.pcm.clear();
         let mut text = clean_transcript(&String::from_utf8_lossy(&output.stdout));
         if text.is_empty() {
             // 有些识别器把结果打到 stderr
