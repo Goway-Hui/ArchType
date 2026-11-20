@@ -131,10 +131,11 @@ jobs:
       - run: rustup toolchain install stable --profile minimal && rustup default stable
       - uses: Swatinem/rust-cache@v2
       - name: 五笔真码表（session_keys 的 wubi_real_table 用它）
-        run: scripts/make-wubi.sh "" dist/wubi
+        # 绝对路径：cargo test 的测试进程工作目录是包目录（core/），相对路径会找不到
+        run: |
+          scripts/make-wubi.sh "" "$PWD/dist/wubi"
+          echo "ARCHTYPE_WUBI=$PWD/dist/wubi/wubi86.tsv" >> "$GITHUB_ENV"
       - name: Rust 测试
-        env:
-          ARCHTYPE_WUBI: dist/wubi/wubi86.tsv
         run: cargo test --workspace --locked
       - name: C ABI 冒烟测试
         run: ./scripts/abi-smoke.sh
