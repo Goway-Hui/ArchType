@@ -279,38 +279,73 @@ impl Nnlm {
     }
 
     pub fn score_tokens(&self, prefix: &[u32], tokens: &[u32]) -> f64 {
-        if prefix.is_empty() || tokens.is_empty() {
-            return 0.0;
-        }
-        let mut seq: Vec<u32> = prefix.to_vec();
-        // 太长就截掉开头的上下文（保留 <s>）
-        let over = (seq.len() + tokens.len()).saturating_sub(MAX_POS);
-        if over > 0 {
-            let keep = seq.len().saturating_sub(over).max(1);
-            let cut = seq.len() - keep;
-            seq.drain(1..1 + cut.min(seq.len() - 1));
-            if seq.len() + tokens.len() > MAX_POS {
-                return 0.0;
+        self.score_tokens_many(prefix, &[tokens])[0]
+    }
+
+    /// 同 [`Nnlm::score`]，一次给几句（束搜索的几条整句）。结果和一句一句地 `score` 一位不差。
+    ///
+    /// 几句要算的字一层一层（同样长的前缀）放在一起算：每一步的大头是把十几 MB 权重从内存里读一遍，
+    /// 一起算时每行权重读一次给这一层的几句都用上（#227：接着打一个字，8 条整句要新算二三十步，
+    /// 以前一步一步算要十几毫秒）。
+    pub fn score_many(&self, prefix: &[u32], texts: &[&str]) -> Vec<f64> {
+        let tokens: Vec<Vec<u32>> = texts
+            .iter()
+            .map(|text| {
+                text.chars()
+                    .filter(|c| !c.is_whitespace())
+                    .map(|c| self.token(c))
+                    .collect()
+            })
+            .collect();
+        let refs: Vec<&[u32]> = tokens.iter().map(Vec::as_slice).collect();
+        self.score_tokens_many(prefix, &refs)
+    }
+
+    fn score_tokens_many(&self, prefix: &[u32], texts: &[&[u32]]) -> Vec<f64> {
+        let mut out = vec![0.0f64; texts.len()];
+        // 每句：(在 out 里的下标, 上下文 + 这句除最后一个字以外的字)；读的是这些前缀各自的状态
+        let mut seqs: Vec<(usize, Vec<u32>)> = Vec::new();
+        for (i, tokens) in texts.iter().enumerate() {
+            if prefix.is_empty() || tokens.is_empty() {
+                continue;
             }
+            let mut seq: Vec<u32> = prefix.to_vec();
+            // 太长就截掉开头的上下文（保留 <s>）
+            let over = (seq.len() + tokens.len()).saturating_sub(MAX_POS);
+            if over > 0 {
+                let keep = seq.len().saturating_sub(over).max(1);
+                let cut = seq.len() - keep;
+                seq.drain(1..1 + cut.min(seq.len() - 1));
+                if seq.len() + tokens.len() > MAX_POS {
+                    continue;
+                }
+            }
+            seq.extend_from_slice(&tokens[..tokens.len() - 1]);
+            seqs.push((i, seq));
+        }
+        if seqs.is_empty() {
+            return out;
         }
         let Ok(mut cache) = self.cache.lock() else {
-            return 0.0;
+            return out;
         };
         cache.clock += 1;
-        let mut total = 0.0f64;
-        for &tok in tokens {
-            self.ensure(&mut cache, &seq);
-            // 缓存被清（容量上限）之类的极端情况：和同文件其它取锁失败一样降级，别 panic
-            let Some(state) = cache.states.get(&seq) else {
-                return total;
-            };
-            total += (self.logit(tok, &state.y) - state.lse) as f64;
-            seq.push(tok);
+        let all: Vec<&[u32]> = seqs.iter().map(|(_, s)| s.as_slice()).collect();
+        self.ensure_many(&mut cache, &all);
+        for (i, seq) in &seqs {
+            let tokens = texts[*i];
+            let base = seq.len() + 1 - tokens.len();
+            let mut total = 0.0f64;
+            for (j, &tok) in tokens.iter().enumerate() {
+                let state = cache.states.get(&seq[..base + j]).expect("刚算过");
+                total += (self.logit(tok, &state.y) - state.lse) as f64;
+            }
+            out[*i] = total;
         }
         if cache.states.len() > CACHE_CAP {
             cache.evict();
         }
-        total
+        out
     }
 
     /// 接在 prefix 后面、下一个字是 ch 的 log 概率（只算一步，同一个前缀算过就是查表）。
@@ -363,105 +398,268 @@ impl Nnlm {
 
     /// 保证 seq 和它所有前缀的状态都在缓存里。
     fn ensure(&self, cache: &mut Cache, seq: &[u32]) {
+        self.ensure_many(cache, &[seq]);
+    }
+
+    /// 保证每个 seq 和它们所有前缀的状态都在缓存里。缺的按长度一层一层补，同一层的一起算（[`Nnlm::step_many`]）。
+    fn ensure_many(&self, cache: &mut Cache, seqs: &[&[u32]]) {
         let clock = cache.clock;
-        let mut have = seq.len();
-        while have > 0 {
-            if let Some(s) = cache.states.get_mut(&seq[..have]) {
-                s.used = clock;
-                break;
+        // 要算的前缀：(长度, 属于哪个 seq)，同样的前缀只算一次
+        let mut todo: Vec<(usize, usize)> = Vec::new();
+        for (n, seq) in seqs.iter().enumerate() {
+            let mut have = seq.len();
+            while have > 0 {
+                if let Some(s) = cache.states.get_mut(&seq[..have]) {
+                    s.used = clock;
+                    break;
+                }
+                have -= 1;
             }
-            have -= 1;
-        }
-        // 前面的状态也标成刚用过，免得马上被清掉
-        for i in 1..have {
-            if let Some(s) = cache.states.get_mut(&seq[..i]) {
-                s.used = clock;
+            // 前面的状态也标成刚用过，免得马上被清掉
+            for i in 1..have {
+                if let Some(s) = cache.states.get_mut(&seq[..i]) {
+                    s.used = clock;
+                }
+            }
+            for end in (have + 1)..=seq.len() {
+                let dup = todo
+                    .iter()
+                    .any(|&(e, m)| e == end && seqs[m][..end] == seq[..end]);
+                if !dup {
+                    todo.push((end, n));
+                }
             }
         }
-        for end in (have + 1)..=seq.len() {
-            let state = {
-                let past: Vec<&State> = (1..end)
-                    .map(|i| cache.states.get(&seq[..i]).expect("前缀已算"))
+        todo.sort_by_key(|&(end, n)| (end, n));
+        let mut at = 0;
+        while at < todo.len() {
+            let end = todo[at].0;
+            let level = todo[at..].iter().take_while(|t| t.0 == end).count();
+            let batch = &todo[at..at + level];
+            at += level;
+            let states = {
+                let items: Vec<(u32, Vec<&State>)> = batch
+                    .iter()
+                    .map(|&(end, n)| {
+                        let seq = seqs[n];
+                        let past = (1..end)
+                            .map(|i| cache.states.get(&seq[..i]).expect("前缀已算"))
+                            .collect();
+                        (seq[end - 1], past)
+                    })
                     .collect();
-                self.step(seq[end - 1], end - 1, &past, clock)
+                self.step_many(&items, end - 1, clock)
             };
-            cache.states.insert(seq[..end].to_vec(), state);
+            for (&(end, n), state) in batch.iter().zip(states) {
+                cache.states.insert(seqs[n][..end].to_vec(), state);
+            }
         }
     }
 
-    fn step(&self, tok: u32, pos: usize, past: &[&State], clock: u64) -> State {
-        let t = (tok as usize).min(self.vocab_size - 1);
-        let mut x: Vec<f32> = (0..D)
-            .map(|i| self.wte[t * D + i] + self.wpe[pos * D + i])
-            .collect();
-        let mut kv = vec![0.0f32; LAYERS * 2 * D];
-        let mut a = vec![0.0f32; D];
-        let mut qkv = vec![0.0f32; 3 * D];
-        let mut o = vec![0.0f32; D];
-        let mut h = vec![0.0f32; FF];
-        let mut scores = vec![0.0f32; past.len() + 1];
-        for (l, layer) in self.layers.iter().enumerate() {
-            layer_norm(&x, &layer.ln1_g, &layer.ln1_b, &mut a);
-            matvec(&layer.attn_w, &layer.attn_b, &a, &mut qkv);
-            let (q, rest) = qkv.split_at(D);
-            let (k, v) = rest.split_at(D);
-            kv[(l * 2) * D..(l * 2 + 1) * D].copy_from_slice(k);
-            kv[(l * 2 + 1) * D..(l * 2 + 2) * D].copy_from_slice(v);
-            for head in 0..HEADS {
-                let r = head * HEAD_DIM..(head + 1) * HEAD_DIM;
-                let qh = &q[r.clone()];
-                for (j, p) in past.iter().enumerate() {
-                    let pk = &p.kv[(l * 2) * D..(l * 2 + 1) * D];
-                    scores[j] = dot(qh, &pk[r.clone()]) * 0.125;
-                }
-                scores[past.len()] = dot(qh, &k[r.clone()]) * 0.125;
-                let max = scores.iter().copied().fold(f32::NEG_INFINITY, f32::max);
-                let mut sum = 0.0;
-                for s in scores.iter_mut() {
-                    *s = (*s - max).exp();
-                    sum += *s;
-                }
-                let oh = &mut o[r.clone()];
-                oh.iter_mut().for_each(|x| *x = 0.0);
-                for (j, p) in past.iter().enumerate() {
-                    let pv = &p.kv[(l * 2 + 1) * D..(l * 2 + 2) * D];
-                    let w = scores[j] / sum;
-                    for (dst, src) in oh.iter_mut().zip(&pv[r.clone()]) {
-                        *dst += w * src;
-                    }
-                }
-                let w = scores[past.len()] / sum;
-                for (dst, src) in oh.iter_mut().zip(&v[r.clone()]) {
-                    *dst += w * src;
-                }
-            }
-            matvec_add(&layer.proj_w, &layer.proj_b, &o, &mut x);
-            layer_norm(&x, &layer.ln2_g, &layer.ln2_b, &mut a);
-            matvec(&layer.fc_w, &layer.fc_b, &a, &mut h);
-            h.iter_mut().for_each(|v| *v = gelu(*v));
-            matvec_add(&layer.out_w, &layer.out_b, &h, &mut x);
+    /// 同一个位置 `pos` 上的几步前向（每步：这个字、它前面各字的状态）一起算。
+    ///
+    /// 每步的每个数和单独算时完全一样（同样的运算、同样的先后），只是矩阵乘时每行权重读一次、
+    /// 给这几步各乘一遍：权重十几 MB，一步一步算时每步都要从内存里重新读一遍。
+    fn step_many(&self, items: &[(u32, Vec<&State>)], pos: usize, clock: u64) -> Vec<State> {
+        #[cfg(target_arch = "x86_64")]
+        if std::arch::is_x86_feature_detected!("avx") {
+            // SAFETY: 刚查过这台机器支持 AVX
+            return unsafe { self.step_many_avx(items, pos, clock) };
         }
-        let mut y = vec![0.0f32; D];
-        layer_norm(&x, &self.lnf_g, &self.lnf_b, &mut y);
-        // log-sum-exp over 全部词表
-        let mut max = f32::NEG_INFINITY;
-        let logits: Vec<f32> = self
-            .wte
-            .chunks_exact(D)
-            .map(|row| {
-                let v = dot(row, &y);
-                max = max.max(v);
-                v
+        self.step_many_impl(items, pos, clock)
+    }
+
+    /// 同 [`Nnlm::step_many_impl`]，按 AVX 编译：点积的 8 路累加正好是一个 256 位寄存器，一次乘、一次加，
+    /// 不用 SSE 的两个 128 位寄存器各来一遍。只是向量宽了，每路的乘、加和先后都没变（Rust 不会自己把乘加
+    /// 并成 FMA），算出来一位不差。
+    #[cfg(target_arch = "x86_64")]
+    #[target_feature(enable = "avx")]
+    unsafe fn step_many_avx(&self, items: &[(u32, Vec<&State>)], pos: usize, clock: u64) -> Vec<State> {
+        self.step_many_impl(items, pos, clock)
+    }
+
+    #[inline(always)]
+    fn step_many_impl(&self, items: &[(u32, Vec<&State>)], pos: usize, clock: u64) -> Vec<State> {
+        let k = items.len();
+        let mut x: Vec<Vec<f32>> = items
+            .iter()
+            .map(|(tok, _)| {
+                let t = (*tok as usize).min(self.vocab_size - 1);
+                (0..D)
+                    .map(|i| self.wte[t * D + i] + self.wpe[pos * D + i])
+                    .collect()
             })
             .collect();
-        let sum: f32 = logits.iter().map(|v| (v - max).exp()).sum();
-        State {
-            kv,
-            y,
-            lse: max + sum.ln(),
-            used: clock,
+        let mut kv = vec![vec![0.0f32; LAYERS * 2 * D]; k];
+        let mut a = vec![vec![0.0f32; D]; k];
+        let mut qkv = vec![vec![0.0f32; 3 * D]; k];
+        let mut o = vec![vec![0.0f32; D]; k];
+        let mut h = vec![vec![0.0f32; FF]; k];
+        for (l, layer) in self.layers.iter().enumerate() {
+            for b in 0..k {
+                layer_norm(&x[b], &layer.ln1_g, &layer.ln1_b, &mut a[b]);
+            }
+            matvec_many(&layer.attn_w, &layer.attn_b, &a, &mut qkv, false);
+            for (b, (_, past)) in items.iter().enumerate() {
+                let (q, rest) = qkv[b].split_at(D);
+                let (key, v) = rest.split_at(D);
+                kv[b][(l * 2) * D..(l * 2 + 1) * D].copy_from_slice(key);
+                kv[b][(l * 2 + 1) * D..(l * 2 + 2) * D].copy_from_slice(v);
+                attend(l, q, key, v, past, &mut o[b]);
+            }
+            matvec_many(&layer.proj_w, &layer.proj_b, &o, &mut x, true);
+            for b in 0..k {
+                layer_norm(&x[b], &layer.ln2_g, &layer.ln2_b, &mut a[b]);
+            }
+            matvec_many(&layer.fc_w, &layer.fc_b, &a, &mut h, false);
+            for hb in h.iter_mut() {
+                hb.iter_mut().for_each(|v| *v = gelu(*v));
+            }
+            matvec_many(&layer.out_w, &layer.out_b, &h, &mut x, true);
+        }
+        let mut y = vec![vec![0.0f32; D]; k];
+        for b in 0..k {
+            layer_norm(&x[b], &self.lnf_g, &self.lnf_b, &mut y[b]);
+        }
+        // log-sum-exp over 全部词表
+        let mut max = vec![f32::NEG_INFINITY; k];
+        let mut logits = vec![Vec::with_capacity(self.vocab_size); k];
+        let mut rows = self.wte.chunks_exact(D * ROWS);
+        for block in rows.by_ref() {
+            for b in 0..k {
+                for v in dot_rows(block, &y[b]) {
+                    max[b] = max[b].max(v);
+                    logits[b].push(v);
+                }
+            }
+        }
+        for row in rows.remainder().chunks_exact(D) {
+            for b in 0..k {
+                let v = dot(row, &y[b]);
+                max[b] = max[b].max(v);
+                logits[b].push(v);
+            }
+        }
+        kv.into_iter()
+            .zip(y)
+            .enumerate()
+            .map(|(b, (kv, y))| {
+                let sum: f32 = logits[b].iter().map(|v| (v - max[b]).exp()).sum();
+                State {
+                    kv,
+                    y,
+                    lse: max[b] + sum.ln(),
+                    used: clock,
+                }
+            })
+            .collect()
+    }
+}
+
+/// 第 l 层一步的自注意力：q、k、v 是这一步的，past 是前面各字的状态；结果写进 o。
+#[inline(always)]
+fn attend(l: usize, q: &[f32], k: &[f32], v: &[f32], past: &[&State], o: &mut [f32]) {
+    let mut scores = vec![0.0f32; past.len() + 1];
+    for head in 0..HEADS {
+        let r = head * HEAD_DIM..(head + 1) * HEAD_DIM;
+        let qh = &q[r.clone()];
+        for (j, p) in past.iter().enumerate() {
+            let pk = &p.kv[(l * 2) * D..(l * 2 + 1) * D];
+            scores[j] = dot(qh, &pk[r.clone()]) * 0.125;
+        }
+        scores[past.len()] = dot(qh, &k[r.clone()]) * 0.125;
+        let max = scores.iter().copied().fold(f32::NEG_INFINITY, f32::max);
+        let mut sum = 0.0;
+        for s in scores.iter_mut() {
+            *s = (*s - max).exp();
+            sum += *s;
+        }
+        let oh = &mut o[r.clone()];
+        oh.iter_mut().for_each(|x| *x = 0.0);
+        for (j, p) in past.iter().enumerate() {
+            let pv = &p.kv[(l * 2 + 1) * D..(l * 2 + 2) * D];
+            let w = scores[j] / sum;
+            for (dst, src) in oh.iter_mut().zip(&pv[r.clone()]) {
+                *dst += w * src;
+            }
+        }
+        let w = scores[past.len()] / sum;
+        for (dst, src) in oh.iter_mut().zip(&v[r.clone()]) {
+            *dst += w * src;
         }
     }
+}
+
+/// 对每个 b：out[b] = W·x[b] + b（`add` 时 out[b] += W·x[b] + b），W 按 [out, in] 行存。
+/// 每个 out[b][r] 都是 `dot(W 第 r 行, x[b]) + b[r]`，和一个一个乘结果一样，只是每行权重读一次给所有 x 用。
+#[inline(always)]
+fn matvec_many(w: &[f32], bias: &[f32], x: &[Vec<f32>], out: &mut [Vec<f32>], add: bool) {
+    let Some(first) = x.first() else {
+        return;
+    };
+    let n = first.len();
+    let put = |ob: &mut Vec<f32>, r: usize, v: f32| {
+        if add {
+            ob[r] += v;
+        } else {
+            ob[r] = v;
+        }
+    };
+    let mut blocks = w.chunks_exact(n * ROWS);
+    let mut r = 0;
+    for block in blocks.by_ref() {
+        for (xb, ob) in x.iter().zip(out.iter_mut()) {
+            for (j, v) in dot_rows(block, xb).into_iter().enumerate() {
+                put(ob, r + j, v + bias[r + j]);
+            }
+        }
+        r += ROWS;
+    }
+    for row in blocks.remainder().chunks_exact(n) {
+        for (xb, ob) in x.iter().zip(out.iter_mut()) {
+            put(ob, r, dot(row, xb) + bias[r]);
+        }
+        r += 1;
+    }
+}
+
+/// [`dot_rows`] 一次算几行。
+const ROWS: usize = 4;
+
+/// `block` 是连着的 [`ROWS`] 行（每行和 x 一样长），返回每行和 x 的 [`dot`]，每个数和单独调 `dot` 一位不差：
+/// 每行还是自己的 8 路累加、同样的先后，只是几行交错着算。单独一个点积每一步都要等上一步的加法，
+/// 几行交错时互不等待（#227）。
+#[inline(always)]
+fn dot_rows(block: &[f32], x: &[f32]) -> [f32; ROWS] {
+    let n = x.len();
+    let len = n / 8 * 8;
+    let (r0, rest) = block.split_at(n);
+    let (r1, rest) = rest.split_at(n);
+    let (r2, r3) = rest.split_at(n);
+    let rows = [r0, r1, r2, &r3[..n]];
+    let (mut a0, mut a1, mut a2, mut a3) = ([0.0f32; 8], [0.0f32; 8], [0.0f32; 8], [0.0f32; 8]);
+    let chunks = x[..len]
+        .chunks_exact(8)
+        .zip(r0[..len].chunks_exact(8))
+        .zip(r1[..len].chunks_exact(8))
+        .zip(r2[..len].chunks_exact(8))
+        .zip(r3[..len].chunks_exact(8));
+    for ((((xc, c0), c1), c2), c3) in chunks {
+        for i in 0..8 {
+            a0[i] += c0[i] * xc[i];
+            a1[i] += c1[i] * xc[i];
+            a2[i] += c2[i] * xc[i];
+            a3[i] += c3[i] * xc[i];
+        }
+    }
+    let acc = [a0, a1, a2, a3];
+    std::array::from_fn(|j| {
+        let mut s: f32 = acc[j].iter().sum();
+        for (a, b) in rows[j][len..].iter().zip(&x[len..]) {
+            s += a * b;
+        }
+        s
+    })
 }
 
 impl Cache {
@@ -474,6 +672,7 @@ impl Cache {
     }
 }
 
+#[inline(always)]
 fn dot(a: &[f32], b: &[f32]) -> f32 {
     let mut acc = [0.0f32; 8];
     let (ca, ra) = a.split_at(a.len() / 8 * 8);
@@ -490,20 +689,7 @@ fn dot(a: &[f32], b: &[f32]) -> f32 {
     s
 }
 
-/// out = W·x + b，W 按 [out, in] 行存。
-fn matvec(w: &[f32], b: &[f32], x: &[f32], out: &mut [f32]) {
-    for ((o, row), bias) in out.iter_mut().zip(w.chunks_exact(x.len())).zip(b) {
-        *o = dot(row, x) + bias;
-    }
-}
-
-/// out += W·x + b。
-fn matvec_add(w: &[f32], b: &[f32], x: &[f32], out: &mut [f32]) {
-    for ((o, row), bias) in out.iter_mut().zip(w.chunks_exact(x.len())).zip(b) {
-        *o += dot(row, x) + bias;
-    }
-}
-
+#[inline(always)]
 fn layer_norm(x: &[f32], g: &[f32], b: &[f32], out: &mut [f32]) {
     let n = x.len() as f32;
     let mean = x.iter().sum::<f32>() / n;
@@ -514,6 +700,7 @@ fn layer_norm(x: &[f32], g: &[f32], b: &[f32], out: &mut [f32]) {
     }
 }
 
+#[inline(always)]
 fn gelu(x: f32) -> f32 {
     const C: f32 = 0.797_884_6; // sqrt(2/pi)
     0.5 * x * (1.0 + (C * (x + 0.044715 * x * x * x)).tanh())
@@ -729,9 +916,8 @@ mod tests {
         assert!(f16_to_f32(0x7c00).is_infinite());
     }
 
-    /// 造一个随机权重的 WTNN 文件：能读、打分是有限数、字表和说明都读出来；截断了要报错。
-    #[test]
-    fn reads_wtnn() {
+    /// 随机权重的 WTNN 文件：字表只有「你」「好」「我」「说」。
+    fn random_wtnn() -> Vec<u8> {
         let vocab_size = 1100usize;
         let mut blob = Vec::new();
         blob.extend_from_slice(b"WTNN");
@@ -739,10 +925,10 @@ mod tests {
         let meta = "archtype-data: nnlm.bin 2026.1.1.0 test\n{\"name\":\"archtype-nnlm\"}".as_bytes();
         blob.extend_from_slice(&(meta.len() as u32).to_le_bytes());
         blob.extend_from_slice(meta);
-        for v in [vocab_size as u32, 2] {
+        for v in [vocab_size as u32, 4] {
             blob.extend_from_slice(&v.to_le_bytes());
         }
-        for (cp, id) in [('你' as u32, 3u32), ('好' as u32, 4)] {
+        for (cp, id) in [('你' as u32, 3u32), ('好' as u32, 4), ('我' as u32, 5), ('说' as u32, 6)] {
             blob.extend_from_slice(&cp.to_le_bytes());
             blob.extend_from_slice(&id.to_le_bytes());
         }
@@ -754,6 +940,14 @@ mod tests {
             let v = ((seed >> 8) % 2001) as f32 / 1000.0 - 1.0;
             blob.extend_from_slice(&f32_to_f16(v * 0.05).to_le_bytes());
         }
+        blob
+    }
+
+    /// 造一个随机权重的 WTNN 文件：能读、打分是有限数、字表和说明都读出来；截断了要报错。
+    #[test]
+    fn reads_wtnn() {
+        let vocab_size = 1100usize;
+        let blob = random_wtnn();
         let model = Nnlm::from_bytes(&blob).expect("读得出来");
         assert_eq!(model.vocab_size(), vocab_size);
         assert_eq!(model.token('你'), 3);
@@ -766,6 +960,52 @@ mod tests {
         let mut bad = blob.clone();
         bad[4] = 9;
         assert!(Nnlm::from_bytes(&bad).is_err());
+    }
+
+    /// 几行一起算的点积和一行一行算的一位不差（长度不是 8 的倍数时也是）。
+    #[test]
+    fn dot_rows_matches_dot() {
+        let mut seed = 11u32;
+        let mut next = || {
+            seed = seed.wrapping_mul(1_103_515_245).wrapping_add(12345);
+            ((seed >> 8) % 20001) as f32 / 1000.0 - 10.0
+        };
+        for n in [1usize, 7, 8, 13, 64, 256, 1027] {
+            let block: Vec<f32> = (0..n * ROWS).map(|_| next()).collect();
+            let x: Vec<f32> = (0..n).map(|_| next()).collect();
+            let got = dot_rows(&block, &x);
+            for (j, v) in got.iter().enumerate() {
+                assert_eq!(v.to_bits(), dot(&block[j * n..(j + 1) * n], &x).to_bits(), "n={n} row {j}");
+            }
+        }
+    }
+
+    /// 几句一起打分（同一层的前向放在一起算）和一句一句地打分、每次都从空缓存算，结果一位不差（#227）。
+    #[test]
+    fn scoring_together_matches_one_by_one() {
+        let blob = random_wtnn();
+        let texts = ["你好", "你好我说", "我说你好好", "说", "你我", "好好说说你我"];
+        let alone: Vec<f64> = texts
+            .iter()
+            .map(|t| {
+                let model = Nnlm::from_bytes(&blob).unwrap();
+                model.score(&model.context_tokens("我说"), t)
+            })
+            .collect();
+        let model = Nnlm::from_bytes(&blob).unwrap();
+        let ctx = model.context_tokens("我说");
+        let together = model.score_many(&ctx, &texts);
+        assert_eq!(
+            together.iter().map(|v| v.to_bits()).collect::<Vec<_>>(),
+            alone.iter().map(|v| v.to_bits()).collect::<Vec<_>>()
+        );
+        // 缓存里已经有一部分前缀时也一样
+        let again = model.score_many(&ctx, &["你好我说你", "说说"]);
+        let fresh = Nnlm::from_bytes(&blob).unwrap();
+        assert_eq!(again[0].to_bits(), fresh.score(&ctx, "你好我说你").to_bits());
+        assert_eq!(again[1].to_bits(), fresh.score(&ctx, "说说").to_bits());
+        assert_eq!(model.score_many(&ctx, &[]), Vec::<f64>::new());
+        assert_eq!(model.score_many(&ctx, &[""]), vec![0.0]);
     }
 
     /// 本机有模型文件时才跑（模型不随仓库分发）。ARCHTYPE_NNLM 可指定路径。

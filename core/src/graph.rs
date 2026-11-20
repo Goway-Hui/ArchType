@@ -283,7 +283,7 @@ fn build_completion_edges(input: &ParsedInput, edges: &mut [Vec<Edge>]) {
         for text in crate::syllable::SYLLABLES {
             let bytes = text.as_bytes();
             if bytes.len() > tail.len() && bytes.starts_with(tail) {
-                if let Some(syllable) = Syllable::from_text(text) {
+                if let Some(syllable) = syllable_of(bytes) {
                     let mut edge = full_edge(start, n, syllable, false);
                     edge.completion = (bytes.len() - tail.len()) as u8;
                     add_edge(edges, edge);
@@ -331,9 +331,7 @@ fn is_neighbor(a: u8, b: u8) -> bool {
 }
 
 fn syllable_of(bytes: &[u8]) -> Option<Syllable> {
-    std::str::from_utf8(bytes)
-        .ok()
-        .and_then(Syllable::from_text)
+    crate::syllable::syllable_from_bytes(bytes)
 }
 
 /// 纠错边：每条边只纠一处。
@@ -478,7 +476,7 @@ fn build_full_edges(input: &ParsedInput, allow_erhua: bool, edges: &mut [Vec<Edg
             }
             // parse 保证是 ASCII，这里可以安全地做字节切片。
             let text = std::str::from_utf8(&input.letters[start..end]).expect("ASCII 输入");
-            if let Some(syllable) = Syllable::from_text(text) {
+            if let Some(syllable) = syllable_of(text.as_bytes()) {
                 add_edge(edges, full_edge(start, end, syllable, false));
                 if input.has_erhua(end) {
                     add_edge(edges, full_edge(start, end, syllable, true));
@@ -488,7 +486,7 @@ fn build_full_edges(input: &ParsedInput, allow_erhua: bool, edges: &mut [Vec<Edg
             // 尾部 r 儿化：huar -> hua + 儿化。er 本身是独立音节，不当作 e 的儿化。
             if allow_erhua && text.len() > 1 && text.ends_with('r') && text != "er" {
                 let stem = &text[..text.len() - 1];
-                if let Some(syllable) = Syllable::from_text(stem) {
+                if let Some(syllable) = syllable_of(stem.as_bytes()) {
                     add_edge(edges, full_edge(start, end, syllable, true));
                 }
             }

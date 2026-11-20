@@ -1094,9 +1094,11 @@ impl Engine {
                 scored.sort_by(|a, b| b.2.cmp(&a.2).then(b.1.total_cmp(&a.1)));
                 scored.truncate(ASSOCIATE_RESCORE);
                 // 整词的 log 概率按字数的平方根折算：不全按总和（总偏向单字）也不全按平均（总偏向长词）
-                for (w, r, _) in scored.iter_mut() {
+                let texts: Vec<&str> = scored.iter().map(|(w, _, _)| w.as_str()).collect();
+                let whole = model.score_many(&context, &texts);
+                for ((w, r, _), s) in scored.iter_mut().zip(whole) {
                     let n = w.chars().count().max(1) as f64;
-                    *r = model.score(&context, w) / n.sqrt();
+                    *r = s / n.sqrt();
                 }
                 scored.sort_by(|a, b| b.2.cmp(&a.2).then(b.1.total_cmp(&a.1)));
                 out = scored.into_iter().map(|(w, r, _)| (w, r)).collect();
@@ -2098,9 +2100,11 @@ impl Engine {
         }
         let picked = nnlm_picks(paths, &order, limit);
         let context = model.context_tokens(&self.context());
+        let texts: Vec<&str> = picked.iter().map(|&i| paths[i].text.as_str()).collect();
         let scored: Vec<(usize, f64)> = picked
             .iter()
-            .map(|&i| (i, model.score(&context, &paths[i].text)))
+            .copied()
+            .zip(model.score_many(&context, &texts))
             .collect();
         let max_of = |it: &mut dyn Iterator<Item = f64>| it.fold(f64::NEG_INFINITY, f64::max);
         let fewest = typed.iter().flatten().copied().min();

@@ -142,8 +142,24 @@ impl LexEntry {
         if self.word.len() != 4 || self.word.as_bytes()[0] < 0xF0 {
             return false;
         }
-        let c = self.word.chars().next().unwrap_or(' ');
-        u32::from(c) >= 0x20000 && !COMMON_EXT_CHARS.contains(c)
+        let bytes = self.word.as_bytes();
+        // U+20000 起的 UTF-8 是 F0 A0 80 80 起；四字节 UTF-8 按字节比和按码位比先后一样
+        if bytes < &[0xF0, 0xA0, 0x80, 0x80][..] {
+            return false;
+        }
+        // COMMON_EXT_CHARS 全是四字节的字、按码位排好序：二分，不逐个比（万象词库一个声母的单字里
+        // 这样的字有几百个，束搜索每键要判断上万次，#227）
+        let table = COMMON_EXT_CHARS.as_bytes();
+        let (mut lo, mut hi) = (0, table.len() / 4);
+        while lo < hi {
+            let mid = (lo + hi) / 2;
+            match table[mid * 4..mid * 4 + 4].cmp(bytes) {
+                std::cmp::Ordering::Less => lo = mid + 1,
+                std::cmp::Ordering::Greater => hi = mid,
+                std::cmp::Ordering::Equal => return false,
+            }
+        }
+        true
     }
 }
 
@@ -200,11 +216,32 @@ pub trait Lexicon: Send + Sync {
         self.len() == 0
     }
 
-    /// 词的一元代价（越大越不可能）。缺省用 -ln(freq/total)。
+    /// 词的一元代价（越大越不可能）。缺省用 -ln(freq/total)，见 [`freq_cost`]。
     fn cost(&self, entry: &LexEntry) -> f64 {
-        let total = self.total_freq().max(1.0);
-        -((entry.freq.max(0.5)) / total).ln()
+        freq_cost(entry.freq, self.total_freq())
     }
+
+    /// 和 [`Lexicon::lookup`]（`common` 时 [`Lexicon::lookup_common`]）查到的词一样、先后一样，
+    /// 只是不复制词条，一条一条交给 `f`。
+    ///
+    /// 束搜索每键要查几百次词典（#227）：简拼 `s`、`sd` 在万象词库里一次就是几千个词，
+    /// 每个词条复制一遍（字、音节、声母三份内存分配）比查表本身慢得多，而大部分马上就被截掉了。
+    /// 缺省实现就是查完再逐条给，内存词典、用户词库自己实现成不复制的。
+    fn visit(&self, query: &[SyllableQuery], common: bool, f: &mut dyn FnMut(&LexEntry)) {
+        let found = if common {
+            self.lookup_common(query)
+        } else {
+            self.lookup(query)
+        };
+        found.iter().for_each(f);
+    }
+}
+
+/// [`Lexicon::cost`] 的缺省算法：-ln(freq / total)，频次至少按 0.5、总频次至少按 1 算。
+/// 束搜索一次查几千个词时先取好 total（用户词库取一次要拿两把读锁），再逐个用它算，结果一位不差。
+pub fn freq_cost(freq: f64, total_freq: f64) -> f64 {
+    let total = total_freq.max(1.0);
+    -((freq.max(0.5)) / total).ln()
 }
 
 /// 内存词典。
@@ -550,9 +587,20 @@ impl MemoryLexicon {
     }
 
     fn lookup_impl(&self, query: &[SyllableQuery], skip_rare: bool) -> Vec<LexEntry> {
-        let take = |&i: &usize| self.entries[i].clone();
+        let mut found = Vec::new();
+        self.visit_impl(query, skip_rare, &mut |e| found.push(e.clone()));
+        found
+    }
+
+    /// 查词，命中的词条按顺序交给 `f`（不复制）。[`MemoryLexicon::lookup_impl`] 也走这里，两种查法结果一样。
+    fn visit_impl(&self, query: &[SyllableQuery], skip_rare: bool, f: &mut dyn FnMut(&LexEntry)) {
+        let each = |idxs: &[usize], f: &mut dyn FnMut(&LexEntry)| {
+            for &i in self.without_rare(idxs, skip_rare) {
+                f(&self.entries[i]);
+            }
+        };
         if query.is_empty() {
-            return Vec::new();
+            return;
         }
 
         let all_full = query
@@ -570,29 +618,22 @@ impl MemoryLexicon {
                     _ => unreachable!(),
                 })
                 .collect();
-            let mut found: Vec<LexEntry> = self
-                .full_index
-                .get(&key)
-                .map(|idxs| {
-                    self.without_rare(idxs, skip_rare)
-                        .iter()
-                        .map(take)
-                        .collect()
-                })
-                .unwrap_or_default();
+            if let Some(idxs) = self.full_index.get(&key) {
+                each(idxs, f);
+            }
             // 儿化（wanr、yidianr）：词库里儿化词都写成带 er 音节的（wan er 玩儿），
             // 没有 `wan r` 这种写法，所以带儿化标记的音节再按「音节 + er」查一遍
             if let Some(spelled) = erhua_spelled_out(&key) {
                 if let Some(idxs) = self.full_index.get(&spelled) {
-                    found.extend(
-                        self.without_rare(idxs, skip_rare)
-                            .iter()
-                            .map(take)
-                            .filter(|e| e.word.contains('儿')),
-                    );
+                    for &i in self.without_rare(idxs, skip_rare) {
+                        let entry = &self.entries[i];
+                        if entry.word.contains('儿') {
+                            f(entry);
+                        }
+                    }
                 }
             }
-            return found;
+            return;
         }
 
         if all_jianpin && !query.iter().any(needs_initial_check) {
@@ -603,32 +644,24 @@ impl MemoryLexicon {
                     _ => unreachable!(),
                 })
                 .collect();
-            return self
-                .jianpin_index
-                .get(&key)
-                .map(|idxs| {
-                    self.without_rare(idxs, skip_rare)
-                        .iter()
-                        .map(take)
-                        .collect()
-                })
-                .unwrap_or_default();
+            if let Some(idxs) = self.jianpin_index.get(&key) {
+                each(idxs, f);
+            }
+            return;
         }
 
         // 全拼混简拼（k yi -> 可以）、zh/ch/sh 简拼：先按首字母查，再逐个比对
         let Some(initials) = query_initials(query) else {
-            return Vec::new();
+            return;
         };
-        self.jianpin_index
-            .get(&initials)
-            .map(|idxs| {
-                self.without_rare(idxs, skip_rare)
-                    .iter()
-                    .filter(|&&i| entry_matches(&self.entries[i], query))
-                    .map(take)
-                    .collect()
-            })
-            .unwrap_or_default()
+        if let Some(idxs) = self.jianpin_index.get(&initials) {
+            for &i in self.without_rare(idxs, skip_rare) {
+                let entry = &self.entries[i];
+                if entry_matches(entry, query) {
+                    f(entry);
+                }
+            }
+        }
     }
 }
 
@@ -639,6 +672,10 @@ impl Lexicon for MemoryLexicon {
 
     fn lookup_common(&self, query: &[SyllableQuery]) -> Vec<LexEntry> {
         self.lookup_impl(query, true)
+    }
+
+    fn visit(&self, query: &[SyllableQuery], common: bool, f: &mut dyn FnMut(&LexEntry)) {
+        self.visit_impl(query, common, f);
     }
 
     fn has_longer(&self, query: &[SyllableQuery]) -> bool {
@@ -1202,34 +1239,49 @@ impl UserLexicon {
             .unwrap_or_default();
         (user, custom)
     }
+
+    /// 用户词、自定义词里查到的（接在基础词库查到的后面）。用户词和自定义词都很少，复制没关系。
+    fn overlay_lookup(&self, query: &[SyllableQuery], common: bool) -> Vec<LexEntry> {
+        if common {
+            let (mut user, custom) = self.in_overlays(|lex| lex.lookup_common(query));
+            user.extend(custom);
+            return user;
+        }
+        let (user, custom) = self.in_overlays(|lex| lex.lookup(query));
+        if custom.is_empty() || !user.iter().any(LexEntry::is_rare) {
+            let mut result = user;
+            result.extend(custom);
+            result
+        } else {
+            // 用户词和自定义词以前在同一份词典里，生僻字排在两样的最后；分成两份以后顺序照旧
+            let (mut result, user_rare): (Vec<_>, Vec<_>) =
+                user.into_iter().partition(|e| !e.is_rare());
+            let (custom, custom_rare): (Vec<_>, Vec<_>) =
+                custom.into_iter().partition(|e| !e.is_rare());
+            result.extend(custom);
+            result.extend(user_rare);
+            result.extend(custom_rare);
+            result
+        }
+    }
 }
 
 impl Lexicon for UserLexicon {
     fn lookup(&self, query: &[SyllableQuery]) -> Vec<LexEntry> {
         let mut result = self.base.lookup(query);
-        let (user, custom) = self.in_overlays(|lex| lex.lookup(query));
-        if custom.is_empty() || !user.iter().any(LexEntry::is_rare) {
-            result.extend(user);
-            result.extend(custom);
-        } else {
-            // 用户词和自定义词以前在同一份词典里，生僻字排在两样的最后；分成两份以后顺序照旧
-            let (user, user_rare): (Vec<_>, Vec<_>) = user.into_iter().partition(|e| !e.is_rare());
-            let (custom, custom_rare): (Vec<_>, Vec<_>) =
-                custom.into_iter().partition(|e| !e.is_rare());
-            result.extend(user);
-            result.extend(custom);
-            result.extend(user_rare);
-            result.extend(custom_rare);
-        }
+        result.extend(self.overlay_lookup(query, false));
         result
     }
 
     fn lookup_common(&self, query: &[SyllableQuery]) -> Vec<LexEntry> {
         let mut result = self.base.lookup_common(query);
-        let (user, custom) = self.in_overlays(|lex| lex.lookup_common(query));
-        result.extend(user);
-        result.extend(custom);
+        result.extend(self.overlay_lookup(query, true));
         result
+    }
+
+    fn visit(&self, query: &[SyllableQuery], common: bool, f: &mut dyn FnMut(&LexEntry)) {
+        self.base.visit(query, common, f);
+        self.overlay_lookup(query, common).iter().for_each(f);
     }
 
     fn has_longer(&self, query: &[SyllableQuery]) -> bool {
@@ -1545,6 +1597,34 @@ mod tests {
         .unwrap()
     }
 
+    /// is_ext_char 二分查 COMMON_EXT_CHARS（要求它全是四字节、按码位排好序）：和逐个找的结果一样。
+    #[test]
+    fn ext_char_lookup_matches_linear_search() {
+        let chars: Vec<char> = COMMON_EXT_CHARS.chars().collect();
+        assert!(chars.iter().all(|c| c.len_utf8() == 4));
+        assert!(chars.windows(2).all(|w| w[0] < w[1]), "COMMON_EXT_CHARS 要按码位排好序");
+        let entry = |word: String| LexEntry {
+            word,
+            freq: 1.0,
+            keys: Vec::new(),
+            initials: Vec::new(),
+        };
+        let linear = |word: &str| {
+            word.chars().count() == 1
+                && u32::from(word.chars().next().unwrap()) >= 0x20000
+                && !COMMON_EXT_CHARS.contains(word)
+        };
+        let samples = (0x4E00..0x4F00)
+            .chain(0x1F600..0x1F700)
+            .chain(0x1FFF0..0x32400)
+            .filter_map(char::from_u32)
+            .map(String::from)
+            .chain(["𩽾𩾌", "a", "", "中文"].map(String::from));
+        for word in samples {
+            assert_eq!(entry(word.clone()).is_ext_char(), linear(&word), "{word}");
+        }
+    }
+
     #[test]
     fn full_lookup() {
         let lex = lex();
@@ -1663,6 +1743,59 @@ mod tests {
         assert!(lex.has_longer(&[q("wan", true)]), "玩儿命 要能接着往后查");
         assert_eq!(words(&[q("wan", true), q("ming", false)]), ["玩儿命"]);
         assert!(words(&[q("wan", false)]).is_empty());
+    }
+
+    /// visit（不复制词条）逐条给出的和 lookup / lookup_common 返回的一样、先后一样：
+    /// 内存词典的全拼、儿化、简拼、混简拼、zh 简拼，用户词库叠用户词和自定义词（生僻字排最后），模糊音视图。
+    #[test]
+    fn visit_matches_lookup() {
+        let base = MemoryLexicon::from_tsv_str(concat!(
+            "wan er\t玩儿\t75000\n",
+            "wan er\t万二\t10\n",
+            "zhong guo\t中国\t800\n",
+            "zhong guo\t种果\t0.5\n",
+            "zhong\t中\t9000\n",
+            "zhong\t𠁥\t0.2\n",
+            "zong\t总\t7000\n",
+            "zhi chi\t支持\t600\n",
+            "ke yi\t可以\t900\n",
+        ))
+        .unwrap();
+        let user = UserLexicon::new(Arc::new(base));
+        user.add("zhong", "钟", 300.0).unwrap();
+        user.add("zhong", "𠁩", 0.3).unwrap();
+        user.add("zhong guo", "中果", 20.0).unwrap();
+        user.set_custom_tsv("zhong\t忠\t40\nzhong\t𠁪\t0.4\n");
+        let q = |s: &str, erhua: bool| Syllable::from_text(s).unwrap().query(erhua);
+        let j = |letter: u8| SyllableQuery::Jianpin { letter };
+        let queries: Vec<Vec<SyllableQuery>> = vec![
+            vec![q("zhong", false)],
+            vec![q("zhong", false), q("guo", false)],
+            vec![q("wan", true)],
+            vec![j(b'z'), j(b'g')],
+            vec![j(b'z')],
+            vec![q("ke", false), j(b'y')],
+            vec![j(b'k'), q("yi", false)],
+            vec![q("zhi", false), j(b'c')],
+            vec![q("zong", false)],
+            vec![],
+        ];
+        let fuzzy = FuzzyLexicon::new(&user, crate::syllable::fuzzy::ALL, 1.0);
+        let views: [&dyn Lexicon; 2] = [&user, &fuzzy];
+        for lex in views.into_iter().chain([user.base.as_ref()]) {
+            for query in &queries {
+                for common in [false, true] {
+                    let mut seen = Vec::new();
+                    lex.visit(query, common, &mut |e| seen.push(e.clone()));
+                    let want = if common { lex.lookup_common(query) } else { lex.lookup(query) };
+                    assert_eq!(seen, want, "{query:?} common={common}");
+                }
+            }
+        }
+        // 用户词里有生僻字、又有自定义词时，生僻字排在两样的最后
+        let mut seen = Vec::new();
+        user.visit(&queries[0], false, &mut |e| seen.push(e.word.clone()));
+        assert_eq!(seen, ["中", "𠁥", "钟", "忠", "𠁩", "𠁪"]);
     }
 
     #[test]

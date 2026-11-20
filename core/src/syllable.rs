@@ -276,27 +276,69 @@ pub fn fuzzy_groups_between(a: SyllableId, b: SyllableId) -> Option<u32> {
 ///   雾凇、搜狗都认；表里虽然有 jv、qvan 这些扩展音节，词库却都记在 ju、quan 下面，
 ///   以前打 qv、xv、yv 一个候选都没有，jv 还会被纠错成「女」。
 pub fn canonical(text: &str) -> &str {
-    match text {
-        "lue" => "lve",
-        "nue" => "nve",
-        "jv" => "ju",
-        "jvan" => "juan",
-        "jve" => "jue",
-        "jvn" => "jun",
-        "qv" => "qu",
-        "qvan" => "quan",
-        "qve" => "que",
-        "qvn" => "qun",
-        "xv" => "xu",
-        "xvan" => "xuan",
-        "xve" => "xue",
-        "xvn" => "xun",
-        "yv" => "yu",
-        "yvan" => "yuan",
-        "yve" => "yue",
-        "yvn" => "yun",
-        _ => text,
+    ALIASES
+        .iter()
+        .find(|(alias, _)| *alias == text)
+        .map_or(text, |(_, canon)| canon)
+}
+
+/// [`canonical`] 认的别的写法：(别的写法, 表里的写法)。
+const ALIASES: &[(&str, &str)] = &[
+    ("lue", "lve"),
+    ("nue", "nve"),
+    ("jv", "ju"),
+    ("jvan", "juan"),
+    ("jve", "jue"),
+    ("jvn", "jun"),
+    ("qv", "qu"),
+    ("qvan", "quan"),
+    ("qve", "que"),
+    ("qvn", "qun"),
+    ("xv", "xu"),
+    ("xvan", "xuan"),
+    ("xve", "xue"),
+    ("xvn", "xun"),
+    ("yv", "yu"),
+    ("yvan", "yuan"),
+    ("yve", "yue"),
+    ("yvn", "yun"),
+];
+
+/// 把至多 [`MAX_SYLLABLE_LEN`] 个小写字母压成一个数（每个字母 5 位，不会撞）；别的串返回 None。
+fn pack(bytes: &[u8]) -> Option<u32> {
+    if bytes.is_empty() || bytes.len() > MAX_SYLLABLE_LEN {
+        return None;
     }
+    bytes.iter().try_fold(0u32, |key, &b| {
+        b.is_ascii_lowercase().then(|| key << 5 | u32::from(b - b'a' + 1))
+    })
+}
+
+/// 同 `std::str::from_utf8(bytes).ok().and_then(Syllable::from_text)`，查一张预先算好的表。
+///
+/// 建音节图时每个位置要试几百个纠错的拼法（换键、对调、多按、漏按），几乎都不是音节，
+/// 以前每个都走一遍 [`canonical`] 和两次二分（#227：长串每建一次纠错图要零点几毫秒，每键要建好几次）。
+pub fn syllable_from_bytes(bytes: &[u8]) -> Option<Syllable> {
+    static TABLE: std::sync::OnceLock<Vec<(u32, Syllable)>> = std::sync::OnceLock::new();
+    let Some(key) = pack(bytes) else {
+        // 表只收小写字母的串；别的（大写、隔音符……）照旧现算
+        return std::str::from_utf8(bytes).ok().and_then(Syllable::from_text);
+    };
+    let table = TABLE.get_or_init(|| {
+        // from_text 认的就是表里的音节和它们别的写法
+        let mut table: Vec<(u32, Syllable)> = SYLLABLES
+            .iter()
+            .chain(ALIASES.iter().map(|(alias, _)| alias))
+            .filter_map(|text| Some((pack(text.as_bytes())?, Syllable::from_text(text)?)))
+            .collect();
+        table.sort_by_key(|e| e.0);
+        table.dedup_by_key(|e| e.0);
+        table
+    });
+    table
+        .binary_search_by_key(&key, |e| e.0)
+        .ok()
+        .map(|i| table[i].1)
 }
 
 pub fn is_valid(text: &str) -> bool {
@@ -584,6 +626,49 @@ pub fn parse(input: &str) -> Result<ParsedInput, ParseError> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// 查表的 syllable_from_bytes 和 from_text 一样：四个字母以内的串全试一遍，再加表里的音节、别的写法、
+    /// 它们改一个字母、五六个字母和不是小写字母的串。
+    #[test]
+    fn syllable_from_bytes_matches_from_text() {
+        let slow = |b: &[u8]| std::str::from_utf8(b).ok().and_then(Syllable::from_text);
+        let mut buf = Vec::new();
+        fn all(len: usize, buf: &mut Vec<u8>, check: &mut dyn FnMut(&[u8])) {
+            if buf.len() == len {
+                check(buf);
+                return;
+            }
+            for c in b'a'..=b'z' {
+                buf.push(c);
+                all(len, buf, check);
+                buf.pop();
+            }
+        }
+        let mut check = |b: &[u8]| assert_eq!(syllable_from_bytes(b), slow(b), "{:?}", String::from_utf8_lossy(b));
+        for len in 1..=4 {
+            all(len, &mut buf, &mut check);
+        }
+        let mut words: Vec<String> = SYLLABLES
+            .iter()
+            .chain(ALIASES.iter().map(|(a, _)| a))
+            .map(|s| s.to_string())
+            .collect();
+        for w in words.clone() {
+            for i in 0..w.len() {
+                for c in b'a'..=b'z' {
+                    let mut b = w.clone().into_bytes();
+                    b[i] = c;
+                    words.push(String::from_utf8(b).unwrap());
+                }
+            }
+            words.push(format!("{w}g"));
+            words.push(format!("{w}ng"));
+        }
+        words.extend(["", "Zhong", "zh'", "zhuangg", "zhuangzhuang", "a1", "ü", "lüe"].map(String::from));
+        for w in &words {
+            check(w.as_bytes());
+        }
+    }
 
     /// fuzzy_groups_between 用位置异或算，这里按定义一对一对直接比：
     /// 声母、韵母各最多换一步（链上相邻），再加最多一次成对音节。

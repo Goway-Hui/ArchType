@@ -7,6 +7,7 @@
 //!   （cases.tsv 每行第一列是输入，逐个前缀模拟打字，统计每次按键的耗时分布）
 //!   加 --lm words.lm 带上词级语言模型，--nnlm nlrgpt2_nnlm.bin 带上神经语言模型重排；加 --no-prefix 关掉句首词候选，对比它的开销；--max N 设候选总数（输入法里是 300）；
 //!   --s2t s2t.tsv 载入简繁表并打开繁体输出
+//!   --dump out.txt 不计时，把每个前缀的前 50 个候选写进 out.txt（改性能前后各跑一次 diff，候选必须一个不差）
 //!   --fuzzy 分组 打开模糊音（分组是 syllable::fuzzy 的位掩码，比如 0xFFFF 是全部分组）
 //! 五笔：... -- --lexicon lexicon.tsv --wubi wubi86.tsv
 //!   码表载入耗时和内存；按输入会话逐键打码表里的码（四码唯一上屏、顶字都照真的走）和几句 z 临时拼音，
@@ -44,6 +45,7 @@ fn main() {
     let mut s2t_path: Option<String> = None;
     let mut fuzzy_groups: Option<u32> = None;
     let mut wubi_path: Option<String> = None;
+    let mut dump_path: Option<String> = None;
 
     let mut i = 1;
     while i < args.len() {
@@ -77,6 +79,10 @@ fn main() {
             }
             "--s2t" => s2t_path = Some(value(&args, &mut i, "--s2t")),
             "--wubi" => wubi_path = Some(value(&args, &mut i, "--wubi")),
+            "--dump" => {
+                i += 1;
+                dump_path = args.get(i).cloned();
+            }
             other => {
                 if let Ok(n) = other.parse() {
                     total = n;
@@ -169,7 +175,10 @@ fn main() {
         return;
     }
     if let Some(path) = typing_path {
-        typing_latency(&engine, &path);
+        match &dump_path {
+            Some(out) => dump_candidates(&engine, &path, out),
+            None => typing_latency(&engine, &path),
+        }
         return;
     }
 
@@ -224,6 +233,34 @@ fn typing_latency(engine: &Engine, path: &str) {
     for (ms, prefix) in samples.iter().rev().take(5) {
         println!("  {ms:7.2} ms  {prefix}");
     }
+}
+
+/// 逐键把每个前缀的前 50 个候选（字、读音、用掉的字节数、分数）写进 `out`，改性能前后各跑一次 diff，
+/// 确认候选一个没变。用例第三列是上文（tools/eval 的格式）时，带上文再查一遍。
+fn dump_candidates(engine: &Engine, path: &str, out: &str) {
+    use std::fmt::Write as _;
+    let data = std::fs::read_to_string(path).expect("读取用例失败");
+    let mut text = String::new();
+    for line in data.lines() {
+        if line.starts_with('#') || line.trim().is_empty() {
+            continue;
+        }
+        let mut cols = line.split('\t');
+        let input = cols.next().unwrap_or("");
+        let context = cols.nth(1).filter(|c| !c.is_empty() && !c.contains('='));
+        for ctx in std::iter::once("").chain(context) {
+            engine.set_context(ctx);
+            for end in 1..=input.len() {
+                let prefix = &input[..end];
+                let _ = writeln!(text, "## {prefix}\t{ctx}");
+                for c in engine.input_at(prefix, 0).iter().take(50) {
+                    let _ = writeln!(text, "{}\t{}\t{}\t{:.9}", c.text, c.pinyin, c.consumed, c.score);
+                }
+            }
+        }
+        engine.set_context("");
+    }
+    std::fs::write(out, text).expect("写出候选失败");
 }
 
 /// 五笔：码表载入，再按会话逐键打码（每 7 条取一条的码，加几句 z 临时拼音）。
