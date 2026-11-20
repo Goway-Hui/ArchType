@@ -75,8 +75,11 @@ prepare() {
 
 build() {
   cd "$srcdir" || return
-  cargo build --release --frozen -p archtype-core --lib -p archtype-config-cli \
+  # 两条分开：--bin 只挑那一个包里的目标，和 -p archtype-config-cli 混在一起时
+  # cargo 不会构建 archtype-config（CMake 随后报找不到）
+  cargo build --release --frozen -p archtype-core --lib \
     --bin archtype-check --bin archtype-show
+  cargo build --release --frozen -p archtype-config-cli
   cmake -S fcitx5-addon -B build -DCMAKE_BUILD_TYPE=None \
     -DCMAKE_INSTALL_PREFIX=/usr -DCMAKE_INSTALL_LIBDIR=lib -DARCHTYPE_VERSION="$pkgver"
   cmake --build build -j"$(nproc)"
