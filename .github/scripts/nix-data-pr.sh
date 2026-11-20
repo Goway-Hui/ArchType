@@ -75,6 +75,10 @@ if built != pinned:
         s, n = re.subn(pattern, repl, s, count=1)
         if n != 1:
             sys.exit(f"nix/package.nix 里找不到要改的那行：{pattern}")
+tag_version = tag.removeprefix("v")
+s, n = re.subn(r'(\n *settingsVersion = )"[^"]*";', rf'\1"{tag_version}";', s, count=1)
+if n != 1:
+    sys.exit("nix/package.nix 里找不到 settingsVersion")
 for arch, digest in (("x86_64-linux", sri_amd64), ("aarch64-linux", sri_arm64)):
     pattern = r'(\n    ' + arch + r' = \{\n(?:      [^\n]*\n)*?      hash = )"[^"]*";'
     s, n = re.subn(pattern, rf'\1"{digest}";', s, count=1)
