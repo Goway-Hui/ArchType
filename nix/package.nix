@@ -22,8 +22,9 @@
 }:
 
 let
-  # 和 core/Cargo.toml 保持一致
-  version = (lib.importTOML ../core/Cargo.toml).package.version;
+  # 版本号在根 Cargo.toml 的 [workspace.package]（各 crate 用 version.workspace = true，
+  # 从 core/Cargo.toml 读会拿到 { workspace = true } 这个 set）
+  version = (lib.importTOML ../Cargo.toml).workspace.package.version;
 
   # 词库不在 git 里：用发布页上的词库压缩包（scripts/package-deb.sh data 打的），按哈希固定。
   # 换了词库的版本发版后，发布流程会自动开 PR 改这三行（.github/scripts/nix-data-pr.sh）；
