@@ -37,7 +37,16 @@ TRANSLATE_URL=
 if command -v python3 >/dev/null && command -v curl >/dev/null; then
   python3 fcitx5-addon/test/mock_openai.py > "$ROOT/mock.port" &
   MOCK_PID=$!
-  for _ in $(seq 50); do [[ -s "$ROOT/mock.port" ]] && break; sleep 0.1; done
+  for _ in $(seq 50); do
+    [[ -s "$ROOT/mock.port" ]] && break
+    kill -0 "$MOCK_PID" 2>/dev/null || break
+    sleep 0.1
+  done
+  if [[ ! -s "$ROOT/mock.port" ]]; then
+    echo "假 OpenAI 服务没起来（mock_openai.py）" >&2
+    kill "$MOCK_PID" 2>/dev/null || true
+    exit 1
+  fi
   TRANSLATE_URL="http://127.0.0.1:$(head -1 "$ROOT/mock.port")/v1"
   echo sk-harness > "$ROOT/translate.key"
 fi

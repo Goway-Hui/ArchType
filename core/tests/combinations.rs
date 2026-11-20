@@ -28,6 +28,22 @@ fn shuangpin_with_fuzzy() {
 }
 
 #[test]
+fn fuzzy_adds_without_replacing_typed() {
+    // 词库同时有照着打的 zi dao 和模糊音的 zhi dao：模糊音只能加候选，不能把照着打的顶掉
+    let mut e = engine("zi dao\t自道\t5000\nzhi dao\t知道\t5000\n");
+    e.set_shuangpin(true);
+    e.set_fuzzy(true);
+    let list = e.input("zidk");
+    let texts: Vec<&str> = list.iter().map(|c| c.text.as_str()).collect();
+    let typed = texts.iter().position(|t| *t == "自道");
+    let fuzzy = texts.iter().position(|t| *t == "知道");
+    assert!(typed.is_some(), "照着打的候选不见了: {texts:?}");
+    if let (Some(typed), Some(fuzzy)) = (typed, fuzzy) {
+        assert!(typed < fuzzy, "模糊音候选排在照着打的候选前面: {texts:?}");
+    }
+}
+
+#[test]
 fn traditional_with_user_word() {
     let mut e = engine("ni hao\t你好\t5000\n");
     e.install_converter(Converter::from_tsv_str("国\t國\n").unwrap());
@@ -44,12 +60,16 @@ fn traditional_with_user_word() {
 #[test]
 fn traditional_with_context() {
     let mut e = engine("xian\t先\t50000\nxi an\t西安\t1000\n");
-    e.install_converter(Converter::from_tsv_str("安\t安\n").unwrap());
+    // 真的把字换掉（不是恒等映射），才验证得到「输出被转换」；上下文仍应选中 xi an 的西安
+    e.install_converter(Converter::from_tsv_str("安\t晏\n").unwrap());
     e.set_traditional(true);
     e.set_context("我");
-    // 上下文应当仍然生效（西安），只是输出被转换
     let list = e.input("xian");
-    assert!(list.iter().any(|c| c.text == "西安"));
+    assert!(
+        list.iter().any(|c| c.text == "西晏"),
+        "上下文生效时 xi an 的整词应当被转换: {:?}",
+        list.iter().map(|c| &c.text).collect::<Vec<_>>()
+    );
 }
 
 #[test]
@@ -90,7 +110,11 @@ fn auto_learn_under_shuangpin() {
     for _ in 0..3 {
         e.record_selection_with_pinyin("阿特", Some("aate"));
     }
-    assert_eq!(e.user_words().len(), 1, "双拼下的选词应当能进用户词库");
+    assert!(
+        e.user_words().iter().any(|(_, word, _)| word == "阿特"),
+        "双拼下的选词应当能进用户词库: {:?}",
+        e.user_words()
+    );
     let list = e.input("aate");
     assert!(
         list.iter().any(|c| c.text == "阿特"),

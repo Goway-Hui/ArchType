@@ -333,6 +333,9 @@ impl Nnlm {
 
     /// 下一个字的 log 概率分布里最大的几个（调试用）。
     pub fn top_next(&self, prefix: &[u32], k: usize) -> Vec<(char, f32)> {
+        if prefix.is_empty() || prefix.len() >= MAX_POS {
+            return Vec::new();
+        }
         let Ok(mut cache) = self.cache.lock() else {
             return Vec::new();
         };

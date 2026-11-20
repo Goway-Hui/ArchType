@@ -34,6 +34,12 @@ impl Typer {
         self.done = true;
     }
 
+    /// 结束一次会话后复位：同一个会话对象还能再录下一段（守护进程会复用它）。
+    pub fn reset(&mut self) {
+        self.done = false;
+        self.typed.clear();
+    }
+
     /// 把屏幕上的文本修正为 next，返回需要执行的退格/插入
     pub fn update(&mut self, next: &str) -> Update {
         if self.done {

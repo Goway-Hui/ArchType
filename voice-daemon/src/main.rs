@@ -51,20 +51,47 @@ impl Default for Options {
     }
 }
 
+fn value(it: &mut impl Iterator<Item = String>, flag: &str) -> String {
+    it.next().unwrap_or_else(|| {
+        eprintln!("{flag} 要一个值");
+        std::process::exit(2);
+    })
+}
+
 fn parse_args() -> Options {
     let mut opt = Options::default();
     let mut it = std::env::args().skip(1);
     while let Some(arg) = it.next() {
         match arg.as_str() {
-            "--hotkey" => opt.hotkey = it.next().unwrap_or_else(|| "alt_r".into()),
-            "--mode" => opt.mode = it.next().unwrap_or_else(|| "tap".into()),
-            "--silence-ms" => {
-                opt.silence_ms = it.next().and_then(|v| v.parse().ok()).unwrap_or(1500)
+            "--hotkey" => opt.hotkey = value(&mut it, "--hotkey"),
+            "--mode" => {
+                opt.mode = value(&mut it, "--mode");
+                if opt.mode != "tap" && opt.mode != "hold" {
+                    eprintln!("--mode 只能是 tap 或 hold");
+                    std::process::exit(2);
+                }
             }
-            "--device" => opt.device = it.next(),
-            "--asr-cmd" => opt.asr_cmd = it.next(),
-            "--asr" => opt.asr = it.next(),
-            "--asr-dir" => opt.asr_dir = it.next().map(std::path::PathBuf::from),
+            "--silence-ms" => {
+                let raw = value(&mut it, "--silence-ms");
+                opt.silence_ms = match raw.parse() {
+                    Ok(n) => n,
+                    Err(_) => {
+                        eprintln!("--silence-ms 要一个整数（毫秒）");
+                        std::process::exit(2);
+                    }
+                };
+            }
+            "--device" => opt.device = Some(value(&mut it, "--device")),
+            "--asr-cmd" => opt.asr_cmd = Some(value(&mut it, "--asr-cmd")),
+            "--asr" => {
+                let mode = value(&mut it, "--asr");
+                if !matches!(mode.as_str(), "mock" | "cmd" | "wtlocal") {
+                    eprintln!("--asr 只能是 mock、cmd 或 wtlocal");
+                    std::process::exit(2);
+                }
+                opt.asr = Some(mode);
+            }
+            "--asr-dir" => opt.asr_dir = Some(std::path::PathBuf::from(value(&mut it, "--asr-dir"))),
             "--help" | "-h" => {
                 println!(
                     "archtype-voiced --hotkey alt_r|ctrl_r --mode tap|hold --silence-ms 1500 [--device 名称] [--asr-cmd '命令 参数']"
@@ -76,7 +103,10 @@ fn parse_args() -> Options {
                 println!("  例：--asr-cmd 'whisper-cli -m ggml-large-v3-turbo.bin -l zh -nt -f'");
                 std::process::exit(0);
             }
-            other => eprintln!("未知参数：{}", other),
+            other => {
+                eprintln!("未知参数：{other}");
+                std::process::exit(2);
+            }
         }
     }
     opt
@@ -86,6 +116,7 @@ pub fn trigger_config(opt: &Options) -> TriggerConfig {
     TriggerConfig {
         hold_threshold: Duration::from_millis(300),
         silence_timeout: Duration::from_millis(opt.silence_ms),
+        tap: opt.mode != "hold",
     }
 }
 

@@ -46,7 +46,13 @@ pub fn format(value: f64) -> String {
         return format!("{}", rounded as i64);
     }
     let digits = 10usize.saturating_sub(rounded.abs().log10().floor().max(0.0) as usize + 1);
-    let text = format!("{rounded:.digits$}");
+    // 整数部分已经有 10 位以上（1000000000.25）时 digits 会算成 0：这时用最短往返表示，
+    // 别用 `{:.0}` 把小数直接四舍五入掉
+    let text = if digits == 0 {
+        format!("{rounded}")
+    } else {
+        format!("{rounded:.digits$}")
+    };
     let text = text.trim_end_matches('0').trim_end_matches('.');
     text.to_string()
 }

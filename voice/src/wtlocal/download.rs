@@ -37,7 +37,11 @@ pub fn ensure(dir: &Path) -> Result<()> {
     if !pack_file.is_file() {
         download(&pack_file)?;
     }
-    verify(&pack_file)?;
+    if let Err(error) = verify(&pack_file) {
+        // 坏包留着的话，下次 ensure 会直接拿它解包
+        let _ = std::fs::remove_file(&pack_file);
+        return Err(error);
+    }
     pack::unpack(&pack_file, dir)?;
     let _ = std::fs::remove_file(&pack_file);
     Ok(())

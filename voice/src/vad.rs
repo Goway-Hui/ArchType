@@ -16,6 +16,9 @@ pub const ONSET_FRAMES: u32 = 5;
 /// 点按模式的自动结束 = 最后一个有声帧 + 480ms + 静音超时（默认 1.5s），约 2 秒。
 pub const HANGOVER_FRAMES: u32 = 24;
 
+/// 启动阶段（前 20 帧，0.4 秒）噪声底用更快的系数跟随，安静房间的底能迅速落到实际噪声。
+pub const WARMUP_FRAMES: u32 = 20;
+
 #[derive(Debug)]
 pub struct Vad {
     noise_floor: f32,
@@ -29,6 +32,8 @@ pub struct Vad {
     /// 漏桶计数：有声 +1、静音 -1，夹在 0..=onset
     score: u32,
     speech: bool,
+    /// 已处理的帧数：启动阶段噪声底跟得更快
+    frames: u32,
 }
 
 impl Default for Vad {
@@ -41,7 +46,7 @@ impl Vad {
     /// 不带起始确认：一帧有声就算说话。
     pub fn new(threshold_db: f32, hangover_frames: u32) -> Self {
         Self {
-            // 全幅能量为 1.0（0 dB）；静音底取约 -60 dB
+            // 全幅能量为 1.0（0 dB）；第一帧会用实际能量对齐，这里只是占位
             noise_floor: 1e-6,
             threshold_db,
             hangover: hangover_frames,
@@ -49,6 +54,7 @@ impl Vad {
             onset: 1,
             score: 0,
             speech: false,
+            frames: 0,
         }
     }
 
@@ -77,6 +83,7 @@ impl Vad {
             .sum::<f32>()
             / frame.len() as f32;
         let db = 10.0 * (energy.max(1e-10)).log10();
+        self.frames = self.frames.saturating_add(1);
 
         let floor_db = 10.0 * self.noise_floor.max(1e-10).log10();
         let active = db > floor_db + self.threshold_db;
@@ -85,8 +92,10 @@ impl Vad {
             self.score = (self.score + 1).min(self.onset);
         } else {
             self.score = self.score.saturating_sub(1);
-            // 噪声底只在非语音帧上缓慢跟随
-            self.noise_floor = self.noise_floor * 0.98 + energy * 0.02;
+            // 噪声底只在非语音帧上跟随：启动阶段（前 0.4 秒）跟得快，安静房间的底能迅速落到实际噪声；
+            // 之后放慢，免得一两个词的停顿把底抬上去
+            let alpha = if self.frames <= WARMUP_FRAMES { 0.3 } else { 0.02 };
+            self.noise_floor = self.noise_floor * (1.0 - alpha) + energy * alpha;
         }
 
         if active && self.score >= self.onset {

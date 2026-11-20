@@ -28,8 +28,16 @@ def main():
         if not line or line.startswith("#"):
             continue
         cols = line.split("\t")
-        pinyin, word = " ".join(cols[0].split()), cols[1]
-        freq = int(cols[2]) if len(cols) > 2 and cols[2].strip() else args.freq
+        if len(cols) < 2 or not cols[0].strip() or not cols[1].strip():
+            sys.exit(f"{args.hotwords}: 每行要有「拼音<TAB>词[<TAB>词频]」：{line!r}")
+        pinyin, word = " ".join(cols[0].split()), cols[1].strip()
+        if len(cols) > 2 and cols[2].strip():
+            try:
+                freq = int(cols[2])
+            except ValueError:
+                sys.exit(f"{args.hotwords}: 词频不是整数：{line!r}")
+        else:
+            freq = args.freq
         # 同一个词写了几行：每个读音都记下，词频取最大的
         readings, old = hot.get(word, ([], 0))
         if pinyin not in readings:

@@ -59,8 +59,17 @@ impl Resampler {
 
     /// 输入 f32 采样，输出重采样后的 f32；长度约为 len*to/from
     pub fn process(&mut self, input: &[f32]) -> Vec<f32> {
+        let mut out = Vec::new();
+        self.process_into(input, &mut out);
+        out
+    }
+
+    /// 同 [`process`]，写进调用方复用的缓冲（采集回调每帧调用，避免反复分配）。
+    pub fn process_into(&mut self, input: &[f32], out: &mut Vec<f32>) {
+        out.clear();
         if self.is_identity() {
-            return input.to_vec();
+            out.extend_from_slice(input);
+            return;
         }
         let filtered;
         let input = match self.lowpass.as_mut() {
@@ -71,7 +80,7 @@ impl Resampler {
             None => input,
         };
         let step = self.to as f32 / self.from as f32;
-        let mut out = Vec::with_capacity((input.len() as f32 * step) as usize + 2);
+        out.reserve((input.len() as f32 * step) as usize + 2);
         for &s in input {
             if !self.started {
                 self.prev = s;
@@ -87,7 +96,6 @@ impl Resampler {
             self.pos -= 1.0;
             self.prev = s;
         }
-        out
     }
 }
 
@@ -138,22 +146,33 @@ impl Lowpass {
 
 /// 把 f32 [-1,1] 转成 i16
 pub fn to_i16(samples: &[f32]) -> Vec<i16> {
-    samples
-        .iter()
-        .map(|v| (v.clamp(-1.0, 1.0) * 32767.0) as i16)
-        .collect()
+    let mut out = Vec::with_capacity(samples.len());
+    to_i16_into(samples, &mut out);
+    out
+}
+
+/// 同 [`to_i16`]，写进调用方复用的缓冲。
+pub fn to_i16_into(samples: &[f32], out: &mut Vec<i16>) {
+    out.clear();
+    out.extend(samples.iter().map(|v| (v.clamp(-1.0, 1.0) * 32767.0) as i16));
 }
 
 /// 多声道取平均转单声道
 pub fn downmix(interleaved: &[f32], channels: u16) -> Vec<f32> {
+    let mut out = Vec::new();
+    downmix_into(interleaved, channels, &mut out);
+    out
+}
+
+/// 同 [`downmix`]，写进调用方复用的缓冲。
+pub fn downmix_into(interleaved: &[f32], channels: u16, out: &mut Vec<f32>) {
+    out.clear();
     if channels <= 1 {
-        return interleaved.to_vec();
+        out.extend_from_slice(interleaved);
+        return;
     }
     let ch = channels as usize;
-    interleaved
-        .chunks(ch)
-        .map(|frame| frame.iter().sum::<f32>() / ch as f32)
-        .collect()
+    out.extend(interleaved.chunks(ch).map(|frame| frame.iter().sum::<f32>() / ch as f32));
 }
 
 /// 固定帧长切分器

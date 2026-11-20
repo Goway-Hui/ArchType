@@ -40,12 +40,17 @@ asm(
 static void on_segv(int, siginfo_t*, void*){ const char m[]="CRASH\n"; write(2,m,sizeof m-1); _exit(7); }
 
 static std::string read_str(void* s){
-  unsigned char* b=(unsigned char*)s;
-  unsigned char last=b[23];
-  if(last & 0x80){ size_t n=last & 0x7f; if(n>22)n=22; return std::string((char*)b,n); }
-  char* p=*(char**)(b+16); size_t n=*(size_t*)(b+8);
-  if(!p) return std::string();
-  return std::string(p,n);
+  const unsigned char* b=(const unsigned char*)s;
+  // libc++ 布局：长串 data@0 / size@8 / cap@16（cap 的 LSB 为 1）；短串 size@0（LSB=0），数据从 b+1
+  unsigned long long cap=*(const unsigned long long*)(b+16);
+  if(cap & 1ULL){
+    unsigned long long sz=*(const unsigned long long*)(b+8);
+    const char* p=*(const char**)(b);
+    if(p && sz < (1ULL<<20)) return std::string(p,(size_t)sz);
+  }
+  size_t n=b[0];
+  if(n>22) n=22;
+  return std::string((const char*)(b+1),n);
 }
 
 typedef bool (*tryfn)(const void*, int);

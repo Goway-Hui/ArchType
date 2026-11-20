@@ -180,6 +180,10 @@ engine)
   is_elf() { [[ "$(head -c4 "$1" | od -An -c | tr -d ' ')" == '177ELF' ]]; }
   mapfile -t elfs < <(find "$stage/usr" -type f \( -name '*.so' -o -path '*/bin/*' \) |
                       while read -r f; do is_elf "$f" && echo "$f"; done)
+  if (( ${#elfs[@]} == 0 )); then
+    echo "没找到任何 ELF 二进制（打包目录不对？）" >&2
+    exit 1
+  fi
   strip --strip-unneeded "${elfs[@]}"
 
   # 词库：雾凇拼音（GPL-3.0）+ ArchType 的词级语言模型（CC BY-SA 4.0）+ 五笔码表（rime-wubi，LGPL-3.0）

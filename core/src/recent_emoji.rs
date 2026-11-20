@@ -49,21 +49,28 @@ pub fn remember(emoji: &str) {
     if emoji.trim().is_empty() || emoji.contains('\n') {
         return;
     }
-    let Ok(mut recent) = RECENT.lock() else {
+    // 文件 I/O 不放在锁里：remember 跑在按键线程上，持锁写盘会挡住 list()
+    let out = {
+        let Ok(mut recent) = RECENT.lock() else {
+            return;
+        };
+        recent.items.retain(|e| e != emoji);
+        recent.items.insert(0, emoji.to_owned());
+        recent.items.truncate(MAX);
+        recent.path.clone().map(|path| {
+            let mut out = recent.items.join("\n");
+            out.push('\n');
+            (path, out)
+        })
+    };
+    let Some((path, out)) = out else {
         return;
     };
-    recent.items.retain(|e| e != emoji);
-    recent.items.insert(0, emoji.to_owned());
-    recent.items.truncate(MAX);
-    if let Some(path) = recent.path.clone() {
-        if let Some(dir) = path.parent() {
-            let _ = std::fs::create_dir_all(dir);
-        }
-        let mut out = recent.items.join("\n");
-        out.push('\n');
-        // 丢了也无所谓（最多 18 个），不等刷到盘上：这是在按键的线程上
-        let _ = crate::fsutil::write_replace(&path, out.as_bytes());
+    if let Some(dir) = path.parent() {
+        let _ = std::fs::create_dir_all(dir);
     }
+    // 丢了也无所谓（最多 18 个），不等刷到盘上：这是在按键的线程上
+    let _ = crate::fsutil::write_replace(&path, out.as_bytes());
 }
 
 /// 最近用过的，最近的在前。

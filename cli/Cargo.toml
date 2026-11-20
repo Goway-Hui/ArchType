@@ -1,7 +1,10 @@
 [package]
 name = "archtype-config-cli"
-version = "0.6.2"
+version.workspace = true
 edition = "2024"
+# edition 2024 需要 Rust 1.85+；core 的 1.79 只约束它自己
+rust-version = "1.85"
+license.workspace = true
 publish = false
 
 [[bin]]

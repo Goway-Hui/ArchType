@@ -10,13 +10,12 @@
 #include <stdlib.h>
 #include <unistd.h>
 static void on_segv(int s, siginfo_t* si, void* uc){
-  void* bt[40]; int n=backtrace(bt,40);
+  (void)s;
+  // 信号处理器里只能调异步信号安全的函数：别用 backtrace/fprintf/dladdr
   void* pc=(void*)((ucontext_t*)uc)->uc_mcontext->__ss.__pc;
-  Dl_info di; memset(&di,0,sizeof di);
-  dladdr(pc,&di);
-  fprintf(stderr, "SEGV addr=%p pc=%p sym=%s off=+0x%lx", si->si_addr, pc, di.dli_sname?di.dli_sname:"?", di.dli_saddr?(unsigned long)((char*)pc-(char*)di.dli_saddr):0);
-  putc(10, stderr);
-  backtrace_symbols_fd(bt,n,2);
+  char line[96];
+  int n=snprintf(line,sizeof line,"SEGV addr=%p pc=%p\n", si->si_addr, pc);
+  if(n>0) write(2,line,(size_t)n);
   _exit(9);
 }
 

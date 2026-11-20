@@ -1389,7 +1389,9 @@ function App() {
   };
 
   const wanxiangPath = signal(Config.lexiconWanxiangPath());
-  const lexiconRaw = signal(Config.lexiconState());
+  // 先给空状态：lexiconState() 内部会同步 curl 拉最新版本，别拖住首帧
+  const lexiconRaw = signal("{}");
+  setTimeout(() => lexiconRaw.set(Config.lexiconState()), 16);
   const lexiconBusyState = signal(Config.lexiconDownloadState());
   const lexiconProgress = signal(Config.lexiconDownloadProgress());
   const lexiconData = computed(() => {
@@ -1432,22 +1434,27 @@ function App() {
     return "可选。微信输入法自带的小模型（16 MB），长句的第一候选更准。它是腾讯的，ArchType 不带：先下载微信输入法 macOS 版安装包（.zip），再点「导入」";
   });
   const importNnlm = async () => {
-    const picked = await Picker.pickFiles({ maxSize: 200 * 1024 * 1024 });
-    if (picked.length === 0) return;
-    const file = picked[0].file;
-    if (!file) {
-      nnlmMessage.set("文件太大，没读进来");
-      return;
-    }
-    nnlmMessage.set("正在导入…");
-    const bytes = await file.bytes();
-    const error = Config.nnlmImport(bytes);
-    if (error === "") {
-      nnlmRaw.set(Config.nnlmState());
-      nnlmMessage.set("已导入，重启输入法后生效");
-      Config.reloadConfig();
-    } else {
-      nnlmMessage.set(error);
+    try {
+      const picked = await Picker.pickFiles({ maxSize: 200 * 1024 * 1024 });
+      if (picked.length === 0) return;
+      const file = picked[0].file;
+      if (!file) {
+        nnlmMessage.set("文件太大，没读进来");
+        return;
+      }
+      nnlmMessage.set("正在导入…");
+      const bytes = await file.bytes();
+      const error = Config.nnlmImport(bytes);
+      if (error === "") {
+        nnlmRaw.set(Config.nnlmState());
+        nnlmMessage.set("已导入，重启输入法后生效");
+        Config.reloadConfig();
+      } else {
+        nnlmMessage.set(error);
+      }
+    } catch (error) {
+      // 选文件被取消之外的失败（文件被删除、权限、读取中断）也要有反馈，不能静默
+      nnlmMessage.set(`导入失败：${error instanceof Error ? error.message : String(error)}`);
     }
   };
   const deleteNnlm = () => {
@@ -1543,16 +1550,21 @@ function App() {
 
   const runTranslateTest = () => {
     testState.set("测试中…");
-    const result: { ok: boolean; text?: string; error?: string } = JSON.parse(
-      Config.translateTest(
-        translateBase(),
-        translateKey(),
-        translateModel(),
-        translateTarget(),
-        translateFormal(),
-      ),
-    );
-    testState.set(result.ok ? `成功：${result.text ?? ""}` : `失败：${result.error ?? "未知错误"}`);
+    // 原生调用同步做 curl（最长 45 秒）：让这一帧先把「测试中…」画出来再阻塞
+    setTimeout(() => {
+      const result: { ok: boolean; text?: string; error?: string } = JSON.parse(
+        Config.translateTest(
+          translateBase(),
+          translateKey(),
+          translateModel(),
+          translateTarget(),
+          translateFormal(),
+        ),
+      );
+      testState.set(
+        result.ok ? `成功：${result.text ?? ""}` : `失败：${result.error ?? "未知错误"}`,
+      );
+    }, 16);
   };
 
   const onCustomWordChange = (value: string) => {

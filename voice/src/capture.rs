@@ -7,7 +7,7 @@ use std::sync::{Arc, Mutex};
 use anyhow::{anyhow, Context, Result};
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 
-use crate::audio::{downmix, to_i16, Resampler, TARGET_RATE};
+use crate::audio::{downmix_into, to_i16_into, Resampler, TARGET_RATE};
 
 /// 采集信息（用于日志和调试）。
 #[derive(Clone, Debug)]
@@ -110,13 +110,18 @@ where
         cpal::SampleFormat::F32 => {
             let mut rs = Resampler::new(rate, TARGET_RATE);
             let sink = sink.clone();
+            // 回调里复用这几块缓冲：实时音频线程上每帧三次堆分配会拖慢处理
+            let mut mono = Vec::new();
+            let mut res = Vec::new();
+            let mut pcm = Vec::new();
             dev.build_input_stream(
                 &config,
                 move |data: &[f32], _: &cpal::InputCallbackInfo| {
-                    let mono = downmix(data, channels);
-                    let res = rs.process(&mono);
+                    downmix_into(data, channels, &mut mono);
+                    rs.process_into(&mono, &mut res);
+                    to_i16_into(&res, &mut pcm);
                     if let Ok(mut f) = sink.lock() {
-                        f(to_i16(&res));
+                        f(std::mem::take(&mut pcm));
                     }
                 },
                 err_fn,
@@ -126,14 +131,20 @@ where
         cpal::SampleFormat::I16 => {
             let mut rs = Resampler::new(rate, TARGET_RATE);
             let sink = sink.clone();
+            let mut f32s = Vec::new();
+            let mut mono = Vec::new();
+            let mut res = Vec::new();
+            let mut pcm = Vec::new();
             dev.build_input_stream(
                 &config,
                 move |data: &[i16], _: &cpal::InputCallbackInfo| {
-                    let f: Vec<f32> = data.iter().map(|&v| v as f32 / 32768.0).collect();
-                    let mono = downmix(&f, channels);
-                    let res = rs.process(&mono);
+                    f32s.clear();
+                    f32s.extend(data.iter().map(|&v| v as f32 / 32768.0));
+                    downmix_into(&f32s, channels, &mut mono);
+                    rs.process_into(&mono, &mut res);
+                    to_i16_into(&res, &mut pcm);
                     if let Ok(mut f) = sink.lock() {
-                        f(to_i16(&res));
+                        f(std::mem::take(&mut pcm));
                     }
                 },
                 err_fn,
@@ -143,17 +154,20 @@ where
         cpal::SampleFormat::U16 => {
             let mut rs = Resampler::new(rate, TARGET_RATE);
             let sink = sink.clone();
+            let mut f32s = Vec::new();
+            let mut mono = Vec::new();
+            let mut res = Vec::new();
+            let mut pcm = Vec::new();
             dev.build_input_stream(
                 &config,
                 move |data: &[u16], _: &cpal::InputCallbackInfo| {
-                    let f: Vec<f32> = data
-                        .iter()
-                        .map(|&v| (v as f32 - 32768.0) / 32768.0)
-                        .collect();
-                    let mono = downmix(&f, channels);
-                    let res = rs.process(&mono);
+                    f32s.clear();
+                    f32s.extend(data.iter().map(|&v| (v as f32 - 32768.0) / 32768.0));
+                    downmix_into(&f32s, channels, &mut mono);
+                    rs.process_into(&mono, &mut res);
+                    to_i16_into(&res, &mut pcm);
                     if let Ok(mut f) = sink.lock() {
-                        f(to_i16(&res));
+                        f(std::mem::take(&mut pcm));
                     }
                 },
                 err_fn,

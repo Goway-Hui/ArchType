@@ -547,7 +547,7 @@ ArchType 自己的日志在 `~/.local/state/archtype/archtype.log`（满 512 KB 
 ## 参与开发
 
 ```bash
-cargo test --workspace                     # Rust 测试（需要 libasound2-dev，语音守护进程还要 libx11-dev libxkbcommon-dev）
+cargo test --workspace                     # Rust 测试（需要 libasound2-dev，语音守护进程还要 libx11-dev libxkbcommon-dev；core 默认开 voice，单独 cargo build -p archtype-core 也要 ALSA 开发包）
 ./scripts/abi-smoke.sh                     # C 接口冒烟测试
 scripts/addon-test.sh /usr/share/archtype/lexicon.tsv /usr/share/archtype/english.txt
                                            # 插件按键测试：起一个私有的 fcitx5，不影响你正在用的输入法

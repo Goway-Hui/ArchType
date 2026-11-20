@@ -32,6 +32,8 @@
 //
 // 需要：机器人是群管理员且有 can_invite_users 权限（否则收不到 chat_join_request）。
 
+import { createHmac } from 'node:crypto';
+
 const TG = process.env.TG_TOKEN;
 const GH = process.env.GH_TOKEN || '';
 const REPO = process.env.REPO; // owner/repo
@@ -144,7 +146,11 @@ function makeCaptcha() {
 }
 
 // callback_data 上限 64 字节：v:<chatId>:<userId>:<ok|no>:<已错次数> ≈ 35 字节，安全。
-const cbData = (chatId, userId, ok, tries) => `v:${chatId}:${userId}:${ok ? 'ok' : 'no'}:${tries}`;
+// 正确选项用 bot token 签名：消息里拿到的 callback_data 不再能直接看出哪个按钮是对的
+const sign = (...parts) =>
+  createHmac('sha256', TG).update(parts.join(':')).digest('hex').slice(0, 10);
+const cbData = (chatId, userId, ok, tries) =>
+  `v:${chatId}:${userId}:${ok ? 'ok' : 'no'}:${tries}:${sign(chatId, userId, ok ? 'ok' : 'no', tries)}`;
 
 function captchaKeyboard(chatId, userId, tries) {
   const c = makeCaptcha();
@@ -190,7 +196,14 @@ async function onJoinRequest(r) {
 async function onCallback(cb) {
   const parts = String(cb.data || '').split(':');
   if (parts[0] !== 'v') return;
-  const [, chatId, userId, verdict, triesRaw] = parts;
+  const [, chatId, userId, verdict, triesRaw, sig] = parts;
+  if (sig !== sign(chatId, userId, verdict, triesRaw)) {
+    return tg('answerCallbackQuery', {
+      callback_query_id: cb.id,
+      text: '验证数据无效',
+      show_alert: true,
+    });
+  }
   // 只认本人作答（私聊场景下本就只有本人可见，这里再兜一道）
   if (String(cb.from?.id) !== userId) {
     return tg('answerCallbackQuery', { callback_query_id: cb.id, text: '这不是你的验证', show_alert: true });
@@ -273,7 +286,13 @@ async function onCallback(cb) {
     try {
       await handle(cmd, arg, m.chat.id);
     } catch (e) {
-      await send(m.chat.id, '⚠️ 出错了：' + (e?.message || e));
+      // 连「错误回复」本身也可能失败（网络抖动、响应不是 JSON）：别让它冒出循环，
+      // 否则后面的 offset 确认不会执行，整批更新下次重放
+      try {
+        await send(m.chat.id, '⚠️ 出错了：' + (e?.message || e));
+      } catch (sendError) {
+        console.error('错误回复也发不出去:', sendError?.message || sendError);
+      }
     }
   }
   // 向 Telegram 确认已处理（清掉这些更新，下次不再返回）

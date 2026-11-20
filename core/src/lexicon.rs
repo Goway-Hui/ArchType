@@ -1125,6 +1125,11 @@ impl UserLexicon {
             custom.push((pinyin, word.to_string(), freq));
         }
         let count = custom.len() + codes.len();
+        // 只建自定义词这一份，用户词的词典不用动（用刚解析出来的 custom，不再回头读锁）
+        let mut lexicon = MemoryLexicon::new();
+        for (pinyin, word, freq) in &custom {
+            let _ = lexicon.insert(pinyin, word, *freq);
+        }
         if let Ok(mut slot) = self.custom.write() {
             *slot = custom;
         }
@@ -1133,11 +1138,6 @@ impl UserLexicon {
         }
         if let Ok(mut slot) = self.phrases.write() {
             *slot = phrases;
-        }
-        // 只建自定义词这一份，用户词的词典不用动
-        let mut lexicon = MemoryLexicon::new();
-        for (pinyin, word, freq) in self.custom_words() {
-            let _ = lexicon.insert(&pinyin, &word, freq);
         }
         if let Ok(mut slot) = self.custom_lexicon.write() {
             *slot = lexicon;

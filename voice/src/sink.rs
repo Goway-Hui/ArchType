@@ -171,11 +171,20 @@ impl TextSink for ClipboardSink {
                 .args(args)
                 .stdin(std::process::Stdio::piped())
                 .spawn();
-            if let Ok(mut child) = child {
-                if let Some(stdin) = child.stdin.as_mut() {
-                    let _ = std::io::Write::write_all(stdin, text.as_bytes());
+            match child {
+                Ok(mut child) => {
+                    if let Some(stdin) = child.stdin.as_mut() {
+                        if let Err(error) = std::io::Write::write_all(stdin, text.as_bytes()) {
+                            eprintln!("剪贴板复制写入失败：{error}");
+                        }
+                    }
+                    match child.wait() {
+                        Ok(status) if status.success() => {}
+                        Ok(status) => eprintln!("剪贴板复制命令退出码 {status}"),
+                        Err(error) => eprintln!("剪贴板复制命令等待失败：{error}"),
+                    }
                 }
-                let _ = child.wait();
+                Err(error) => eprintln!("跑不了剪贴板复制命令：{error}"),
             }
         }
         Self::run(&self.paste_cmd);

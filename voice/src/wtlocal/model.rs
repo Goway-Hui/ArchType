@@ -193,56 +193,71 @@ impl Model {
             }
         });
 
+        // 每个输出时间步都要一块 DIM*K2 的补零缓冲（约 250 KB）：线程内复用，别每步分配
+        thread_local! {
+            static CONV2_BUF: std::cell::RefCell<Vec<f32>> = std::cell::RefCell::new(Vec::new());
+        }
         // conv 7×7, 32→64, 时间步长 5（时补 1、频补 3）
         let mut y2 = vec![0f32; t1 * F2 * W2];
         parallel::for_each_chunk_mut(&mut y2, F2 * W2, |ti, y| {
-            let mut p = vec![0f32; DIM * K2];
-            for i in 0..7 {
-                let Some(tt) = at(ti * 5 + i, -1).filter(|&v| v < t) else {
-                    continue;
-                };
-                let row = &y1[tt * F1 * DIM..(tt + 1) * F1 * DIM];
-                for c in 0..F1 {
-                    for f in 0..DIM {
-                        for j in 0..7 {
-                            if let Some(ff) = at(f + j, -3).filter(|&v| v < DIM) {
-                                p[f * K2 + c * 49 + i * 7 + j] = row[c * DIM + ff];
+            CONV2_BUF.with(|slot| {
+                let mut p = slot.borrow_mut();
+                p.clear();
+                p.resize(DIM * K2, 0.0);
+                for i in 0..7 {
+                    let Some(tt) = at(ti * 5 + i, -1).filter(|&v| v < t) else {
+                        continue;
+                    };
+                    let row = &y1[tt * F1 * DIM..(tt + 1) * F1 * DIM];
+                    for c in 0..F1 {
+                        for f in 0..DIM {
+                            for j in 0..7 {
+                                if let Some(ff) = at(f + j, -3).filter(|&v| v < DIM) {
+                                    p[f * K2 + c * 49 + i * 7 + j] = row[c * DIM + ff];
+                                }
                             }
                         }
                     }
                 }
-            }
-            for o in 0..F2 {
-                let w = &self.c2[o * K2..(o + 1) * K2];
-                for f in 0..DIM {
-                    y[o * W2 + f] = dotf(w, &p[f * K2..(f + 1) * K2]).max(0.0);
+                for o in 0..F2 {
+                    let w = &self.c2[o * K2..(o + 1) * K2];
+                    for f in 0..DIM {
+                        y[o * W2 + f] = dotf(w, &p[f * K2..(f + 1) * K2]).max(0.0);
+                    }
                 }
-            }
+            });
         });
 
         // conv 3×3, 64→192, 频率步长 2（时补 1）→ [t1][192×20]
+        thread_local! {
+            static CONV3_BUF: std::cell::RefCell<Vec<f32>> = std::cell::RefCell::new(Vec::new());
+        }
         let mut y3 = vec![0f32; t1 * FLAT];
         parallel::for_each_chunk_mut(&mut y3, FLAT, |ti, y| {
-            let mut p = vec![0f32; 20 * K3];
-            for i in 0..3 {
-                let Some(tt) = at(ti + i, -1).filter(|&v| v < t1) else {
-                    continue;
-                };
-                let row = &y2[tt * F2 * W2..(tt + 1) * F2 * W2];
-                for c in 0..F2 {
-                    for f in 0..20 {
-                        for j in 0..3 {
-                            p[f * K3 + c * 9 + i * 3 + j] = row[c * W2 + 2 * f + j];
+            CONV3_BUF.with(|slot| {
+                let mut p = slot.borrow_mut();
+                p.clear();
+                p.resize(20 * K3, 0.0);
+                for i in 0..3 {
+                    let Some(tt) = at(ti + i, -1).filter(|&v| v < t1) else {
+                        continue;
+                    };
+                    let row = &y2[tt * F2 * W2..(tt + 1) * F2 * W2];
+                    for c in 0..F2 {
+                        for f in 0..20 {
+                            for j in 0..3 {
+                                p[f * K3 + c * 9 + i * 3 + j] = row[c * W2 + 2 * f + j];
+                            }
                         }
                     }
                 }
-            }
-            for o in 0..F3 {
-                let w = &self.c3[o * K3..(o + 1) * K3];
-                for f in 0..20 {
-                    y[o * 20 + f] = dotf(w, &p[f * K3..(f + 1) * K3]).max(0.0);
+                for o in 0..F3 {
+                    let w = &self.c3[o * K3..(o + 1) * K3];
+                    for f in 0..20 {
+                        y[o * 20 + f] = dotf(w, &p[f * K3..(f + 1) * K3]).max(0.0);
+                    }
                 }
-            }
+            });
         });
 
         let mut h = self.mm(&quant(&y3, FLAT), &self.lin, Some(&self.lin_b));

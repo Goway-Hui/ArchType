@@ -165,10 +165,17 @@ impl WubiTable {
             return hits;
         }
         let mut longer: Vec<usize> = (range.start + exact..range.end).collect();
-        longer.sort_by(|&a, &b| {
+        let cmp = |&a: &usize, &b: &usize| {
             let (x, y) = (&self.entries[a], &self.entries[b]);
             y.weight.cmp(&x.weight).then(x.code.cmp(&y.code))
-        });
+        };
+        // 只要前 more 个（去重时可能还要多取几个），不必给整个前缀区间排序
+        let take = (more + hits.len()).min(longer.len());
+        if take < longer.len() {
+            longer.select_nth_unstable_by(take, cmp);
+            longer.truncate(take);
+        }
+        longer.sort_by(cmp);
         let mut added = 0;
         for i in longer {
             if added == more {

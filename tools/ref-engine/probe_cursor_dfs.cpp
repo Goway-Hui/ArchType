@@ -48,10 +48,10 @@ static std::string read_str(const void* s){
   if((cap & 1ULL) && sz < 4096 && dp > 0x10000ULL && dp < 0x800000000000ULL){
     return std::string((const char*)dp, (size_t)sz);
   }
-  unsigned char last=b[23];
-  size_t n=last & 0x7f;
+  // libc++ 短串：b[0] 是长度（bit7=0），数据从 b+1 开始
+  size_t n=b[0];
   if(n>22) n=22;
-  return std::string((const char*)b,n);
+  return std::string((const char*)(b+1),n);
 }
 typedef bool (*movefn)(void*, int);
 typedef unsigned long long (*freqfn)(const void*);
@@ -68,7 +68,7 @@ static void walk(unsigned char* cur, int depth){
       if(printed < 40){
         std::string word=read_str(cur+0x2c);
         std::string syl=read_str(cur+0x44);
-        printf("%s\\t%s\\t%u", word.c_str(), syl.c_str(), (unsigned)(f & 0xffffffffu));
+        printf("%s\t%s\t%u", word.c_str(), syl.c_str(), (unsigned)(f & 0xffffffffu));
         putchar(10); printed++;
       }
     }

@@ -33,14 +33,18 @@ static CACHE: Mutex<Option<(PathBuf, Arc<Model>)>> = Mutex::new(None);
 
 /// 加载（并缓存）模型。同一目录重复调用只解析一次。
 pub fn load(dir: &Path) -> Result<Arc<Model>> {
-    let mut cache = CACHE.lock().unwrap();
-    if let Some((cached, model)) = cache.as_ref() {
-        if cached == dir {
-            return Ok(model.clone());
-        }
+    // 命中缓存时快速返回；加载（读约 100MB 文件并解析权重）放在锁外，
+    // 否则同一个进程里另一个线程的缓存查询会被拖上几秒
+    if let Some(model) = CACHE.lock().ok().and_then(|cache| match cache.as_ref() {
+        Some((cached, model)) if cached == dir => Some(model.clone()),
+        _ => None,
+    }) {
+        return Ok(model);
     }
     let model = Arc::new(Model::load(dir)?);
-    *cache = Some((dir.to_path_buf(), model.clone()));
+    if let Ok(mut cache) = CACHE.lock() {
+        *cache = Some((dir.to_path_buf(), model.clone()));
+    }
     Ok(model)
 }
 

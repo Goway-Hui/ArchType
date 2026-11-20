@@ -33,6 +33,8 @@ const MAX_HOLD: Duration = Duration::from_secs(120);
 pub struct TriggerConfig {
     pub hold_threshold: Duration,
     pub silence_timeout: Duration,
+    /// 松开时短按是否算点按（`--mode hold` 时 false：松手就结束）
+    pub tap: bool,
 }
 
 impl Default for TriggerConfig {
@@ -40,6 +42,7 @@ impl Default for TriggerConfig {
         Self {
             hold_threshold: Duration::from_millis(300),
             silence_timeout: Duration::from_millis(1500),
+            tap: true,
         }
     }
 }
@@ -98,7 +101,7 @@ impl VoiceTrigger {
             return Vec::new();
         }
         let held = now.saturating_duration_since(pressed);
-        if held < self.cfg.hold_threshold {
+        if self.cfg.tap && held < self.cfg.hold_threshold {
             self.mode = Mode::Tap;
             self.last_voice = Some(now);
             vec![Action::Continue]
@@ -155,6 +158,7 @@ mod tests {
         TriggerConfig {
             hold_threshold: Duration::from_millis(300),
             silence_timeout: Duration::from_millis(1500),
+            tap: true,
         }
     }
 

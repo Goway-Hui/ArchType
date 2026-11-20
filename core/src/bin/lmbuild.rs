@@ -331,7 +331,7 @@ fn main() {
         let file = std::fs::File::open(path).unwrap_or_else(|e| fail(&format!("{path}: {e}")));
         let mut batch = Vec::with_capacity(512);
         for line in BufReader::with_capacity(1 << 20, file).lines() {
-            let Ok(line) = line else { continue };
+            let line = line.unwrap_or_else(|e| fail(&format!("{path}: {e}")));
             read += line.chars().count() as u64;
             batch.push(line);
             if batch.len() == 512 {

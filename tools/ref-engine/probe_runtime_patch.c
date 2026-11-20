@@ -28,16 +28,22 @@ static void set_verbosity(void){
 }
 
 static void on_segv(int s, siginfo_t* si, void* uc){
+  (void)s;
+  // 信号处理器里只能调异步信号安全的函数：别用 fprintf/dladdr/backtrace
   void* pc=(void*)((ucontext_t*)uc)->uc_mcontext->__ss.__pc;
-  Dl_info di; memset(&di,0,sizeof di); dladdr(pc,&di);
-  fprintf(stderr,"SEGV addr=%p off=+0x%lx sym=%s", si->si_addr,
-    di.dli_saddr?(unsigned long)((char*)pc-(char*)di.dli_saddr):0, di.dli_sname?di.dli_sname:"?");
-  putc(10,stderr); _exit(9);
+  char line[96];
+  int n=snprintf(line,sizeof line,"SEGV addr=%p pc=%p\n", si->si_addr, pc);
+  if(n>0) write(2,line,(size_t)n);
+  _exit(9);
 }
 
-/* 用 mov w0,#0 + 3*nop 覆盖 4 条指令 */
-static int patch_insn(unsigned long vmaddr, const uint32_t* words, int n){
+/* 用 mov w0,#0 + 3*nop 覆盖 4 条指令；expected 是打补丁前应当在那里的指令，不符就拒绝 */
+static int patch_insn(unsigned long vmaddr, const uint32_t* expected, const uint32_t* words, int n){
   unsigned long addr = loc(vmaddr);
+  if(memcmp((const void*)addr, expected, (size_t)n*4) != 0){
+    fprintf(stderr, "patch target changed: not the expected original instructions"); putc(10,stderr);
+    return -2;
+  }
   unsigned long page = addr & ~0xFFFUL;
   unsigned long size = 0x4000;
   kern_return_t kr = mach_vm_protect(mach_task_self(), (mach_vm_address_t)page,
@@ -76,8 +82,9 @@ int main(int argc,char**argv){
 
   /* 0x10173c7cc: ldr x0,[x19,#0x30]; ldr x8,[x0]; ldr x8,[x8,#0x98]; blr x8
      -> mov w0,#0; nop; nop; nop  */
+  const uint32_t original[4] = {0xF9401A60u, 0xF9400008u, 0xF9404D08u, 0xD63F0100u};
   const uint32_t stub[4] = {0x52800000u, 0xD503201Fu, 0xD503201Fu, 0xD503201Fu};
-  if(patch_insn(0x10173c7ccUL, stub, 4)!=0){ puts("patch failed"); return 2; }
+  if(patch_insn(0x10173c7ccUL, original, stub, 4)!=0){ puts("patch failed"); return 2; }
   puts("patched sub-dict null branch");
 
   static uint8_t sc[512];

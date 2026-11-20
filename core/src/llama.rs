@@ -149,13 +149,17 @@ impl LocalServer {
 
     /// 现在有没有在跑（测试和设置界面用）。
     pub fn is_running(&self) -> bool {
-        let mut s = self.state.0.lock().unwrap();
+        let mut s = self.state.0.lock().unwrap_or_else(|e| e.into_inner());
         alive(&mut s)
     }
 
     /// 进程号（测试用）。
     pub fn pid(&self) -> Option<u32> {
-        let s = self.state.0.lock().unwrap();
+        let s = self
+            .state
+            .0
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
         s.running.as_ref().map(|r| r.child.id())
     }
 
@@ -164,12 +168,12 @@ impl LocalServer {
     /// 会阻塞到模型载入完（第一次要几秒），只能在后台线程里调。
     pub fn acquire(&self, config: &LocalConfig) -> Result<Lease, String> {
         let (lock, cvar) = &*self.state;
-        let mut s = lock.lock().unwrap();
+        let mut s = lock.lock().unwrap_or_else(|e| e.into_inner());
         while s.starting {
             s = cvar.wait(s).unwrap();
         }
         if s.running.as_ref().is_some_and(|r| &r.config != config) {
-            stop(&mut s);
+            kill_process(stop(&mut s));
         }
         if !alive(&mut s) {
             if !config.model_exists() {
@@ -215,7 +219,7 @@ impl LocalServer {
                 drop(s);
                 // 等模型载入：不拿着锁，免得插件线程的 poll / 配置被卡住
                 let ready = wait_healthy(port, LOAD_TIMEOUT, || {
-                    let mut s = lock.lock().unwrap();
+                    let mut s = lock.lock().unwrap_or_else(|e| e.into_inner());
                     s.generation == generation && alive(&mut s)
                 });
                 s = lock.lock().unwrap();
@@ -237,7 +241,7 @@ impl LocalServer {
                     }
                     Err(message) => {
                         let quick_exit = !alive(&mut s) && launched.elapsed() < QUICK_EXIT;
-                        stop(&mut s);
+                        kill_process(stop(&mut s));
                         if quick_exit && attempt < 3 {
                             continue;
                         }
@@ -259,9 +263,11 @@ impl LocalServer {
     /// 马上停掉（关掉互译、换了模型、退出输入法时）。
     pub fn shutdown(&self) {
         let (lock, cvar) = &*self.state;
-        let mut s = lock.lock().unwrap();
-        stop(&mut s);
+        let mut s = lock.lock().unwrap_or_else(|e| e.into_inner());
+        let stale = stop(&mut s);
         cvar.notify_all();
+        drop(s);
+        kill_process(stale);
     }
 }
 
@@ -284,9 +290,15 @@ fn alive(s: &mut State) -> bool {
     }
 }
 
-fn stop(s: &mut State) {
+/// 停掉服务：把进程从状态里取走，由调用方决定在锁内还是锁外 kill/wait。
+fn stop(s: &mut State) -> Option<Running> {
     s.generation += 1;
-    if let Some(mut r) = s.running.take() {
+    s.running.take()
+}
+
+/// 收掉旧进程（kill + wait 可能阻塞）。
+fn kill_process(process: Option<Running>) {
+    if let Some(mut r) = process {
         let _ = r.child.kill();
         let _ = r.child.wait();
     }
@@ -343,7 +355,7 @@ fn spawn_watchdog(state: Arc<(Mutex<State>, Condvar)>, generation: u64, idle: Du
         .name("archtype-llama-idle".into())
         .spawn(move || {
             let (lock, cvar) = &*state;
-            let mut s = lock.lock().unwrap();
+            let mut s = lock.lock().unwrap_or_else(|e| e.into_inner());
             loop {
                 if s.generation != generation || s.running.is_none() {
                     return;
@@ -353,7 +365,9 @@ fn spawn_watchdog(state: Arc<(Mutex<State>, Condvar)>, generation: u64, idle: Du
                 } else {
                     let since = s.last_used.map(|t| t.elapsed()).unwrap_or(idle);
                     if since >= idle {
-                        stop(&mut s);
+                        let stale = stop(&mut s);
+                        drop(s);
+                        kill_process(stale);
                         return;
                     }
                     idle - since

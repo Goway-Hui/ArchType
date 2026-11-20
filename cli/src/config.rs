@@ -2,8 +2,9 @@
 
 use std::path::PathBuf;
 
+/// 版本号：跟着 crate 的 Cargo.toml 走，不再手改两处。
 pub fn version() -> String {
-    "0.6.2".to_string()
+    env!("CARGO_PKG_VERSION").to_string()
 }
 
 pub fn home() -> String {
@@ -145,6 +146,8 @@ pub fn json_set(path: &str, key: &str, value: &str) -> bool {
 }
 
 pub fn atomic_write(path: &str, text: &str) -> bool {
+    // 全新安装时目标目录（~/.config/archtype、~/.local/share/archtype）可能还不存在
+    ensure_parent(path);
     let temporary = format!("{path}.tmp");
     if std::fs::write(&temporary, text).is_err() {
         return false;

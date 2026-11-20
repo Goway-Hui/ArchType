@@ -127,26 +127,30 @@ pub fn segment_input(raw: &str, pinyin: &str) -> Option<String> {
 /// 编辑距离（相邻两字母互换算一次）。
 fn osa(a: &[u8], b: &[u8]) -> usize {
     let (n, m) = (a.len(), b.len());
-    let mut d = vec![vec![0usize; m + 1]; n + 1];
-    for (i, row) in d.iter_mut().enumerate() {
-        row[0] = i;
+    if n == 0 {
+        return m;
     }
-    for j in 0..=m {
-        d[0][j] = j;
+    if m == 0 {
+        return n;
     }
+    // 滚动三行就够（OSA 的换位要看到 i-2 行），不按输入长宽各分配一整张矩阵
+    let mut prev2 = vec![0usize; m + 1];
+    let mut prev: Vec<usize> = (0..=m).collect();
+    let mut cur = vec![0usize; m + 1];
     for i in 1..=n {
+        cur[0] = i;
         for j in 1..=m {
             let sub = usize::from(a[i - 1] != b[j - 1]);
-            let mut v = (d[i - 1][j] + 1)
-                .min(d[i][j - 1] + 1)
-                .min(d[i - 1][j - 1] + sub);
+            let mut v = (prev[j] + 1).min(cur[j - 1] + 1).min(prev[j - 1] + sub);
             if i > 1 && j > 1 && a[i - 1] == b[j - 2] && a[i - 2] == b[j - 1] {
-                v = v.min(d[i - 2][j - 2] + 1);
+                v = v.min(prev2[j - 2] + 1);
             }
-            d[i][j] = v;
+            cur[j] = v;
         }
+        std::mem::swap(&mut prev2, &mut prev);
+        std::mem::swap(&mut prev, &mut cur);
     }
-    d[n][m]
+    prev[m]
 }
 
 #[cfg(test)]

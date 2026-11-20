@@ -1,10 +1,10 @@
 [package]
 name = "archtype-core"
-version = "0.6.2"
+version.workspace = true
 edition = "2021"
 rust-version = "1.79"
 description = "WeType 风格拼音输入法引擎骨架（音节图 + 束搜索 + 排序）"
-license = "MIT OR Apache-2.0"
+license.workspace = true
 
 [lib]
 name = "archtype_core"
@@ -52,5 +52,7 @@ serde_json = "1"
 archtype-voice = { path = "../voice", features = ["capture"], optional = true }
 
 [features]
+# 默认带语音：core 的构建者因此要装音频开发包（Linux 是 libasound2-dev，cpal 的其它平台各有对应依赖）。
+# 不需要语音的下游可以用 default-features = false。
 default = ["voice"]
 voice = ["dep:archtype-voice"]

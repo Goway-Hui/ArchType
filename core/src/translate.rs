@@ -396,6 +396,10 @@ fn clean_line(line: &str, source_quoted: bool) -> String {
         let rest = &s[digits..];
         for mark in [".", ")", "、", "）", ":", "："] {
             if let Some(after) = rest.strip_prefix(mark) {
+                // "1.5 米" 小数点后面还是数字，那是译文本身，不是编号
+                if mark == "." && after.starts_with(|c: char| c.is_ascii_digit()) {
+                    break;
+                }
                 s = after.trim_start();
                 break;
             }
@@ -631,10 +635,16 @@ impl Translator {
         let local = Arc::clone(&self.local);
         let source = source.to_string();
         drop(inner);
-        thread::Builder::new()
+        if let Err(error) = thread::Builder::new()
             .name("archtype-translate".into())
             .spawn(move || run_local_or_remote(shared, local, id, config, source, cache_key))
-            .ok();
+        {
+            // 线程起不来：job 已经是 Running，不改成 Error 的话 poll() 会一直等下去
+            if let Ok(mut inner) = self.inner.lock() {
+                inner.job.state = JobState::Error;
+                inner.job.error = format!("翻译线程起不来：{error}");
+            }
+        }
     }
 
     /// 丢掉当前请求（清空原文、离开翻译模式）。
@@ -647,14 +657,20 @@ impl Translator {
     }
 
     pub fn cancel(&self) {
+        // kill/wait 可能阻塞：先取出子进程，放掉锁再收，别让 poll / 按键线程排队
         let mut inner = self.inner.lock().unwrap();
-        inner.kill();
         inner.next_id += 1;
         inner.job.id = 0;
         inner.job.source.clear();
         inner.job.raw.clear();
         inner.job.state = JobState::Idle;
         inner.job.error.clear();
+        let child = inner.job.child.take();
+        drop(inner);
+        if let Some(mut child) = child {
+            let _ = child.kill();
+            let _ = child.wait();
+        }
     }
 
     pub fn poll(&self) -> Snapshot {

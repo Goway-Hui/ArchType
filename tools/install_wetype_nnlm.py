@@ -51,7 +51,7 @@ def main():
     ap.add_argument("--force", action="store_true", help="解析不了也装（不保证能用）")
     args = ap.parse_args()
     data = read_model(args.source)
-    os.makedirs(os.path.dirname(args.dest), exist_ok=True)
+    os.makedirs(os.path.dirname(os.path.abspath(args.dest)), exist_ok=True)
     tmp = args.dest + ".tmp"
     with open(tmp, "wb") as f:
         f.write(data)

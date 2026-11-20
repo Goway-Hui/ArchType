@@ -1,8 +1,10 @@
 [package]
 name = "archtype-voiced"
-version = "0.6.2"
+version.workspace = true
 edition = "2021"
 description = "语音输入常驻进程：全局热键 + 麦克风采集 + 上屏"
+license.workspace = true
+publish = false
 
 [dependencies]
 archtype-voice = { path = "../voice", features = ["capture"] }

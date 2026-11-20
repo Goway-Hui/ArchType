@@ -112,6 +112,8 @@ impl VoiceSession {
             self.sink.apply(update);
         }
         self.typer.finish();
+        // 复位：守护进程复用同一个 VoiceSession 录下一段，不复位的话 done 永远为真
+        self.typer.reset();
         results
     }
 }

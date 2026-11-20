@@ -43,6 +43,7 @@ pub fn read_wav<P: AsRef<Path>>(path: P) -> Result<(u32, u16, Vec<i16>)> {
     let mut pos = 12;
     let mut rate = 0u32;
     let mut channels = 1u16;
+    let mut has_fmt = false;
     while pos + 8 <= buf.len() {
         let id = &buf[pos..pos + 4];
         let size = u32::from_le_bytes(buf[pos + 4..pos + 8].try_into().unwrap()) as usize;
@@ -50,7 +51,11 @@ pub fn read_wav<P: AsRef<Path>>(path: P) -> Result<(u32, u16, Vec<i16>)> {
         if id == b"fmt " && body + 16 <= buf.len() {
             channels = u16::from_le_bytes(buf[body + 2..body + 4].try_into().unwrap());
             rate = u32::from_le_bytes(buf[body + 4..body + 8].try_into().unwrap());
+            has_fmt = true;
         } else if id == b"data" {
+            if !has_fmt || rate == 0 || channels == 0 {
+                bail!("WAV 的 fmt 段缺失或非法（采样率/声道为 0）");
+            }
             let end = (body + size).min(buf.len());
             let samples = buf[body..end]
                 .chunks_exact(2)

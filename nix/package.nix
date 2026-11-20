@@ -141,6 +141,10 @@ stdenv.mkDerivation {
     mkdir -p "$out/lib/archtype/settings"
     tar -xzf ${settingsPackage} -C "$out/lib/archtype/settings" --strip-components=1
     runner=$(find "$out/lib/archtype/settings" -maxdepth 1 -type f -perm -u+x | head -1)
+    if [ -z "$runner" ]; then
+      echo "设置界面包里没有可执行文件（$out/lib/archtype/settings）" >&2
+      exit 1
+    fi
     cat > "$out/bin/archtype-settings" <<EOF
 #!${stdenv.shell}
 export XDG_DATA_DIRS="${gtk4}/share:${gsettings-desktop-schemas}/share:${webkitgtk_6_0}/share:\$XDG_DATA_DIRS"
@@ -175,7 +179,8 @@ EOF
       cc-by-sa-40 # 词级语言模型 words.lm、整句增强模型 nnlm.bin
       lgpl3Only # 五笔码表 wubi86.tsv（rime-wubi）
     ];
-    platforms = lib.platforms.linux;
+    # 设置界面的预编译包只有这两个架构（见上面的 settingsAssets）
+    platforms = [ "x86_64-linux" "aarch64-linux" ];
     mainProgram = "archtype-config";
   };
 }

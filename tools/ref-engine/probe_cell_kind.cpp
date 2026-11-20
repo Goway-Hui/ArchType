@@ -49,6 +49,7 @@ int main(int argc,char**argv){
   *(volatile int*)loc(0x10361f3f8UL)=4;
 
   unsigned n = sizeof(base_items)/sizeof(base_items[0]);
+  if(n > sizeof(items)/sizeof(items[0])){ puts("items.inc 条目超过 64，先调大 items[]"); return 2; }
   memcpy(items, base_items, n*sizeof(item_t));
 
   static dictcfg_t dc; dc.items=items; dc.count=n; dc.user_dir="/tmp/archtype-ref/userdata";

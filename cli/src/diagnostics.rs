@@ -39,14 +39,30 @@ pub fn collect() -> String {
     }
     let log_path = format!("{}/archtype.log", log_dir());
     if let Ok(text) = std::fs::read_to_string(&log_path) {
-        out.push_str(&format!("\n{log_path} 最后 100 行：\n"));
+        out.push_str(&format!(
+            "\n{log_path} 最后 100 行（去掉消息正文，只留时间/位置/标记）：\n"
+        ));
         let lines: Vec<&str> = text.lines().collect();
         let start = lines.len().saturating_sub(100);
         for line in &lines[start..] {
-            out.push_str(&format!("  {line}\n"));
+            out.push_str(&format!("  {}\n", mask_log_line(line)));
         }
     }
     out
+}
+
+/// 诊断里的日志行：只留「时间 级别 文件:行 标记」，消息正文（可能含用户打的字）打码。
+fn mask_log_line(line: &str) -> String {
+    // archtype.log 形如：2026-11-20 16:00:18.653 I archtype_engine.cpp:2577 ArchType: 切到英文
+    let fields: Vec<&str> = line.splitn(5, ' ').collect();
+    if fields.len() < 5 {
+        return "…".to_string();
+    }
+    let (tag, _) = fields[4]
+        .split_once('：')
+        .or_else(|| fields[4].split_once(':'))
+        .unwrap_or((fields[4], ""));
+    format!("{} {} {} {}: …", fields[0], fields[1], fields[2], tag)
 }
 
 pub fn export_to(target: &str, text: &str) -> Result<String, String> {

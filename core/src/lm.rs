@@ -236,7 +236,8 @@ impl LanguageModel for BigramLm {
 #[derive(Clone, Debug, Default)]
 pub struct ArpaLm {
     unigram: HashMap<String, (f64, f64)>,
-    bigram: HashMap<(String, String), f64>,
+    // 两层 map：打分是束搜索热路径，原来每次都要为 prev/cur 各分配一个 String 才能查
+    bigram: HashMap<String, HashMap<String, f64>>,
     /// 未登录词的 log10 概率，缺省 -6。
     unk_log10: f64,
 }
@@ -305,7 +306,10 @@ impl ArpaLm {
                     let (Some(a), Some(b)) = (words.next(), words.next()) else {
                         continue;
                     };
-                    lm.bigram.insert((a.to_string(), b.to_string()), log10);
+                    lm.bigram
+                        .entry(a.to_string())
+                        .or_default()
+                        .insert(b.to_string(), log10);
                 }
                 _ => {}
             }
@@ -330,12 +334,13 @@ impl ArpaLm {
 impl LanguageModel for ArpaLm {
     fn has_bigram(&self, prev: &str, cur: &str) -> bool {
         self.bigram
-            .contains_key(&(prev.to_string(), cur.to_string()))
+            .get(prev)
+            .is_some_and(|next| next.contains_key(cur))
     }
 
     fn score(&self, prev: Option<&str>, cur: &str) -> f64 {
         if let Some(prev) = prev {
-            if let Some(log10) = self.bigram.get(&(prev.to_string(), cur.to_string())) {
+            if let Some(log10) = self.bigram.get(prev).and_then(|next| next.get(cur)) {
                 return log10 * std::f64::consts::LN_10;
             }
             let bow = self
@@ -349,11 +354,12 @@ impl LanguageModel for ArpaLm {
     }
 
     fn top_next(&self, prev: &str, limit: usize) -> Vec<(String, f64)> {
-        let mut items: Vec<(String, f64)> = self
-            .bigram
+        let Some(next) = self.bigram.get(prev) else {
+            return Vec::new();
+        };
+        let mut items: Vec<(String, f64)> = next
             .iter()
-            .filter(|((a, _), _)| a == prev)
-            .map(|((_, b), log10)| (b.clone(), log10 * std::f64::consts::LN_10))
+            .map(|(b, log10)| (b.clone(), log10 * std::f64::consts::LN_10))
             .collect();
         items.sort_by(|a, b| {
             b.1.partial_cmp(&a.1)

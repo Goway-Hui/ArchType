@@ -208,23 +208,24 @@ export class VoiceOverlay {
 
     // 光标矩形换成舞台坐标，算法和 Input Method Panel 扩展一样。
     _stageRect(x, y, w, h, relative, scale) {
-        if (!x && !y && !w && !h)
+        // 宽或高为 0 就没有可用位置（插件拿不到光标时发的是全 0）
+        if (!w || !h)
             return null;
         const focus = global.display.focus_window;
         let rect;
         if (relative && focus) {
+            // Meta.Window 没有 protocol_to_stage_rect：相对窗口的坐标按窗口框换到 stage
             const k = St.ThemeContext.get_for_stage(global.stage).scale_factor / (scale || 1);
-            rect = new Mtk.Rectangle({x: x * k, y: y * k, width: w * k, height: h * k});
-            rect = focus.protocol_to_stage_rect(rect);
-            const actor = focus.get_compositor_private();
-            if (actor) {
-                rect.x += actor.x;
-                rect.y += actor.y;
-            }
+            const frame = focus.get_frame_rect();
+            rect = new Mtk.Rectangle({
+                x: frame.x + x * k,
+                y: frame.y + y * k,
+                width: w * k,
+                height: h * k,
+            });
         } else {
+            // X11 的全局坐标（relative=false）本来就是 stage 坐标
             rect = new Mtk.Rectangle({x, y, width: w, height: h});
-            if (focus)
-                rect = focus.protocol_to_stage_rect(rect);
         }
         return {x: rect.x, y: rect.y, w: rect.width, h: rect.height};
     }

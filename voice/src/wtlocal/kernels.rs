@@ -32,6 +32,9 @@ pub fn qgemm(x: &QAct, w: &[i8], n: usize, ws: f32, bias: Option<&[f32]>) -> Vec
     debug_assert_eq!(w.len(), n * k);
     let mut out = vec![0f32; t * n];
     // 用 usize 传递基址：裸指针不是 Send，闭包按字段捕获时会被拒
+    //
+    // Safety：base 来自 out.as_mut_ptr()，容量 t*n；每个 ti 只写列区间 [n0, n1)（TILE 块互不重叠），
+    // 行下标 i+a < t（由 r2 保证）→ 写位置 (i+a)*n + j+b < t*n，不会越界；out 在闭包全部返回后才读。
     let base = out.as_mut_ptr() as usize;
     const TILE: usize = 32;
     parallel::for_each_index(n.div_ceil(TILE), move |ti| {

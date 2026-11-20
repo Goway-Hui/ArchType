@@ -21,7 +21,36 @@ pub fn installed_version() -> String {
         .to_string()
 }
 
-/// 发布页上最新的万象词库包：(文件名, 下载地址)。
+/// 文件名 -> 版本（不是词库包或版本不像样时 None）。
+fn pack_version(name: &str) -> Option<String> {
+    const PREFIX: &str = "archtype-data-wanxiang-";
+    const SUFFIX: &str = ".tar.gz";
+    let rest = name.strip_prefix(PREFIX)?.strip_suffix(SUFFIX)?;
+    let mut chars = rest.chars();
+    let first = chars.next()?;
+    // spec：版本整个符合 [0-9][0-9A-Za-z.]*
+    if !first.is_ascii_digit() || !chars.all(|c| c.is_ascii_alphanumeric() || c == '.') {
+        return None;
+    }
+    Some(rest.to_string())
+}
+
+/// 版本按数字段比大小（同 spec 的 pickAsset）。
+fn version_key(version: &str) -> Vec<u64> {
+    version
+        .split('.')
+        .map(|segment| {
+            segment
+                .chars()
+                .take_while(|c| c.is_ascii_digit())
+                .collect::<String>()
+                .parse()
+                .unwrap_or(0)
+        })
+        .collect()
+}
+
+/// 发布页上最新的万象词库包：(文件名, 下载地址)。按 spec 取版本最大的，不是第一个匹配的。
 fn latest_asset() -> Result<(String, String), String> {
     let text = net::fetch(RELEASE_API)?;
     let value: serde_json::Value =
@@ -29,19 +58,24 @@ fn latest_asset() -> Result<(String, String), String> {
     let assets = value["assets"]
         .as_array()
         .ok_or_else(|| "发布页上没有资产".to_string())?;
+    let mut best: Option<(Vec<u64>, String, String)> = None;
     for asset in assets {
         let Some(name) = asset["name"].as_str() else { continue };
-        if name.starts_with("archtype-data-wanxiang-") && name.ends_with(".tar.gz") {
-            let url = asset["browser_download_url"]
-                .as_str()
-                .unwrap_or("")
-                .to_string();
-            if !url.is_empty() {
-                return Ok((name.to_string(), url));
-            }
+        let Some(version) = pack_version(name) else { continue };
+        let url = asset["browser_download_url"]
+            .as_str()
+            .unwrap_or("")
+            .to_string();
+        if url.is_empty() {
+            continue;
+        }
+        let key = version_key(&version);
+        if best.as_ref().is_none_or(|(current, _, _)| key > *current) {
+            best = Some((key, name.to_string(), url));
         }
     }
-    Err("最新版的发布页上还没有万象词库包".to_string())
+    best.map(|(_, name, url)| (name, url))
+        .ok_or_else(|| "最新版的发布页上还没有万象词库包".to_string())
 }
 
 fn sums_url() -> Result<String, String> {
@@ -81,13 +115,38 @@ pub fn install_wanxiang() -> Result<String, String> {
     Ok(version)
 }
 
+/// 列出 tar 成员（解包前校验用）。
+fn tar_members(tarball: &str) -> Result<Vec<String>, String> {
+    let output = Command::new("tar")
+        .args(["-tzf", tarball])
+        .output()
+        .map_err(|error| format!("跑不了 tar：{error}"))?;
+    if !output.status.success() {
+        return Err("读不了词库包".to_string());
+    }
+    Ok(String::from_utf8_lossy(&output.stdout)
+        .lines()
+        .map(|line| line.trim_end_matches('/').to_string())
+        .filter(|line| !line.is_empty() && line != ".")
+        .collect())
+}
+
 /// 从 tar.gz 装上词库（只认可白名单里的文件），返回版本号。
 pub fn install_pack(tarball: &str) -> Result<String, String> {
+    const PACK_FILES: [&str; 4] = ["lexicon.tsv", "LICENSE", "SOURCE.txt", "VERSION"];
     let staging = format!("{}.staging", wanxiang_dir());
     let _ = std::fs::remove_dir_all(&staging);
     std::fs::create_dir_all(&staging).map_err(|error| error.to_string())?;
+    // 先看成员再解包：`../`、绝对路径、链接在 read_dir 校验之前就会写到 staging 外面
+    for name in tar_members(tarball)? {
+        let normalized = name.trim_start_matches("./");
+        if !PACK_FILES.contains(&normalized) {
+            let _ = std::fs::remove_dir_all(&staging);
+            return Err(format!("词库包里有不安全的文件 {name}，不安装"));
+        }
+    }
     let status = Command::new("tar")
-        .args(["-xzf", tarball, "-C", &staging, "--strip-components=1"])
+        .args(["-xzf", tarball, "-C", &staging])
         .status()
         .map_err(|error| format!("跑不了 tar：{error}"))?;
     if !status.success() {
@@ -97,10 +156,7 @@ pub fn install_pack(tarball: &str) -> Result<String, String> {
     for entry in std::fs::read_dir(&staging).map_err(|error| error.to_string())? {
         let entry = entry.map_err(|error| error.to_string())?;
         let name = entry.file_name().to_string_lossy().to_string();
-        if !matches!(
-            name.as_str(),
-            "lexicon.tsv" | "VERSION" | "LICENSE" | "SOURCE.txt"
-        ) {
+        if !PACK_FILES.contains(&name.as_str()) {
             let _ = std::fs::remove_dir_all(&staging);
             return Err(format!("词库包里有不认识的文件 {name}，不安装"));
         }
@@ -110,9 +166,29 @@ pub fn install_pack(tarball: &str) -> Result<String, String> {
         return Err("词库包里没有 lexicon.tsv，不安装".to_string());
     }
     let version = config::read(&format!("{staging}/VERSION")).trim().to_string();
+    // spec：VERSION 缺失或为空算「?」，有 lexicon.tsv 就算装好
+    let version = if version.is_empty() {
+        "?".to_string()
+    } else {
+        version
+    };
     let target = wanxiang_dir();
-    let _ = std::fs::remove_dir_all(&target);
-    std::fs::rename(&staging, &target).map_err(|error| format!("换不到位置：{error}"))?;
+    if let Some(parent) = std::path::Path::new(&target).parent() {
+        std::fs::create_dir_all(parent).map_err(|error| error.to_string())?;
+    }
+    // 先把旧目录挪到 .old，新目录进去以后才删：中途失败能回滚，不会两个都没有
+    let old = format!("{target}.old");
+    let _ = std::fs::remove_dir_all(&old);
+    if std::path::Path::new(&target).exists() {
+        std::fs::rename(&target, &old).map_err(|error| format!("挪不开旧词库：{error}"))?;
+    }
+    if let Err(error) = std::fs::rename(&staging, &target) {
+        if std::path::Path::new(&old).exists() {
+            let _ = std::fs::rename(&old, &target);
+        }
+        return Err(format!("换不到位置：{error}"));
+    }
+    let _ = std::fs::remove_dir_all(&old);
     Ok(version)
 }
 

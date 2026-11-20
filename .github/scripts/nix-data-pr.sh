@@ -17,6 +17,10 @@ settings_arm64=$3
 tarball=$(basename "$tarball_path")
 built=${tarball#archtype-data-rime-ice-}
 built=${built%.tar.gz}
+if [[ "$tarball" != archtype-data-rime-ice-*.tar.gz || ! "$built" =~ ^[0-9][0-9A-Za-z.]*$ ]]; then
+  echo "词库包名不符合约定（archtype-data-rime-ice-<版本>.tar.gz）：$tarball" >&2
+  exit 1
+fi
 nix=nix/package.nix
 repo=$GITHUB_REPOSITORY
 tag=$GITHUB_REF_NAME

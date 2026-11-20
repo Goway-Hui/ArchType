@@ -187,20 +187,29 @@ impl ProcessChannel {
 }
 
 /// 去掉识别器常见的标记，如 [BLANK_AUDIO]、(音乐)、<|nospeech|>。
+///
+/// 只删成对的括号区间；没配对的括号（比较符号、被截断的标记）按普通字符保留，
+/// 以前按深度整体吞掉，一个落单的 `[` 就能把后面整句译文吃掉。
 fn clean_transcript(text: &str) -> String {
+    let chars: Vec<char> = text.chars().collect();
     let mut out = String::with_capacity(text.len());
-    let mut depth = 0i32;
-    for ch in text.chars() {
-        match ch {
-            '[' | '(' | '<' => depth += 1,
-            ']' | ')' | '>' => {
-                if depth > 0 {
-                    depth -= 1;
-                }
+    let mut i = 0;
+    while i < chars.len() {
+        let ch = chars[i];
+        let close = match ch {
+            '[' => Some(']'),
+            '(' => Some(')'),
+            '<' => Some('>'),
+            _ => None,
+        };
+        if let Some(close) = close {
+            if let Some(rel) = chars[i + 1..].iter().position(|c| *c == close) {
+                i += rel + 2;
+                continue;
             }
-            _ if depth == 0 => out.push(ch),
-            _ => {}
         }
+        out.push(ch);
+        i += 1;
     }
     out.trim().to_string()
 }
@@ -220,9 +229,15 @@ impl AsrChannel for ProcessChannel {
         }
         use std::sync::atomic::{AtomicUsize, Ordering};
         static SEQ: AtomicUsize = AtomicUsize::new(0);
+        // 共享 /tmp 下只用 pid+序号太可预测；加上纳秒时间戳
+        let nanos = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_nanos())
+            .unwrap_or(0);
         let path = std::env::temp_dir().join(format!(
-            "archtype-asr-{}-{}.wav",
+            "archtype-asr-{}-{}-{}.wav",
             std::process::id(),
+            nanos,
             SEQ.fetch_add(1, Ordering::Relaxed)
         ));
         if crate::wav::write_wav(&path, &self.pcm).is_err() {

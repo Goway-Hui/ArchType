@@ -26,7 +26,13 @@ results=[[x] for x in flat]
 for (ctx,py,exp),r in zip(cases,results):
     if r and r[0]==exp: hit+=1
     else: miss.append(f"{ctx}|{py}->{r[0] if r else ''}(want {exp})")
-print(f"context word-by-word top1: {hit}/{len(cases)} = {hit/len(cases):.1%}")
+if cases:
+    print(f"context word-by-word top1: {hit}/{len(cases)} = {hit/len(cases):.1%}")
+else:
+    print("context word-by-word top1: 没有用例（句子文件为空或每句只有一个词）")
 r=run(["ctx="]+[p for p,_ in whole]); h=sum(1 for a,(_,s) in zip(r,whole) if a==s)
-print(f"whole sentence top1: {h}/{len(whole)} = {h/len(whole):.1%}")
+if whole:
+    print(f"whole sentence top1: {h}/{len(whole)} = {h/len(whole):.1%}")
+else:
+    print("whole sentence top1: 没有整句")
 open(sys.argv[3],"w").write("\n".join(miss))

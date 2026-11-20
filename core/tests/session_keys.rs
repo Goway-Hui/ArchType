@@ -15,6 +15,9 @@ use std::sync::Arc;
 
 use archtype_core::datetime::LocalTime;
 use archtype_core::lm::BigramLm;
+
+/// clipboard 是进程级全局状态：用到它的测试串行跑，免得并行时互相清空。
+static CLIPBOARD_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 use archtype_core::session::{
     keysym, modifier, ArrowKeys, CandidateKind, Config, Frame, Key, Panel, PunctStyle, Selection,
     Session,
@@ -2055,6 +2058,8 @@ fn v_space_opens_toolbar() {
 #[test]
 fn toolbar_clipboard_and_back() {
     use archtype_core::session::Tool;
+    // clipboard 是全局状态，别和并行测试互相清空
+    let _clip = CLIPBOARD_LOCK.lock().unwrap_or_else(|e| e.into_inner());
     archtype_core::clipboard::clear();
     // 没打开剪贴板历史：提示去设置里打开
     let mut session = with(engine());

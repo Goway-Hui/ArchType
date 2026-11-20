@@ -1167,6 +1167,9 @@ impl<'e> Session<'e> {
 
     /// 丢掉攒着的原文，取消这个会话发的请求（输入框失去焦点、放弃输入）。
     pub fn clear_translation(&mut self) {
+        // 这不是选候选上屏：上一次选词的序号要一起清掉，否则 frame 会把旧序号带去记统计
+        self.last_choice = None;
+        self.last_choice_index = 0;
         let t = &mut self.translation;
         t.source.clear();
         t.shown.clear();
@@ -1182,6 +1185,7 @@ impl<'e> Session<'e> {
     /// 定时器到了（外壳按 frame 的 wake_after_ms 排的）：该发请求的发，按过回车且译好了的上屏。
     pub fn tick(&mut self, now_ms: u64) -> Frame {
         self.last_choice = None;
+        self.last_choice_index = 0;
         self.now_ms = now_ms;
         self.poll_translation();
         self.frame(true)
@@ -1357,6 +1361,7 @@ impl<'e> Session<'e> {
     /// 打开工具栏的一页或表情面板（外壳的菜单、按钮用；v + 空格会话自己开）。打到一半的丢掉。
     pub fn open_tool(&mut self, tool: Tool) -> Frame {
         self.last_choice = None;
+        self.last_choice_index = 0;
         self.open_tool_now(tool, String::new());
         self.frame(true)
     }
@@ -1364,6 +1369,7 @@ impl<'e> Session<'e> {
     /// 关上工具栏 / 表情面板。
     pub fn close_panel(&mut self) -> Frame {
         self.last_choice = None;
+        self.last_choice_index = 0;
         self.close_tool();
         self.frame(true)
     }
@@ -1372,6 +1378,7 @@ impl<'e> Session<'e> {
     /// 已经选了词的，先把打的原样上屏（和回车一样）。
     pub fn toggle_emoji_panel(&mut self) -> Frame {
         self.last_choice = None;
+        self.last_choice_index = 0;
         if matches!(self.open_panel(), Some(Tool::Emoji { .. })) {
             self.close_tool();
             return self.frame(true);
@@ -1478,8 +1485,9 @@ impl<'e> Session<'e> {
             return;
         };
         let mut texts: Vec<String> = Vec::new();
+        let mut seen: std::collections::HashSet<String> = std::collections::HashSet::new();
         let mut add = |text: String| {
-            if !texts.contains(&text) {
+            if seen.insert(text.clone()) {
                 texts.push(text);
             }
         };
@@ -1744,6 +1752,7 @@ impl<'e> Session<'e> {
     /// 否则照会话的规矩（补空格、记上文）放进 frame 的 commit。prev_char 是应用里光标前的字（读不到 None）。
     pub fn commit_text(&mut self, text: &str, prev_char: Option<char>) -> Frame {
         self.last_choice = None;
+        self.last_choice_index = 0;
         self.prev_char = prev_char;
         self.emit(text);
         self.frame(true)
@@ -1757,6 +1766,7 @@ impl<'e> Session<'e> {
     /// 切到 mode（外部命令、设置里的默认模式、外壳全局的模式）。切到英文时打到一半的原样上屏。
     pub fn set_mode(&mut self, mode: Mode) -> Frame {
         self.last_choice = None;
+        self.last_choice_index = 0;
         self.switch_mode(mode);
         self.frame(true)
     }

@@ -4,6 +4,10 @@ members = ["core", "voice", "voice-daemon", "cli"]
 # 桌面端默认只构建与平台无关的部分；Linux 上再显式构建守护进程
 default-members = ["core", "voice"]
 
+[workspace.package]
+version = "0.6.2"
+license = "MIT OR Apache-2.0"
+
 [profile.release]
 lto = true
 codegen-units = 1

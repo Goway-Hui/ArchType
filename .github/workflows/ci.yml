@@ -105,7 +105,7 @@ jobs:
           if [ "${GITHUB_REF_TYPE}" = tag ]; then
             version=${GITHUB_REF_NAME#v}
           else
-            base=$(sed -n 's/^version = "\(.*\)"/\1/p' core/Cargo.toml | head -1)
+            base=$(scripts/version.sh)
             version="${base}~git$(date -u +%Y%m%d).$(echo "$GITHUB_SHA" | cut -c1-7)"
           fi
           echo "VERSION=$version" >> "$GITHUB_ENV"
@@ -127,7 +127,12 @@ jobs:
           sudo apt-get install -y --no-install-recommends pkg-config libasound2-dev libx11-dev libxkbcommon-dev
       - run: rustup toolchain install stable --profile minimal && rustup default stable
       - uses: Swatinem/rust-cache@v2
-      - run: cargo test --workspace --locked
+      - name: 五笔真码表（session_keys 的 wubi_real_table 用它）
+        run: scripts/make-wubi.sh "" dist/wubi
+      - name: Rust 测试
+        env:
+          ARCHTYPE_WUBI: dist/wubi/wubi86.tsv
+        run: cargo test --workspace --locked
       - name: C ABI 冒烟测试
         run: ./scripts/abi-smoke.sh
 
@@ -276,7 +281,7 @@ jobs:
           if [ "${GITHUB_REF_TYPE}" = tag ]; then
             version=${GITHUB_REF_NAME#v}
           else
-            base=$(sed -n 's/^version = "\(.*\)"/\1/p' core/Cargo.toml | head -1)
+            base=$(scripts/version.sh)
             version="${base}~git$(date -u +%Y%m%d).$(echo "$GITHUB_SHA" | cut -c1-7)"
           fi
           echo "VERSION=$version" >> "$GITHUB_ENV"
@@ -355,7 +360,7 @@ jobs:
           if [ "${GITHUB_REF_TYPE}" = tag ]; then
             version=${GITHUB_REF_NAME#v}
           else
-            base=$(sed -n 's/^version = "\(.*\)"/\1/p' core/Cargo.toml | head -1)
+            base=$(scripts/version.sh)
             version="${base}~git$(date -u +%Y%m%d).$(echo "$GITHUB_SHA" | cut -c1-7)"
           fi
           echo "VERSION=$version" >> "$GITHUB_ENV"
@@ -445,7 +450,7 @@ jobs:
           if [ "${GITHUB_REF_TYPE}" = tag ]; then
             version=${GITHUB_REF_NAME#v}
           else
-            base=$(sed -n 's/^version = "\(.*\)"/\1/p' core/Cargo.toml | head -1)
+            base=$(scripts/version.sh)
             version="${base}~git$(date -u +%Y%m%d).$(echo "$GITHUB_SHA" | cut -c1-7)"
           fi
           echo "VERSION=$version" >> "$GITHUB_ENV"
@@ -579,7 +584,7 @@ jobs:
   release:
     name: 发布
     if: startsWith(github.ref, 'refs/tags/v')
-    needs: [installer, core, data, data-wanxiang, addon, arch, fedora, nix]
+    needs: [installer, core, data, data-wanxiang, ranking-eval, addon, arch, fedora, opensuse, nix]
     runs-on: ubuntu-24.04
     permissions:
       contents: write
@@ -591,7 +596,7 @@ jobs:
           fetch-depth: 0
       - name: 版本号与 tag 一致
         run: |
-          manifest=$(sed -n 's/^version = "\(.*\)"/\1/p' core/Cargo.toml | head -1)
+          manifest=$(scripts/version.sh)
           tag=${GITHUB_REF_NAME#v}
           if [ "$manifest" != "$tag" ]; then
             echo "core/Cargo.toml 的版本是 $manifest，tag 是 $tag；发版前先把 core/Cargo.toml 改成 tag 版本" >&2

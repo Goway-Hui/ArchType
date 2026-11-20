@@ -408,8 +408,18 @@ pub fn load_history<P: AsRef<Path>>(
     let path = path.as_ref();
     let (lines, _bad) = crate::fsutil::read_lines_lossy(path)
         .with_context(|| format!("读取 {}", path.display()))?;
+    Ok(load_history_lines(&lines, words, pairs, new_words))
+}
+
+/// 把已经读进内存的行合并到三份状态里；调用方可以先读文件，只在合并时持锁。
+pub fn load_history_lines(
+    lines: &[String],
+    words: &mut HashMap<String, HistoryEntry>,
+    pairs: &mut UserPairs,
+    new_words: &mut HashMap<String, NewWord>,
+) -> usize {
     let mut loaded = 0usize;
-    for line in &lines {
+    for line in lines {
         if line.starts_with('#') || line.trim().is_empty() {
             continue;
         }
@@ -450,7 +460,7 @@ pub fn load_history<P: AsRef<Path>>(
             _ => {}
         }
     }
-    Ok(loaded)
+    loaded
 }
 
 #[cfg(test)]

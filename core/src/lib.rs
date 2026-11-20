@@ -688,6 +688,10 @@ impl Engine {
 
     /// 读回 [`Engine::save_history`] 存的输入习惯，返回条数。
     pub fn load_history<P: AsRef<std::path::Path>>(&self, path: P) -> Result<usize> {
+        // 先读文件（可能慢），再拿三把写锁做合并：持锁期间做磁盘 I/O 会挡住选词、学习和联想
+        let path = path.as_ref();
+        let (lines, _bad) = crate::fsutil::read_lines_lossy(path)
+            .map_err(|e| anyhow::anyhow!("读取 {}: {e}", path.display()))?;
         let mut history = self
             .history
             .write()
@@ -700,7 +704,12 @@ impl Engine {
             .new_words
             .write()
             .map_err(|_| anyhow::anyhow!("new words lock poisoned"))?;
-        crate::learn::load_history(path, &mut history, &mut pairs, &mut new_words)
+        Ok(crate::learn::load_history_lines(
+            &lines,
+            &mut history,
+            &mut pairs,
+            &mut new_words,
+        ))
     }
 
     /// 上次选这个词时的次数（衰减过、四舍五入），没选过是 0。
@@ -1043,24 +1052,26 @@ impl Engine {
         }
         let just_plain = self.lexicon_form(just);
         let nnlm = self.nnlm.read().ok().and_then(|m| m.clone());
-        let learned: Vec<String> = self
-            .pairs
-            .read()
-            .map(|p| p.next_words(keys.first().map_or("", String::as_str), now_ms()))
-            .unwrap_or_default()
-            .into_iter()
-            .filter(|(_, heat)| *heat >= learn::MIN_PICK_HEAT)
-            .map(|(w, _)| w)
-            .collect();
         for key in &keys {
+            // 学过的搭配按当前 key 查；以前只用 keys.first()，从第二个 key 起的学到的词会被当成没学过
+            let learned: Vec<String> = self
+                .pairs
+                .read()
+                .map(|p| p.next_words(key, now_ms()))
+                .unwrap_or_default()
+                .into_iter()
+                .filter(|(_, heat)| *heat >= learn::MIN_PICK_HEAT)
+                .map(|(w, _)| w)
+                .collect();
             // 有字级模型时多取一些再按它重排（见 ASSOCIATE_POOL）
             let pool = if nnlm.is_some() { ASSOCIATE_POOL.max(limit) } else { limit.saturating_mul(2) };
             let mut out: Vec<(String, f64)> = Vec::new();
+            let mut seen: std::collections::HashSet<String> = std::collections::HashSet::new();
             for (word, score) in self.predict_next(key, pool) {
                 if !associable(&word) || word == *key || word == just || word == just_plain {
                     continue;
                 }
-                if out.iter().any(|(w, _)| *w == word) {
+                if !seen.insert(word.clone()) {
                     continue;
                 }
                 out.push((word, score));
@@ -1147,20 +1158,27 @@ impl Engine {
             return;
         }
         result.retain(|c| !words.contains(&c.text));
-        let front = words.into_iter().map(|text| Candidate {
-            pinyin: String::new(),
-            score: 0.0,
-            features: Feature::default(),
-            words: vec![CandidateWord {
-                text: text.clone(),
+        // 自定义编码可能对应很多词（custom.tsv 里同一个编码写了十几条），按候选上限截断
+        let max = self.config.max_candidates.max(1);
+        let front: Vec<Candidate> = words
+            .into_iter()
+            .take(max)
+            .map(|text| Candidate {
                 pinyin: String::new(),
-                freq: crate::lexicon::CUSTOM_WORD_FREQ,
-                known: true,
-            }],
-            consumed: raw.len(),
-            text,
-        });
+                score: 0.0,
+                features: Feature::default(),
+                words: vec![CandidateWord {
+                    text: text.clone(),
+                    pinyin: String::new(),
+                    freq: crate::lexicon::CUSTOM_WORD_FREQ,
+                    known: true,
+                }],
+                consumed: raw.len(),
+                text,
+            })
+            .collect();
         result.splice(0..0, front);
+        result.truncate(max);
     }
 
     /// 双拼：先把键翻成全拼（`vsgo` -> `zhong'guo`），再走全拼那一套，

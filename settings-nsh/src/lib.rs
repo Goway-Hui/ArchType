@@ -2618,7 +2618,22 @@ fn lexicon_download_work() -> Result<String, String> {
         Err(error) => return Err(format!("下载失败（网络不通？）：{error}")),
     };
     let resumed = have > 0 && response.status().as_u16() == 206;
+    // 进度要有总大小：续传时是「已有 + 本次」，否则就是 Content-Length
+    let content_len = response
+        .headers()
+        .get("content-length")
+        .and_then(|v| v.to_str().ok())
+        .and_then(|v| v.parse::<u64>().ok())
+        .unwrap_or(0);
+    let total = if resumed {
+        have.saturating_add(content_len)
+    } else {
+        content_len
+    };
     let mut done = if resumed { have } else { 0 };
+    if let Ok(mut p) = LEXICON_PROGRESS.lock() {
+        *p = (done, total);
+    }
     use sha2::{Digest, Sha256};
     let mut digest = Sha256::new();
     if resumed {
@@ -2650,7 +2665,7 @@ fn lexicon_download_work() -> Result<String, String> {
         Digest::update(&mut digest, &buffer[..read]);
         done += read as u64;
         if let Ok(mut p) = LEXICON_PROGRESS.lock() {
-            *p = (done, 0);
+            *p = (done, total);
         }
     }
     drop(out);
@@ -2827,13 +2842,14 @@ mod tests {
 }
 
 /// 拼音词库缓存（读入内存后查词快速）
-static LEXICON_DATA: LazyLock<Mutex<Option<String>>> = LazyLock::new(|| Mutex::new(None));
+static LEXICON_DATA: LazyLock<Mutex<Option<std::sync::Arc<String>>>> =
+    LazyLock::new(|| Mutex::new(None));
 
-/// 懒加载词库：尝试候选路径直到找到。
-fn load_lexicon() -> Option<String> {
-    if let Ok(mut cache) = LEXICON_DATA.lock() {
-        if cache.is_some() {
-            return cache.clone();
+/// 懒加载词库：尝试候选路径直到找到。命中缓存时返回共享引用，不复制整份词库。
+fn load_lexicon() -> Option<std::sync::Arc<String>> {
+    if let Ok(cache) = LEXICON_DATA.lock() {
+        if let Some(data) = cache.as_ref() {
+            return Some(data.clone());
         }
     }
     let candidates = [
@@ -2844,10 +2860,11 @@ fn load_lexicon() -> Option<String> {
     for path_opt in candidates.iter() {
         if let Some(path) = path_opt {
             if let Ok(text) = fs::read_to_string(path) {
+                let data = std::sync::Arc::new(text);
                 if let Ok(mut cache) = LEXICON_DATA.lock() {
-                    *cache = Some(text.clone());
+                    *cache = Some(data.clone());
                 }
-                return Some(text);
+                return Some(data);
             }
         }
     }

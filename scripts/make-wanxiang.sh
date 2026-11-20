@@ -76,7 +76,8 @@ if (( LINES < 500000 )); then
   exit 1
 fi
 for word in 你好 中国 输入法; do
-  grep -qP "\t$word\t" "$OUT/lexicon.tsv" || { echo "词库里没有「${word}」，转换有问题" >&2; exit 1; }
+  awk -F'\t' -v w="$word" '$2 == w { found = 1; exit } END { exit found ? 0 : 1 }' "$OUT/lexicon.tsv" \
+    || { echo "词库里没有「${word}」，转换有问题" >&2; exit 1; }
 done
 
 if [[ -n "$PKG" ]]; then

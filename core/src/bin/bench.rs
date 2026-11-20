@@ -19,6 +19,18 @@ use archtype_core::lm::BigramLm;
 use archtype_core::session::{Config, Key, Session};
 use archtype_core::{Engine, EngineConfig, Lexicon, MemoryLexicon, SYLLABLES};
 
+/// 取 `--flag value` 的 value；缺了直接报错，别静默当成没给。
+fn value(args: &[String], i: &mut usize, flag: &str) -> String {
+    *i += 1;
+    match args.get(*i) {
+        Some(v) => v.clone(),
+        None => {
+            eprintln!("{flag} 要一个值");
+            std::process::exit(2);
+        }
+    }
+}
+
 fn main() {
     let args: Vec<String> = std::env::args().collect();
     let mut lexicon_path: Option<String> = None;
@@ -36,46 +48,35 @@ fn main() {
     let mut i = 1;
     while i < args.len() {
         match args[i].as_str() {
-            "--lexicon" => {
-                i += 1;
-                lexicon_path = args.get(i).cloned();
-            }
-            "--typing" => {
-                i += 1;
-                typing_path = args.get(i).cloned();
-            }
+            "--lexicon" => lexicon_path = Some(value(&args, &mut i, "--lexicon")),
+            "--typing" => typing_path = Some(value(&args, &mut i, "--typing")),
             "--no-prefix" => no_prefix = true,
-            "--lm" => {
-                i += 1;
-                lm_path = args.get(i).cloned();
-            }
-            "--domain-lm" => {
-                i += 1;
-                domain_lm_path = args.get(i).cloned();
-            }
-            "--nnlm" => {
-                i += 1;
-                nnlm_path = args.get(i).cloned();
-            }
+            "--lm" => lm_path = Some(value(&args, &mut i, "--lm")),
+            "--domain-lm" => domain_lm_path = Some(value(&args, &mut i, "--domain-lm")),
+            "--nnlm" => nnlm_path = Some(value(&args, &mut i, "--nnlm")),
             "--fuzzy" => {
-                i += 1;
-                fuzzy_groups = args.get(i).and_then(|v| {
-                    v.strip_prefix("0x")
-                        .map_or_else(|| v.parse().ok(), |hex| u32::from_str_radix(hex, 16).ok())
-                });
+                let raw = value(&args, &mut i, "--fuzzy");
+                fuzzy_groups = raw.strip_prefix("0x").map_or_else(
+                    || raw.parse().ok(),
+                    |hex| u32::from_str_radix(hex, 16).ok(),
+                );
+                if fuzzy_groups.is_none() {
+                    eprintln!("--fuzzy 要一个数（或 0x 开头的十六进制）");
+                    std::process::exit(2);
+                }
             }
             "--max" => {
-                i += 1;
-                max_candidates = args.get(i).and_then(|v| v.parse().ok());
+                let raw = value(&args, &mut i, "--max");
+                max_candidates = match raw.parse() {
+                    Ok(n) => Some(n),
+                    Err(_) => {
+                        eprintln!("--max 要一个整数");
+                        std::process::exit(2);
+                    }
+                };
             }
-            "--s2t" => {
-                i += 1;
-                s2t_path = args.get(i).cloned();
-            }
-            "--wubi" => {
-                i += 1;
-                wubi_path = args.get(i).cloned();
-            }
+            "--s2t" => s2t_path = Some(value(&args, &mut i, "--s2t")),
+            "--wubi" => wubi_path = Some(value(&args, &mut i, "--wubi")),
             other => {
                 if let Ok(n) = other.parse() {
                     total = n;
@@ -196,7 +197,8 @@ fn typing_latency(engine: &Engine, path: &str) {
             continue;
         }
         let input = line.split('\t').next().unwrap_or("");
-        for end in 1..=input.len() {
+        for (end, ch) in input.char_indices() {
+            let end = end + ch.len_utf8();
             let prefix = &input[..end];
             let t = Instant::now();
             let _ = engine.input(prefix);
@@ -245,11 +247,13 @@ fn wubi_latency(engine: &Engine, path: &str) {
     session.configure(Config { wubi: true, ..Config::default() });
     let mut samples: Vec<(f64, String)> = Vec::new();
     for code in &cases {
-        for (i, c) in code.chars().enumerate() {
+        let mut prefix = String::new();
+        for c in code.chars() {
+            prefix.push(c);
             let t = Instant::now();
             session.key(&Key::char(c));
             let _ = session.shown().len();
-            samples.push((t.elapsed().as_secs_f64() * 1000.0, code[..=i].to_owned()));
+            samples.push((t.elapsed().as_secs_f64() * 1000.0, prefix.clone()));
         }
         session.reset(false);
     }

@@ -27,7 +27,7 @@ pub fn run(opt: Options) -> Result<()> {
     let (key_tx, key_rx) = channel::<KeyMsg>();
     start_hotkey(opt.hotkey.clone(), key_tx).context("启动全局热键失败")?;
 
-    let mut session = new_session(&opt);
+    let mut session = new_session(&opt)?;
     let mut last_tick = Instant::now();
 
     loop {
@@ -78,13 +78,13 @@ fn log_actions(actions: &[archtype_voice::Action]) {
     }
 }
 
-fn new_session(opt: &Options) -> VoiceSession {
-    VoiceSession::new(
+fn new_session(opt: &Options) -> Result<VoiceSession> {
+    Ok(VoiceSession::new(
         crate::trigger_config(opt),
-        build_channel(opt),
+        build_channel(opt)?,
         build_sink(),
         false,
-    )
+    ))
 }
 
 fn finish_and_reset(session: &mut VoiceSession, opt: &Options) {
@@ -95,12 +95,15 @@ fn finish_and_reset(session: &mut VoiceSession, opt: &Options) {
     if results.is_empty() {
         println!("[定稿] 没有识别结果");
     }
-    *session = new_session(opt);
+    match new_session(opt) {
+        Ok(fresh) => *session = fresh,
+        Err(e) => eprintln!("重建语音会话失败：{e:#}"),
+    }
 }
 
 /// 有 --asr-cmd 就走外部识别器，否则用 Mock 验证链路。
 /// 识别渠道：`--asr` 显式指定，否则按是否有 `--asr-cmd` 判断。
-pub fn build_channel(opt: &Options) -> MultiChannel {
+pub fn build_channel(opt: &Options) -> Result<MultiChannel> {
     let mode = opt.asr.clone().unwrap_or_else(|| {
         if opt.asr_cmd.as_deref().is_some_and(|c| !c.trim().is_empty()) {
             "cmd".into()
@@ -117,33 +120,26 @@ pub fn build_channel(opt: &Options) -> MultiChannel {
                 .unwrap_or_else(archtype_voice::wtlocal::download::default_dir);
             println!("识别渠道：微信离线（{}）", dir.display());
             if let Err(e) = archtype_voice::wtlocal::download::ensure(&dir) {
-                eprintln!("离线模型不可用：{e:#}");
-                std::process::exit(1);
+                return Err(anyhow!("离线模型不可用：{e:#}"));
             }
-            match archtype_voice::wtlocal::WtLocalChannel::new(dir) {
-                Ok(ch) => MultiChannel::new(vec![Box::new(ch)]),
-                Err(e) => {
-                    eprintln!("加载离线模型失败：{e:#}");
-                    std::process::exit(1);
-                }
-            }
+            let ch = archtype_voice::wtlocal::WtLocalChannel::new(dir)
+                .map_err(|e| anyhow!("加载离线模型失败：{e:#}"))?;
+            Ok(MultiChannel::new(vec![Box::new(ch)]))
         }
         "cmd" => match opt.asr_cmd.as_deref() {
             Some(cmd) if !cmd.trim().is_empty() => {
                 println!("识别渠道：外部命令 {cmd}");
-                MultiChannel::new(vec![Box::new(ProcessChannel::from_command_line(
-                    "cmd", cmd,
-                ))])
+                Ok(MultiChannel::new(vec![Box::new(
+                    ProcessChannel::from_command_line("cmd", cmd),
+                )]))
             }
-            _ => {
-                eprintln!("--asr cmd 需要配合 --asr-cmd");
-                std::process::exit(1);
-            }
+            _ => Err(anyhow!("--asr cmd 需要配合 --asr-cmd")),
         },
-        _ => {
+        "mock" => {
             println!("识别渠道：Mock（仅用于验证链路）");
-            MultiChannel::new(vec![Box::new(MockChannel::new("mock"))])
+            Ok(MultiChannel::new(vec![Box::new(MockChannel::new("mock"))]))
         }
+        other => Err(anyhow!("未知识别渠道 --asr {other}（mock|cmd|wtlocal）")),
     }
 }
 
@@ -192,12 +188,26 @@ fn start_hotkey(name: String, tx: Sender<KeyMsg>) -> Result<()> {
             "没有 DISPLAY。Wayland 下请用 keyd/kanata 把热键映射为调用本程序，或改用 fcitx5 插件路径"
         ));
     }
+    if std::env::var("XDG_SESSION_TYPE")
+        .map(|t| t.eq_ignore_ascii_case("wayland"))
+        .unwrap_or(false)
+    {
+        eprintln!(
+            "提示：当前是 Wayland 会话，X11 全局热键只对 XWayland 程序有效；原生 Wayland 应用里请用 keyd/kanata 或 fcitx5 插件路径"
+        );
+    }
+    // 等初始化（连 X、找键位、抢键）的结果：失败要让主程序退出，而不是只打一行日志
+    let (ready_tx, ready_rx) = channel::<Result<()>>();
     std::thread::spawn(move || {
-        if let Err(e) = hotkey_loop(&name, tx) {
+        if let Err(e) = hotkey_loop(&name, tx, ready_tx) {
             eprintln!("热键线程退出：{:#}", e);
         }
     });
-    Ok(())
+    match ready_rx.recv_timeout(Duration::from_secs(5)) {
+        Ok(Ok(())) => Ok(()),
+        Ok(Err(e)) => Err(e),
+        Err(_) => Err(anyhow!("热键初始化超时（5 秒）")),
+    }
 }
 
 fn keysym_for(name: &str) -> Result<u32> {
@@ -208,10 +218,10 @@ fn keysym_for(name: &str) -> Result<u32> {
     }
 }
 
-fn hotkey_loop(name: &str, tx: Sender<KeyMsg>) -> Result<()> {
+/// 连 X、找 keycode、开可检测自动重复、抢键。返回连接和 keycode。
+fn hotkey_init(name: &str) -> Result<(x11rb::rust_connection::RustConnection, u8)> {
     use x11rb::connection::Connection;
     use x11rb::protocol::xproto::{ConnectionExt, GrabMode, ModMask};
-    use x11rb::protocol::Event;
 
     let keysym = keysym_for(name)?;
     let (conn, screen_num) = x11rb::connect(None)?;
@@ -248,17 +258,33 @@ fn hotkey_loop(name: &str, tx: Sender<KeyMsg>) -> Result<()> {
         .ok()
         .and_then(|cookie| cookie.reply().ok());
 
-    // 抢占用单键：任何修饰组合下都抓到
-    conn.grab_key(
-        true,
-        root,
-        ModMask::ANY,
-        keycode,
-        GrabMode::ASYNC,
-        GrabMode::ASYNC,
-    )?;
+    // 只抓这个键本身、锁定修饰（CapsLock/NumLock）组合，以及它作为 Mod1 按下的情况：
+    // AnyModifier 会把 Ctrl+Alt_R、AltGr 组合字符一起抢走
+    for modifiers in [
+        ModMask::from(0u16),
+        ModMask::LOCK,
+        ModMask::M2,
+        ModMask::M1,
+    ] {
+        conn.grab_key(true, root, modifiers, keycode, GrabMode::ASYNC, GrabMode::ASYNC)?;
+    }
     conn.flush()?;
-    println!("已占用 X11 键位 keycode={} ", keycode);
+    println!("已占用 X11 键位 keycode={keycode} ");
+    Ok((conn, keycode))
+}
+
+fn hotkey_loop(name: &str, tx: Sender<KeyMsg>, ready: Sender<Result<()>>) -> Result<()> {
+    use x11rb::connection::Connection;
+    use x11rb::protocol::Event;
+
+    let (conn, keycode) = match hotkey_init(name) {
+        Ok(v) => v,
+        Err(e) => {
+            let _ = ready.send(Err(anyhow!("{e:#}")));
+            return Err(e);
+        }
+    };
+    let _ = ready.send(Ok(()));
 
     loop {
         match conn.wait_for_event()? {
