@@ -685,4 +685,8 @@ jobs:
         continue-on-error: true
         env:
           GH_TOKEN: ${{ github.token }}
-        run: .github/scripts/nix-data-pr.sh dist/archtype-data-rime-ice-*.tar.gz
+        run: |
+          .github/scripts/nix-data-pr.sh \
+            dist/archtype-data-rime-ice-*.tar.gz \
+            dist/settings/archtype-settings-nsh-*-linux-x86_64.tar.gz \
+            dist/settings/archtype-settings-nsh-*-linux-aarch64.tar.gz
