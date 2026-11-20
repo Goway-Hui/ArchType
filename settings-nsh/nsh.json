@@ -1,8 +1,14 @@
 {
   "name": "ArchType 设置",
   "id": "io.github.gowayhui.archtype.settings",
-  "version": "0.6.3",
+  "version": "0.6.4",
   "build": 1,
   "singleInstance": true,
-  "rust": "."
+  "rust": ".",
+  "window": {
+    "defaultSize": {
+      "width": 1000,
+      "height": 760
+    }
+  }
 }
