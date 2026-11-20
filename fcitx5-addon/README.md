@@ -112,8 +112,6 @@ bigram 格式（可选）：
 - 已在 Ubuntu 26.04 + fcitx5 5.1.19 上编译，按键行为用 `scripts/addon-test.sh` 测过；
   还没装进日常使用的 fcitx5 里实际打字。
 - fcitx5 5.1 的头文件要求 C++20（5.0 的也能用 C++20 编）。
-- Ubuntu 22.04 + fcitx5 5.0.14 上按键测试全部通过（CI 的「插件 · ubuntu22.04」任务）；那里「密码框也用输入法」这个设置
-  还没有，测的是「密码框里不用输入法、按键原样交给应用」（CMake 看 `globalconfig.h` 里有没有这个设置决定测哪种）。
 - 排序是骨架版：词典频次 + bigram + 覆盖率 + 线性特征；LTR（LightGBM）、
   NNLM 重排、MixRank 只有 trait/钩子，没有真实模型。
 - 云候选没做。

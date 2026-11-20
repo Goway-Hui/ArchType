@@ -66,7 +66,7 @@ usage() {
 默认下载、校验并安装匹配当前发行版的 ArchType 包。
 --print-plan  只显示发行版、包管理器和包名，不联网、不安装、不更改配置。
 
-支持 Ubuntu 22.04 / 24.04 / 26.04、Debian 13 及有明确兼容基线的衍生版，deepin 23 / 25，
+支持 Ubuntu 24.04 / 26.04、Debian 13 及有明确兼容基线的衍生版、deepin 25，
 Arch Linux / EndeavourOS / Garuda / CachyOS，Fedora；预编译包有 x86_64，
 Ubuntu、Debian 的 deb 和 rpm 另有 arm64（aarch64）。
 Manjaro 请在本机用 scripts/package-arch.sh 构建；NixOS 使用 flake。
@@ -123,8 +123,7 @@ select_platform() {
   if [[ "$ID" == deepin || "$ID" == Deepin ]]; then
     case "$VERSION_CODENAME:$VERSION_ID" in
       crimson:*|*:25|*:25.*) distro=deepin25 ;;
-      beige:*|*:23|*:23.*) distro=deepin23 ;;
-      *) source_install "deepin ${VERSION_ID:-$VERSION_CODENAME} 没有匹配的预编译包（有 deepin 23 和 25 的；deepin 20 / UOS 20 没有 GTK 4，暂不支持）" ;;
+      *) source_install "deepin ${VERSION_ID:-$VERSION_CODENAME} 没有匹配的预编译包（只提供 deepin 25 的；23 及更早、UOS 20 不再支持）" ;;
     esac
     [[ "$deb_arch" == amd64 ]] || source_install "deepin 的预编译包只有 x86_64；$machine 请从源码构建"
     manager=apt-get
@@ -141,7 +140,8 @@ select_platform() {
     nixos) source_install "NixOS 请使用仓库 flake 和 i18n.inputMethod.fcitx5.addons" ;;
     ubuntu)
       case "$VERSION_ID" in
-        22.04|24.04|26.04) distro="ubuntu$VERSION_ID"; manager=apt-get ;;
+        24.04|26.04) distro="ubuntu$VERSION_ID"; manager=apt-get ;;
+        22.04) source_install "Ubuntu 22.04 已不再提供安装包（它的 GTK 4.6 太旧）；请升级到 24.04，或按安装说明从源码构建" ;;
         *) source_install "Ubuntu $VERSION_ID 没有匹配的预编译包" ;;
       esac
       ;;
@@ -165,7 +165,6 @@ select_platform() {
       elif [[ -n "$UBUNTU_CODENAME" || "$family" == *" ubuntu "* ]]; then
         codename=${UBUNTU_CODENAME:-$VERSION_CODENAME}
         case "$codename" in
-          jammy) distro=ubuntu22.04; manager=apt-get ;;
           noble) distro=ubuntu24.04; manager=apt-get ;;
           resolute) distro=ubuntu26.04; manager=apt-get ;;
           *) source_install "$ID 的 Ubuntu 基线 ${codename:-未知} 没有匹配的预编译包" ;;
@@ -219,8 +218,6 @@ install_packages() {
     apt-get)
       local -a extra
       case "$distro" in
-        # 22.04 没有 fcitx5-frontend-all
-        ubuntu22.04) extra=(fcitx5-config-qt fcitx5-frontend-gtk3 fcitx5-frontend-gtk4 fcitx5-frontend-qt5 im-config) ;;
         # deepin 自带 fcitx5 和控制中心里的输入法设置，不装 im-config、fcitx5-config-qt
         deepin*) extra=(fcitx5-frontend-all) ;;
         *) extra=(fcitx5-config-qt fcitx5-frontend-all im-config) ;;

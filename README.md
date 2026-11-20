@@ -97,14 +97,13 @@
 ### 系统要求
 
 - Linux x86_64 或 arm64（aarch64），输入法框架 **fcitx5 5.0 或更新**。Arch 的安装包只有 x86_64
-- 有现成安装包的发行版：**Ubuntu 22.04 / 24.04 / 26.04、Debian 13、deepin 23 / 25**（deb）、**Arch Linux** 及 EndeavourOS / Garuda / CachyOS（pkg.tar.zst）、**Fedora**（[rpm](#fedora)）、**NixOS**（[flake](#nixos--nix)）。其他发行版请[从源码构建](docs/INSTALL.md)
-- Ubuntu 22.04 的 GNOME 是 42：蓝色候选框主题和语音浮条（GNOME 扩展，要 GNOME 45+）用不了，见[安装说明](docs/INSTALL.md#ubuntu-2204fcitx5-50)
+- 有现成安装包的发行版：**Ubuntu 24.04 / 26.04、Debian 13、deepin 25**（deb）、**Arch Linux** 及 EndeavourOS / Garuda / CachyOS（pkg.tar.zst）、**Fedora**（[rpm](#fedora)）、**NixOS**（[flake](#nixos--nix)）。其他发行版请[从源码构建](docs/INSTALL.md)
 - deepin 的安装包只有 x86_64
-- 「ArchType 设置」有两版：GTK 4.14+ 的系统（Arch、Fedora 40+、Ubuntu 24.04+、Debian 13+）用 NSH 重写的新界面；Ubuntu 22.04、deepin 23 这类 GTK 4.6/4.8 的系统继续用原来的 Python 界面，功能一致
+- 「ArchType 设置」是 NSH 重写的界面，要求 GTK 4.14+（Arch、Fedora 40+、Ubuntu 24.04+、Debian 13+、deepin 25）。原来的 Python 界面只剩命令行部分（`archtype-config --setup` 等）
 
 ### 一行命令安装（推荐）
 
-Ubuntu 22.04 / 24.04 / 26.04、Debian 13、deepin 23 / 25、Arch Linux（及衍生版）、Fedora 上，在终端里运行：
+Ubuntu 24.04 / 26.04、Debian 13、deepin 25、Arch Linux（及衍生版）、Fedora 上，在终端里运行：
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/Goway-Hui/ArchType/main/install.sh | bash
@@ -147,7 +146,7 @@ im-config -n fcitx5
 ##### 方式一：安装包
 
 到 [Releases](https://github.com/Goway-Hui/ArchType/releases) 页面下载和你系统对应的那**一个**文件
-`archtype_<版本>_<发行版>_<架构>.deb`（发行版是 `ubuntu22.04`、`ubuntu24.04`、`ubuntu26.04`、`debian13`、`deepin23`、`deepin25`，架构是 `amd64` 或 `arm64`，deepin 只有 `amd64`），词库已经包含在里面。
+`archtype_<版本>_<发行版>_<架构>.deb`（发行版是 `ubuntu24.04`、`ubuntu26.04`、`debian13`、`deepin25`，架构是 `amd64` 或 `arm64`，deepin 只有 `amd64`），词库已经包含在里面。
 不知道自己是哪个发行版、哪种架构：
 
 ```bash

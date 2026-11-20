@@ -205,17 +205,14 @@ jobs:
       fail-fast: false
       matrix:
         arch: [amd64, arm64]
-        distro: [ubuntu22.04, ubuntu24.04, ubuntu26.04, debian13, deepin23, deepin25]
+        distro: [ubuntu24.04, ubuntu26.04, debian13, deepin25]
         include:
-          - { distro: ubuntu22.04, image: "ubuntu:22.04" }
           - { distro: ubuntu24.04, image: "ubuntu:24.04" }
           - { distro: ubuntu26.04, image: "ubuntu:26.04" }
           - { distro: debian13, image: "debian:trixie" }
-          - { distro: deepin23, image: "linuxdeepin/deepin:23" }
           - { distro: deepin25, image: "linuxdeepin/deepin:25" }
         exclude:
           # deepin 的容器镜像只有 amd64
-          - { distro: deepin23, arch: arm64 }
           - { distro: deepin25, arch: arm64 }
     env:
       DEBIAN_FRONTEND: noninteractive
@@ -260,8 +257,7 @@ jobs:
             version="${base}~git$(date -u +%Y%m%d).$(echo "$GITHUB_SHA" | cut -c1-7)"
           fi
           echo "VERSION=$version" >> "$GITHUB_ENV"
-      - name: NSH 设置界面（GTK 4.14+ 的发行版）
-        if: matrix.distro != 'ubuntu22.04' && matrix.distro != 'deepin23'
+      - name: NSH 设置界面
         uses: actions/download-artifact@v4
         with:
           name: settings-nsh-${{ matrix.arch }}
@@ -300,9 +296,9 @@ jobs:
           test -f /usr/share/icons/hicolor/scalable/apps/archtype.svg
           test -f /usr/share/icons/hicolor/22x22/apps/archtype.png
           grep -qx 'Icon=archtype' /usr/share/fcitx5/inputmethod/archtype.conf
-          # 插件清单要求编译时 fcitx5 的「主.次.0」（22.04 是 5.0.0），fcitx5 小版本落后一点的系统也能加载
+          # 插件清单要求编译时 fcitx5 的「主.次.0」，fcitx5 小版本落后一点的系统也能加载
           grep -qx "0=core:$(pkg-config --modversion Fcitx5Core | cut -d. -f1,2).0" /usr/share/fcitx5/addon/archtype.conf
-      - name: 设置界面：每页、每个对话框点一遍（无头；22.04 的老 libadwaita 用替身控件）
+      - name: 设置界面：每页、每个对话框点一遍（无头）
         run: timeout 300 dbus-run-session -- xvfb-run -a python3 scripts/test-settings-gui.py /usr/bin/archtype-config
       - uses: actions/upload-artifact@v4
         with:
@@ -616,7 +612,7 @@ jobs:
           或者手动下载和你系统对应的一个 \`archtype_<版本>_<发行版>_<架构>.deb\`（词库已经在包里），然后 \`sudo apt install ./archtype_*.deb\`。
           Ubuntu / Debian 的 deb 和 Fedora RPM 有 x86_64（amd64）和 arm64（aarch64）两种，一键脚本按本机架构选；Arch 包和 deepin 包只有 x86_64。
           Arch Linux / EndeavourOS / Garuda / CachyOS：一键脚本用 pacman 安装对应包，不替你整机升级；依赖装不上时按提示先运行 \`sudo pacman -Syu\`。
-          Fedora 43 / 44 / 45：自动选择与系统版本一致的 RPM。Debian 13、Ubuntu 22.04 / 24.04 / 26.04 及明确声明兼容基线的衍生版、deepin 23 / 25 使用对应 deb。
+          Fedora 43 / 44 / 45：自动选择与系统版本一致的 RPM。Debian 13、Ubuntu 24.04 / 26.04 及明确声明兼容基线的衍生版、deepin 25 使用对应 deb。
           Manjaro：按安装说明在本机用 makepkg 打包；openSUSE Tumbleweed：按安装说明从源码构建。
           NixOS（x86_64、aarch64）：flake 输入写 \`github:${GITHUB_REPOSITORY}/release\`（跟正式版）或 \`github:${GITHUB_REPOSITORY}/${GITHUB_REF_NAME}\`（锁这一版），把 \`inputs.archtype.packages.<system>.default\` 加进 \`i18n.inputMethod.fcitx5.addons\`，见[安装说明](https://github.com/${GITHUB_REPOSITORY}/blob/main/docs/INSTALL.md#nixos--nix)。
           完整步骤见 [README](https://github.com/${GITHUB_REPOSITORY}#安装)。

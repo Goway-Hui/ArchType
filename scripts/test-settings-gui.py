@@ -3,9 +3,8 @@
 
     dbus-run-session -- xvfb-run -a python3 scripts/test-settings-gui.py [archtype-config 的路径]
 
-主要防的是老系统：Ubuntu 22.04 是 GTK 4.6、libadwaita 1.1，好些控件要用 archtype-config 里的替身；
-新系统用原生控件。两边都要能把每一页、每个对话框走一遍。对话框里的回答只在替身（真窗口）上点得到，
-原生的 Adw 对话框画在设置窗口里面，这里只检查打得开。
+要求 GTK 4.14 / libadwaita 1.5（Ubuntu 24.04+、Debian 13+、deepin 25、Arch、Fedora）：每一页、
+每个对话框都走一遍。Adw 对话框画在设置窗口里面，这里只检查打得开。
 """
 
 import json
@@ -93,7 +92,7 @@ def step(name, action):
 
 
 def new_windows(window, action):
-    """做 action，返回它新打开的顶层窗口（替身对话框、文件对话框）。"""
+    """做 action，返回它新打开的顶层窗口（对话框、文件对话框）。"""
     before = {id(w) for w in Gtk.Window.list_toplevels()}
     action()
     pump(0.5)
@@ -331,50 +330,6 @@ def run(app):
     dialog("更新装好后问要不要重启（稍后）",
            lambda: (setattr(win, "release", {"version": "9.9.9"}), win.ask_restart_after_update()), answer=0)
 
-    def export_words():
-        # 替身（GTK 4.10 以前）的文件对话框：选好文件点「保存」以后，自定义词写到那个文件里。
-        # GTK 自己的选文件窗口换目录、回应「保存」都是异步的，在 CI 上时灵时不灵；这里要测的是
-        # 替身和导出本身，所以把选文件窗口换成一个马上「保存」到指定文件的假窗口
-        if ns["FileDialog"] is not ns["_FileDialog"]:
-            return
-        target = os.path.join(tempfile.mkdtemp(), "words.tsv")
-        asked = {}
-
-        class Chooser:
-            def __init__(self, **_properties):
-                pass
-
-            def add_filter(self, _filter):
-                pass
-
-            def set_current_name(self, name):
-                asked["name"] = name
-
-            def set_current_folder(self, _folder):
-                pass
-
-            def connect(self, _signal, callback):
-                self.respond = callback
-
-            def show(self):
-                GLib.idle_add(lambda: self.respond(self, Gtk.ResponseType.ACCEPT) and False)
-
-            def get_file(self):
-                return Gio.File.new_for_path(target)
-
-            def destroy(self):
-                pass
-
-        real, Gtk.FileChooserNative = Gtk.FileChooserNative, Chooser
-        try:
-            win.on_export_words()
-            check(pump_until(lambda: os.path.exists(target)), "导出自定义词没写出文件")
-        finally:
-            Gtk.FileChooserNative = real
-        check(asked.get("name") == "archtype-custom-words.tsv", "保存窗口里没填默认文件名")
-        with open(target, encoding="utf-8") as f:
-            check("测试" in f.read(), "导出的文件里没有刚加的自定义词")
-    step("导出自定义词（保存）", export_words)
     step("打开网址", lambda: win.open_url("https://example.invalid/"))
     step("用编辑器打开自定义词", win.on_open_custom)
     pump(1)

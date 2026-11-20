@@ -127,7 +127,7 @@ POSTINST
 
 # NSH 版设置界面（可选）：ARCHTYPE_NSH_ARCHIVE 指向 scripts/package-settings-nsh.sh 的产物时安装它，
 # 并把「ArchType 设置」的桌面入口换成 archtype-settings。只有 GTK 4.14+ 的发行版才该设置
-# （Ubuntu 22.04、deepin 23 继续用 Python 版 archtype-config）。
+# （Python 版 archtype-config 保留命令行：--setup、--install-lexicon、--startup 等）。
 install_nsh_settings() { # <root>
   local root=$1
   [[ -n "${ARCHTYPE_NSH_ARCHIVE:-}" ]] || return 0

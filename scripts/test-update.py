@@ -44,11 +44,8 @@ class UpdateTests(unittest.TestCase):
 
     def test_supported_platforms(self):
         cases = [
-            ({"ID": "ubuntu", "VERSION_ID": "22.04"}, "apt-get", "ubuntu22.04", "amd64"),
-            ({"ID": "linuxmint", "VERSION_ID": "21.3", "UBUNTU_CODENAME": "jammy"}, "apt-get", "ubuntu22.04", "amd64"),
             ({"ID": "deepin", "VERSION_ID": "25", "VERSION_CODENAME": "crimson"}, "apt-get", "deepin25", "amd64"),
             ({"ID": "deepin", "VERSION_ID": "25.0.9"}, "apt-get", "deepin25", "amd64"),
-            ({"ID": "deepin", "VERSION_ID": "23", "VERSION_CODENAME": "beige"}, "apt-get", "deepin23", "amd64"),
             ({"ID": "ubuntu", "VERSION_ID": "24.04"}, "apt-get", "ubuntu24.04", "amd64"),
             ({"ID": "ubuntu", "VERSION_ID": "26.04"}, "apt-get", "ubuntu26.04", "amd64"),
             ({"ID": "debian", "VERSION_ID": "13"}, "apt-get", "debian13", "amd64"),
@@ -90,6 +87,10 @@ class UpdateTests(unittest.TestCase):
     def test_unsupported_platforms_have_guidance(self):
         cases = [
             {"ID": "ubuntu", "VERSION_ID": "20.04"},
+            # 22.04 / deepin 23 不再支持：没有发布包，也不该给 apt-get 计划
+            {"ID": "ubuntu", "VERSION_ID": "22.04"},
+            {"ID": "linuxmint", "VERSION_ID": "21.3", "UBUNTU_CODENAME": "jammy"},
+            {"ID": "deepin", "VERSION_ID": "23", "VERSION_CODENAME": "beige"},
             {"ID": "Deepin", "VERSION_ID": "20.8", "VERSION_CODENAME": "apricot"},
             {"ID": "debian", "VERSION_ID": "12"},
             {"ID": "debian", "VERSION_ID": "130.1"},
@@ -142,7 +143,6 @@ class UpdateTests(unittest.TestCase):
         cases = [
             ({"ID": "ubuntu", "VERSION_ID": "24.04"}, "archtype_0.3.9_ubuntu24.04_amd64.deb"),
             ({"ID": "linuxmint", "UBUNTU_CODENAME": "noble"}, "archtype_0.3.9_ubuntu24.04_amd64.deb"),
-            ({"ID": "ubuntu", "VERSION_ID": "22.04"}, "archtype_0.3.9_ubuntu22.04_amd64.deb"),
             ({"ID": "deepin", "VERSION_ID": "25"}, "archtype_0.3.9_deepin25_amd64.deb"),
             ({"ID": "arch"}, "archtype-0.3.9-1-x86_64.pkg.tar.zst"),
             ({"ID": "fedora", "VERSION_ID": "44"}, "archtype-0.3.9-1.fc44.x86_64.rpm"),

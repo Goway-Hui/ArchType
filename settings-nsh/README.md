@@ -41,10 +41,9 @@ nsh package --target linux   # 打包：目录 + tar.gz（runner、bundle、.des
 
 NSH 0.6 的 Linux runner 需要 **GTK 4.14+**：
 
-- 支持：Arch Linux、Fedora 40+、Ubuntu 24.04+、Debian 13+；
-- 不支持：Ubuntu 22.04、deepin 23（GTK 4.6/4.8）。这些系统继续用 Python 版 `archtype-config`（同一个 GUI 入口，功能覆盖旧版全部页面）。
+- 支持：Arch Linux、Fedora 40+、Ubuntu 24.04+、Debian 13+、deepin 25。
 
-打包脚本在支持的发行版里安装 NSH 设置并以它作为「ArchType 设置」的默认入口；旧发行版保持 Python 设置。
+Ubuntu 22.04、deepin 23 及更早的系统不再提供安装包与图形设置界面；`archtype-config` 只保留命令行部分（`--setup`、`--install-lexicon`、`--startup` 等）。
 
 ## 打包接入
 

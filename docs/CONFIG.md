@@ -99,7 +99,7 @@ dbus-send --session --dest=org.fcitx.Fcitx5 /controller \
 - 跑模型用 llama.cpp 的 `llama-server`，不用自己装：系统里没有时，下载模型会顺带从
   [llama.cpp 的发布页](https://github.com/ggml-org/llama.cpp/releases)下载官方程序（x86_64 约 22 MB、
   arm64 约 18 MB，MIT 许可，钉死一个版本并校验 SHA256），解到 `~/.local/share/archtype/llama/`，
-  设置里能删。它要 glibc 2.34 以上（Ubuntu 22.04、Debian 12、Fedora 35 起都满足）。
+  设置里能删。它要 glibc 2.34 以上（Debian 12、Ubuntu 24.04、Fedora 35 起都满足）。
 - 找 `llama-server` 的顺序：设置里填的路径 → `PATH`（发行版的 llama.cpp 包）→ 上面下载的那份。
   NixOS 跑不了官方程序，设置里不提供下载，在系统配置里装 `pkgs.llama-cpp`。
 - 第一次翻译时才启动 `llama-server`（只监听 127.0.0.1 的随机端口，载入要几秒），

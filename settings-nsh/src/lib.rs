@@ -385,11 +385,9 @@ fn update_platform() -> (String, String, String, String) {
         let codename = os_release_field(&info, "VERSION_CODENAME").to_lowercase();
         let base = if codename == "crimson" || version.starts_with("25") {
             "deepin25"
-        } else if codename == "beige" || version.starts_with("23") {
-            "deepin23"
         } else {
             return cannot(format!(
-                "deepin {version} 没有发布包（有 23 和 25 的）；{guide}"
+                "deepin {version} 没有发布包（只提供 deepin 25 的）；{guide}"
             ));
         };
         if machine != "x86_64" && machine != "amd64" {
@@ -415,7 +413,7 @@ fn update_platform() -> (String, String, String, String) {
             return cannot(format!("发布包只有 x86_64 和 arm64，{machine} 请从源码构建；{guide}"));
         }
     };
-    if distro == "ubuntu" && ["22.04", "24.04", "26.04"].contains(&version.as_str()) {
+    if distro == "ubuntu" && ["24.04", "26.04"].contains(&version.as_str()) {
         return (
             "apt-get".into(),
             format!("ubuntu{version}"),
@@ -436,7 +434,6 @@ fn update_platform() -> (String, String, String, String) {
             }
         };
         let mapped = match ubuntu_codename.as_str() {
-            "jammy" => Some("22.04"),
             "noble" => Some("24.04"),
             "resolute" => Some("26.04"),
             _ => None,

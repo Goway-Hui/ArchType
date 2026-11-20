@@ -118,12 +118,12 @@ assert_no_install() {
   if grep -Eq '^(apt-get|pacman|dnf|installer) ' "$work/commands"; then fail '校验失败仍运行包管理器'; fi
 }
 
-plan $'ID=ubuntu\nVERSION_ID="22.04"' archtype_0.3.8_ubuntu22.04_amd64.deb apt-get 'Ubuntu 22.04'
-plan $'ID=linuxmint\nVERSION_ID="21.3"\nID_LIKE="ubuntu debian"\nUBUNTU_CODENAME=jammy' ubuntu22.04 apt-get 'Linux Mint 21 uses Ubuntu 22.04 base'
+rejected $'ID=ubuntu\nVERSION_ID="22.04"' 'Ubuntu 22.04 已不再提供安装包' 'Ubuntu 22.04 is refused'
+rejected $'ID=linuxmint\nVERSION_ID="21.3"\nID_LIKE="ubuntu debian"\nUBUNTU_CODENAME=jammy' '没有匹配的预编译包' 'Linux Mint 21 (jammy) is refused'
 plan $'ID=ubuntu\nVERSION_ID="24.04"' archtype_0.3.8_ubuntu24.04_amd64.deb apt-get 'Ubuntu 24.04'
 plan $'ID=deepin\nVERSION_ID="25"\nVERSION_CODENAME=crimson' archtype_0.3.8_deepin25_amd64.deb apt-get 'deepin 25'
 plan $'ID=deepin\nVERSION_ID="25.0.9"' archtype_0.3.8_deepin25_amd64.deb apt-get 'deepin 25 point release'
-plan $'ID=deepin\nVERSION_ID="23"\nVERSION_CODENAME=beige' archtype_0.3.8_deepin23_amd64.deb apt-get 'deepin 23'
+rejected $'ID=deepin\nVERSION_ID="23"\nVERSION_CODENAME=beige' '只提供 deepin 25 的' 'deepin 23 is refused'
 plan $'ID=ubuntu\nVERSION_ID="26.04"' archtype_0.3.8_ubuntu26.04_amd64.deb apt-get 'Ubuntu 26.04'
 plan $'ID=debian\nVERSION_ID="13.1"' archtype_0.3.8_debian13_amd64.deb apt-get 'Debian 13 point release'
 plan $'ID=linuxmint\nVERSION_ID="22.1"\nID_LIKE="ubuntu debian"\nUBUNTU_CODENAME=noble' ubuntu24.04 apt-get 'Linux Mint uses Ubuntu base'
@@ -135,7 +135,7 @@ plan $'ID=garuda\nID_LIKE=arch' pkg.tar.zst pacman 'Garuda'
 plan $'ID=cachyos\nID_LIKE=arch' pkg.tar.zst pacman 'CachyOS'
 plan $'ID=fedora\nVERSION_ID=43' archtype-0.3.8-1.fc43.x86_64.rpm dnf 'Fedora version-specific RPM'
 rejected $'ID=ubuntu\nVERSION_ID=20.04' '源码' 'Ubuntu 20.04 is not silently upgraded to a newer binary'
-rejected $'ID=Deepin\nVERSION_ID="20.8"\nVERSION_CODENAME="apricot"' 'GTK 4' 'deepin 20 rejected with reason'
+rejected $'ID=Deepin\nVERSION_ID="20.8"\nVERSION_CODENAME="apricot"' '不再支持' 'deepin 20 rejected with reason'
 rejected $'ID=linuxmint\nVERSION_ID=22\nID_LIKE="ubuntu debian"' '基线' 'Unknown derivative base rejected'
 rejected $'ID=manjaro\nID_LIKE=arch' 'package-arch.sh' 'Manjaro uses native source package'
 rejected $'ID=example\nID_LIKE="arch manjaro"' 'package-arch.sh' 'Manjaro derivative rejected'
@@ -158,7 +158,6 @@ arm_plan() { # <os-release> <uname -m> <期望包名> <说明>
 arm_plan $'ID=ubuntu\nVERSION_ID="24.04"' aarch64 archtype_0.3.8_ubuntu24.04_arm64.deb 'Ubuntu 24.04 arm64'
 arm_plan $'ID=debian\nVERSION_ID="13"' arm64 archtype_0.3.8_debian13_arm64.deb 'Debian 13 arm64 (uname arm64)'
 arm_plan $'ID=fedora\nVERSION_ID=44' aarch64 archtype-0.3.8-1.fc44.aarch64.rpm 'Fedora aarch64 RPM'
-arm_plan $'ID=ubuntu\nVERSION_ID="22.04"' aarch64 archtype_0.3.8_ubuntu22.04_arm64.deb 'Ubuntu 22.04 arm64'
 
 reset $'ID=deepin\nVERSION_ID="25"'
 test_arch=aarch64
@@ -201,14 +200,6 @@ assert_log 'archtype_0.3.8_ubuntu24.04_amd64.deb'
 assert_log 'archtype-data-rime-ice_20260101_all.deb'
 assert_log 'archtype-config --setup --yes --no-im-config --no-restart'
 pass 'APT installs verified local packages and legacy data'
-
-reset $'ID=ubuntu\nVERSION_ID=22.04'
-asset archtype_0.3.8_ubuntu22.04_amd64.deb
-run > "$work/output" 2>&1 || fail "apt install 22.04: $(cat "$work/output")"
-assert_log 'fcitx5-config-qt fcitx5-frontend-gtk3 fcitx5-frontend-gtk4 fcitx5-frontend-qt5 im-config'
-if grep -Fq 'fcitx5-frontend-all' "$work/commands"; then fail '22.04 没有 fcitx5-frontend-all'; fi
-assert_log 'archtype_0.3.8_ubuntu22.04_amd64.deb'
-pass 'Ubuntu 22.04 installs the frontends it has'
 
 reset $'ID=deepin\nVERSION_ID=25\nVERSION_CODENAME=crimson'
 asset archtype_0.3.8_deepin25_amd64.deb
