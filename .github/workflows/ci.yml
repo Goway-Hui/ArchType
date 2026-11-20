@@ -213,11 +213,11 @@ jobs:
         run: scripts/eval.sh "$EVAL_DATA"
       - name: 排序不变量（全部用例逐键打，一条都不许违反）
         # 「照着打的拼音不被纠错抢第一」「第一个音节的单字一直在」这类规则，见 docs/ENGINE-INVARIANTS.md。
-        # 复用上一步编好的 wowtype-eval；不带神经语言模型（data 任务不下载 nnlm.bin），带模型的本地跑：
+        # 复用上一步编好的 archtype-eval；不带神经语言模型（data 任务不下载 nnlm.bin），带模型的本地跑：
         # scripts/invariants.sh <数据目录> --nnlm <nnlm.bin>
         if: ${{ !cancelled() }}
         env:
-          WOWTYPE_EVAL_BIN: target/release/wowtype-eval
+          WOWTYPE_EVAL_BIN: target/release/archtype-eval
         run: scripts/invariants.sh "$EVAL_DATA"
 
   addon:

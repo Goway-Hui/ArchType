@@ -4,17 +4,17 @@
 # tools/eval/invariants-allow.tsv 里写明了理由的除外。规则见 core/src/bin/common/invariants.rs、
 # docs/ENGINE-INVARIANTS.md。CI 的「排序不变量」任务跑的就是它。
 #
-#   scripts/invariants.sh <数据目录> [--nnlm <nnlm.bin>] [wowtype-eval 的其它参数，比如 --inv-limit 0]
+#   scripts/invariants.sh <数据目录> [--nnlm <nnlm.bin>] [archtype-eval 的其它参数，比如 --inv-limit 0]
 #
 # 每个前缀没有上文查一次、带用例自带的上文和下面 CONTEXTS 里的上文各查一次；给了 --nnlm 时每种再带上
 # 神经语言模型查一次（慢一倍多）。
 #
-# 有 $GITHUB_STEP_SUMMARY 时把结果追加进去。WOWTYPE_EVAL_BIN 指定现成的 wowtype-eval，不给就现编一个。
+# 有 $GITHUB_STEP_SUMMARY 时把结果追加进去。WOWTYPE_EVAL_BIN 指定现成的 archtype-eval，不给就现编一个。
 # 数据目录不可写时（比如 /usr/share/wowtype）先复制到临时目录：载入词库、模型会在旁边写缓存。
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-DATA=${1:?用法：scripts/invariants.sh <数据目录> [--nnlm <nnlm.bin>] [wowtype-eval 的参数]}
+DATA=${1:?用法：scripts/invariants.sh <数据目录> [--nnlm <nnlm.bin>] [archtype-eval 的参数]}
 shift
 EVAL_DIR=tools/eval
 ALLOW=$EVAL_DIR/invariants-allow.tsv
@@ -58,8 +58,8 @@ done
 
 BIN=${WOWTYPE_EVAL_BIN:-}
 if [[ -z "$BIN" ]]; then
-  cargo build --release --locked -p wowtype-core --no-default-features --bin wowtype-eval >&2
-  BIN=${CARGO_TARGET_DIR:-target}/release/wowtype-eval
+  cargo build --release --locked -p archtype-core --no-default-features --bin archtype-eval >&2
+  BIN=${CARGO_TARGET_DIR:-target}/release/archtype-eval
 fi
 
 args=(--data "$DATA" --invariants --inv-out "$tmp/violations.tsv")
