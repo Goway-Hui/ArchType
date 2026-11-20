@@ -70,7 +70,7 @@ if [[ -n "${GITHUB_STEP_SUMMARY:-}" && -f "$tmp/summary.md" ]]; then
 fi
 if (( update )) && (( status != 0 )) && [[ ! -f "$tmp/summary.md" ]]; then
   # 评测自己出错（不是回归集没全过）：没有汇总可比，别拿残缺结果覆盖基线
-  echo "评测出错（status=$status），没有汇总，不更新基线" >&2
+  echo "评测出错（status=${status}），没有汇总，不更新基线" >&2
   exit "$status"
 fi
 if (( update )); then

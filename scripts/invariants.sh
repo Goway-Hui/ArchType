@@ -63,7 +63,7 @@ if [[ -z "$BIN" ]]; then
   BIN=${CARGO_TARGET_DIR:-target}/release/archtype-eval
 fi
 [[ -x "$BIN" ]] || {
-  echo "找不到可直接执行的 $BIN（先跑 scripts/eval.sh 编出 release 二进制，或不设 ARCHTYPE_EVAL_BIN 让本脚本自己编）" >&2
+  echo "找不到可直接执行的 ${BIN}（先跑 scripts/eval.sh 编出 release 二进制，或不设 ARCHTYPE_EVAL_BIN 让本脚本自己编）" >&2
   exit 1
 }
 
