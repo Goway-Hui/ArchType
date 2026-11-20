@@ -14,8 +14,7 @@
   wrapGAppsHook4,
   gtk4,
   webkitgtk_6_0,
-  gstreamer,
-  gst-plugins-base,
+  gst_all_1,
   libsoup_3,
   gsettings-desktop-schemas,
   fcitx5,
@@ -89,8 +88,8 @@ stdenv.mkDerivation {
     alsa-lib
     gtk4
     webkitgtk_6_0
-    gstreamer
-    gst-plugins-base
+    gst_all_1.gstreamer
+    gst_all_1.gst-plugins-base
     libsoup_3
     gsettings-desktop-schemas
   ];
