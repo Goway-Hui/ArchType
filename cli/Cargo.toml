@@ -1,0 +1,13 @@
+[package]
+name = "archtype-config-cli"
+version = "0.6.1"
+edition = "2024"
+publish = false
+
+[[bin]]
+name = "archtype-config"
+path = "src/main.rs"
+
+[dependencies]
+serde_json = "1"
+sha2 = "0.10"

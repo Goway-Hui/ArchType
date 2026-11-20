@@ -1,0 +1,87 @@
+//! 最小的下载与校验工具（curl + SHA256SUMS）。
+
+use sha2::{Digest, Sha256};
+use std::process::Command;
+
+/// 下载到 path（先写 .part）。失败返回原因。
+pub fn download(url: &str, path: &str) -> Result<(), String> {
+    let part = format!("{path}.part");
+    if let Some(parent) = std::path::Path::new(path).parent() {
+        let _ = std::fs::create_dir_all(parent);
+    }
+    let status = Command::new("curl")
+        .args([
+            "-sSL",
+            "--fail",
+            "--max-time",
+            "1800",
+            "-A",
+            &format!("ArchType/{}", crate::config::version()),
+            "-o",
+            &part,
+            url,
+        ])
+        .status()
+        .map_err(|error| format!("跑不了 curl：{error}"))?;
+    if !status.success() {
+        let _ = std::fs::remove_file(&part);
+        return Err("下载失败".to_string());
+    }
+    std::fs::rename(&part, path).map_err(|error| format!("换不到位置：{error}"))
+}
+
+/// 取 URL 的文本内容。
+pub fn fetch(url: &str) -> Result<String, String> {
+    let output = Command::new("curl")
+        .args([
+            "-sSL",
+            "--fail",
+            "--max-time",
+            "20",
+            "-A",
+            &format!("ArchType/{}", crate::config::version()),
+            url,
+        ])
+        .output()
+        .map_err(|error| format!("跑不了 curl：{error}"))?;
+    if !output.status.success() {
+        return Err("联网失败".to_string());
+    }
+    Ok(String::from_utf8_lossy(&output.stdout).to_string())
+}
+
+/// 文件里某一行的 SHA256（`<摘要>  <文件名>`）。
+pub fn expected_digest(sums: &str, name: &str) -> Option<String> {
+    for line in sums.lines() {
+        let mut fields = line.split_whitespace();
+        let digest = fields.next()?;
+        let file = fields.next()?.trim_start_matches('*');
+        if file == name && digest.len() == 64 {
+            return Some(digest.to_lowercase());
+        }
+    }
+    None
+}
+
+pub fn sha256(path: &str) -> Result<String, String> {
+    let bytes = std::fs::read(path).map_err(|error| error.to_string())?;
+    let mut hasher = Sha256::new();
+    hasher.update(&bytes);
+    Ok(format!("{:x}", hasher.finalize()))
+}
+
+/// 像 `12.3 MB`。
+pub fn human_size(bytes: u64) -> String {
+    const UNITS: [&str; 4] = ["B", "KB", "MB", "GB"];
+    let mut value = bytes as f64;
+    let mut unit = 0;
+    while value >= 1024.0 && unit + 1 < UNITS.len() {
+        value /= 1024.0;
+        unit += 1;
+    }
+    if unit == 0 {
+        format!("{bytes} B")
+    } else {
+        format!("{value:.1} {}", UNITS[unit])
+    }
+}
