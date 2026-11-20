@@ -244,6 +244,9 @@ pub struct ArchtypeSessionConfig {
     pub association: c_int,
     /// 1.12 起：中文标点自动配对，默认 0（外壳要会按 frame 的 `cursor_delta`、`delete_next` 挪光标、删字才开）。
     pub auto_pair_punct: c_int,
+    /// 1.14 起：双击 Shift 不切换（单按先等一会儿再切，#253），默认 0（外壳要会按 `wake_after_ms` 调 tick、
+    /// 跟着 tick 和 OBSERVE 的 frame 里的 `mode_changed` 才开）。
+    pub shift_double_tap: c_int,
 }
 
 impl Default for ArchtypeSessionConfig {
@@ -286,6 +289,7 @@ impl Default for ArchtypeSessionConfig {
             translate_key: c_int::from(config.translate_key),
             association: c_int::from(config.association),
             auto_pair_punct: c_int::from(config.auto_pair_punct),
+            shift_double_tap: c_int::from(config.shift_double_tap),
         }
     }
 }
@@ -341,6 +345,7 @@ impl ArchtypeSessionConfig {
             translate_key: self.translate_key != 0,
             association: self.association != 0,
             auto_pair_punct: self.auto_pair_punct != 0,
+            shift_double_tap: self.shift_double_tap != 0,
         }
     }
 }

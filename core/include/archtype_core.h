@@ -489,6 +489,12 @@ typedef struct {
                           * frame->cursor_delta 让外壳把光标挪到中间；在里面打完再按右半边跳过补好的那个
                           * （cursor_delta 为 +1），空的一对按退格两个一起删（frame->delete_next）。
                           * 默认 0：外壳要会挪光标、删字才开，设置里 AutoPairPunct 的默认值也是关 */
+    int shift_double_tap; /* 1.14 起：双击 Shift 不切换（JetBrains 的双击 Shift 是「到处搜索」，#253）：单按以后
+                           * 先不切，frame->wake_after_ms 叫外壳过一会儿调 archtype_session_tick；0.35 秒以内又单按
+                           * 一下就两下都不算（模式不变，没有 mode_changed）。没等到第二下时，按别的键（OBSERVE
+                           * 也算，这个键照切了以后的模式处理）、到了时间（tick）、第二下没算成单按时切，这几个
+                           * frame 都可能带 mode_changed（和 commit：打到一半切英文）。按键没带 time_ms 时照旧立刻切。
+                           * 默认 0：外壳要会这些才开 */
 } ArchtypeSessionConfig;
 
 /* 一次调用之后外壳要做的事。归会话所有，和里面的字符串一起在同一个会话的下一次调用前有效。
@@ -510,13 +516,14 @@ typedef struct {
     size_t cand_count;     /* 候选框里显示几个（一页，或展开面板的一屏）；用 archtype_session_candidate 取 */
     int cand_cursor;       /* 光标在显示的这些里的位置；-1 不在这一页上（翻页按钮翻走以后） */
     int has_prev, has_next; /* 前面 / 后面还有一页（展开面板是一屏） */
-    uint32_t wake_after_ms; /* >0：这么久后再调会话（还没用，恒为 0） */
+    uint32_t wake_after_ms; /* >0：这么久后调 wowtype_session_tick（互译等译文；1.14 起单按 Shift 等双击） */
     int forgot;             /* 1.7 起：这次按键（Ctrl+Delete）让引擎忘掉了一个学过的词，
                              * 外壳该马上存用户词库和输入习惯（和上屏后存的一样） */
     int learned;            /* 1.10 起：这次上屏里有引擎学到的选词（选了引擎的候选、原样上屏输入），
                              * 外壳攒够次数存一次用户词库；只上屏了标点、emoji、计算结果、日期时间是 0 */
     int mode;               /* 1.10 起：这次调用以后的输入模式，ARCHTYPE_MODE_* */
-    int mode_changed;       /* 1.10 起：这次调用切换了输入模式（单按 Shift、archtype_session_set_mode） */
+    int mode_changed;       /* 1.10 起：这次调用切换了输入模式（单按 Shift、archtype_session_set_mode；
+                             * 1.14 起开着 shift_double_tap 时也可能在 tick、OBSERVE 的 frame 里） */
     int translating;        /* 1.10 起：互译中（「译」、有翻译器、输入框能翻译）。上屏的字攒成原文，
                              * 不进 commit；下面四段字只在互译时有内容，否则是空串（不为 NULL） */
     const char *translate_source; /* 攒着的原文（编辑区里画在拼音前面） */

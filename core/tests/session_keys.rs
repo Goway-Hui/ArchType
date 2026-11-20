@@ -1755,6 +1755,170 @@ fn shift_tap_rules() {
     assert_eq!(modes, [Mode::English, Mode::Translate, Mode::Chinese]);
 }
 
+/// 开着双击 Shift 不切换（#253）的会话。
+fn double_tap_session() -> Session<'static> {
+    let mut session = with(engine());
+    session.configure(Config { shift_double_tap: true, ..Config::default() });
+    session
+}
+
+/// 在 at 按下左 Shift、80 毫秒后松开，返回两个 frame。
+fn tap_shift(session: &mut Session, at: u64) -> (Frame, Frame) {
+    let press = session.key(&shift(keysym::SHIFT_L, false, at));
+    let release = session.key(&shift(keysym::SHIFT_L, true, at + 80));
+    (press, release)
+}
+
+#[test]
+fn shift_double_tap_single_tap_toggles_after_window() {
+    use wowtype_core::session::{Mode, SHIFT_DOUBLE_TAP_MS};
+    let mut session = double_tap_session();
+    let (press, release) = tap_shift(&mut session, 1000);
+    assert!(!press.handled && !press.mode_changed);
+    // 先不切，叫外壳到时间调 tick
+    assert!(!release.mode_changed && release.mode == Mode::Chinese);
+    assert_eq!(u64::from(release.wake_after_ms), SHIFT_DOUBLE_TAP_MS);
+    let early = session.tick(1080 + 100);
+    assert!(!early.mode_changed && early.mode == Mode::Chinese, "还没到时间");
+    assert_eq!(u64::from(early.wake_after_ms), SHIFT_DOUBLE_TAP_MS - 100);
+    let due = session.tick(1080 + SHIFT_DOUBLE_TAP_MS);
+    assert!(due.mode_changed && due.mode == Mode::English, "到时间切英文");
+    assert_eq!(due.wake_after_ms, 0);
+    assert!(!session.tick(5000).mode_changed, "只切一次");
+    assert!(!type_keys(&mut session, "a").handled, "英文模式字母交给应用");
+    // 再单按一下回中文，也一样等到时间
+    tap_shift(&mut session, 6000);
+    assert_eq!(session.mode(), Mode::English);
+    let back = session.tick(6080 + SHIFT_DOUBLE_TAP_MS);
+    assert!(back.mode_changed && back.mode == Mode::Chinese);
+}
+
+#[test]
+fn shift_double_tap_next_key_toggles_first() {
+    use wowtype_core::session::{KeyAction, Mode};
+    // 单按以后紧接着打字：这个键照切了以后的模式处理（和以前单按立刻切一样）
+    let mut session = double_tap_session();
+    tap_shift(&mut session, 1000);
+    let frame = type_keys(&mut session, "a");
+    assert!(frame.mode_changed && frame.mode == Mode::English && !frame.handled, "a 在英文里交给应用");
+    assert!(!session.tick(9000).mode_changed, "已经切过了");
+    // 外壳自己处理掉的键（OBSERVE）也一样先切，frame 里带着 mode_changed
+    let mut session = double_tap_session();
+    tap_shift(&mut session, 1000);
+    let observed = session.key(&Key { keysym: u32::from(b'1'), action: KeyAction::Observe, ..Key::default() });
+    assert!(observed.mode_changed && observed.mode == Mode::English);
+    // 打到一半单按：等的时候编辑区留着，切的时候字母原样上屏
+    let mut session = double_tap_session();
+    type_keys(&mut session, "nihao");
+    let (_, release) = tap_shift(&mut session, 1000);
+    assert!(release.commit.is_none() && session.composing(), "等双击时拼音还在");
+    let due = session.tick(2000);
+    assert!(due.mode_changed && due.mode == Mode::English);
+    assert_eq!(due.commit.as_deref(), Some("nihao"));
+    assert!(!session.composing());
+    // Shift+字母（单按以后又按住 Shift 打大写）：第二下不是单按，第一下照切，A 在英文里交给应用
+    let mut session = double_tap_session();
+    tap_shift(&mut session, 1000);
+    session.key(&shift(keysym::SHIFT_L, false, 1200));
+    let upper = session.key(&Key { modifiers: modifier::SHIFT, ..Key::char('A') });
+    assert!(upper.mode_changed && upper.mode == Mode::English && !upper.handled);
+    assert!(!session.key(&shift(keysym::SHIFT_L, true, 1300)).mode_changed);
+    assert!(!session.tick(9000).mode_changed);
+    assert_eq!(session.mode(), Mode::English);
+}
+
+#[test]
+fn shift_double_tap_cancels_toggle() {
+    use wowtype_core::session::{Mode, SHIFT_DOUBLE_TAP_MS};
+    let mut session = double_tap_session();
+    let mut frames = Vec::new();
+    let (a, b) = tap_shift(&mut session, 1000);
+    frames.extend([a, b]);
+    // 第二下在第一下松开 0.2 秒后按下：双击，两下都不算
+    let (c, d) = tap_shift(&mut session, 1280);
+    frames.extend([c, d]);
+    assert!(frames.iter().all(|f| !f.mode_changed && f.mode == Mode::Chinese && !f.handled), "没有一个 frame 切了模式");
+    assert_eq!(frames[3].wake_after_ms, 0, "不用再叫 tick");
+    let later = session.tick(1360 + SHIFT_DOUBLE_TAP_MS * 3);
+    assert!(!later.mode_changed && later.mode == Mode::Chinese, "过了时间也不切");
+    assert!(type_keys(&mut session, "a").handled, "还是中文");
+    // 打到一半双击：拼音留着，什么也不上屏
+    let mut session = double_tap_session();
+    type_keys(&mut session, "nihao");
+    let (_, first) = tap_shift(&mut session, 1000);
+    let (_, second) = tap_shift(&mut session, 1250);
+    assert!(first.commit.is_none() && second.commit.is_none() && !second.mode_changed);
+    assert!(session.composing());
+    assert!(!session.tick(5000).mode_changed);
+    assert_eq!(type_keys(&mut session, "<sp>").commit.as_deref(), Some("你好"));
+    // 有「译」的循环（中 → 英 → 译）里双击也不动
+    let mut session = double_tap_session();
+    session.configure(Config { translate_mode: true, shift_double_tap: true, ..Config::default() });
+    tap_shift(&mut session, 1000);
+    tap_shift(&mut session, 1250);
+    assert!(!session.tick(5000).mode_changed);
+    assert_eq!(session.mode(), Mode::Chinese);
+    // 连按三下：前两下抵掉，第三下照常切
+    let mut session = double_tap_session();
+    tap_shift(&mut session, 1000);
+    tap_shift(&mut session, 1250);
+    tap_shift(&mut session, 1500);
+    let due = session.tick(1580 + SHIFT_DOUBLE_TAP_MS);
+    assert!(due.mode_changed && due.mode == Mode::English);
+}
+
+#[test]
+fn shift_double_tap_slow_second_tap_toggles_again() {
+    use wowtype_core::session::{Mode, SHIFT_DOUBLE_TAP_MS};
+    // 外壳的定时器按时到了：第一下在 tick 里切，过了间隔的第二下再切回来
+    let mut session = double_tap_session();
+    tap_shift(&mut session, 1000);
+    assert!(session.tick(1080 + SHIFT_DOUBLE_TAP_MS).mode_changed);
+    assert_eq!(session.mode(), Mode::English);
+    tap_shift(&mut session, 1080 + SHIFT_DOUBLE_TAP_MS + 50);
+    assert!(session.tick(5000).mode_changed);
+    assert_eq!(session.mode(), Mode::Chinese);
+    // 定时器没来（或者晚了）：过了间隔才按下的第二下先让第一下切，自己再等
+    let mut session = double_tap_session();
+    tap_shift(&mut session, 1000);
+    let late = 1080 + SHIFT_DOUBLE_TAP_MS + 1;
+    let press = session.key(&shift(keysym::SHIFT_L, false, late));
+    assert!(press.mode_changed && press.mode == Mode::English, "按下时第一下切");
+    let release = session.key(&shift(keysym::SHIFT_L, true, late + 80));
+    assert!(!release.mode_changed && release.wake_after_ms > 0);
+    let due = session.tick(late + 80 + SHIFT_DOUBLE_TAP_MS);
+    assert!(due.mode_changed && due.mode == Mode::Chinese, "第二下也照切");
+    // 第二下按在间隔里、按太久（不算单按）：第一下照切，第二下不切
+    let mut session = double_tap_session();
+    tap_shift(&mut session, 1000);
+    session.key(&shift(keysym::SHIFT_L, false, 1200));
+    assert!(!session.tick(1080 + SHIFT_DOUBLE_TAP_MS + 10).mode_changed, "第二下按着时不切，等它松开");
+    let held = session.key(&shift(keysym::SHIFT_L, true, 1900));
+    assert!(held.mode_changed && held.mode == Mode::English);
+    assert!(!session.tick(9000).mode_changed);
+}
+
+#[test]
+fn shift_double_tap_edge_cases() {
+    use wowtype_core::session::Mode;
+    // 外面定了模式：等着的那一下不再切
+    let mut session = double_tap_session();
+    tap_shift(&mut session, 1000);
+    session.set_mode(Mode::Chinese);
+    assert!(!session.tick(5000).mode_changed);
+    assert_eq!(session.mode(), Mode::Chinese);
+    // 按键不带时刻：照旧立刻切
+    let mut session = double_tap_session();
+    session.key(&shift(keysym::SHIFT_L, false, 0));
+    let frame = session.key(&shift(keysym::SHIFT_L, true, 0));
+    assert!(frame.mode_changed && frame.mode == Mode::English);
+    // 关着（默认）：立刻切，连按两下切两次
+    let mut session = with(engine());
+    assert!(tap_shift(&mut session, 1000).1.mode_changed);
+    assert!(tap_shift(&mut session, 1250).1.mode_changed);
+    assert_eq!(session.mode(), Mode::Chinese);
+}
+
 #[test]
 fn switching_to_english_commits_composition() {
     use archtype_core::session::Mode;
