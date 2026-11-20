@@ -446,6 +446,25 @@ vim.api.nvim_create_autocmd("InsertEnter", { callback = function() vim.fn.system
 - `archtype-config --page voice`（或 `general`、`input`、`emoji`、`translate`、`words`、`stats`、`update`）直接打开某一页。
 - **Fcitx 5 配置**里选中 ArchType 点「配置」，也能改上面这些设置，里面的「自定义词和更多设置」会打开 ArchType 设置。
 
+#### 设置界面的实现与性能
+
+0.6.1 起，设置界面用 NSH（Rust + GTK 4）重写，不再是 Python 脚本 + PyGObject。
+同一台机器（Arch Linux、niri/Wayland、x86_64）、隔离的配置目录里各启动 3 次，实测：
+
+| 指标 | NSH（Rust，新） | Python（0.6.1 之前） |
+|---|---:|---:|
+| 窗口出现 | 232 / 232 / 319 ms | 790 / 790 / 1863 ms |
+| 内存 RSS | 216 / 217 / 283 MB | 298 / 331 / 345 MB |
+| 线程数 | 22–26 | 43 |
+| `archtype-config --export-log -` | 37 / 38 / 45 ms | 351 / 361 / 960 ms |
+
+- 启动快 2.5–8 倍：Rust 二进制直接进 GTK，没有 Python 解释器和 `gi.repository` 的模块加载。
+- 内存少 20–30%：旧版要同时驻留解释器、PyGObject 绑定和 GTK；新版只有自己的运行时加 GTK。
+- 命令行快约 10 倍：插件每次切到 ArchType 都会调一次 `archtype-config --startup`，这部分从接近 1 秒降到几十毫秒。
+- 代价是安装包大 15–17 MB：设置界面从约 300 KB 的脚本变成 65.7 MB 的原生二进制（压缩后约 20 MB）。
+
+设置界面不影响打字延迟：候选是 fcitx5 插件（C++）加 Rust 核心算的，新旧版本这一层没有变化。
+
 #### 主题
 
 ArchType 默认用自己的绿色主题：选中的词是图标里的那种绿，系统换深色模式时跟着换深色版。
