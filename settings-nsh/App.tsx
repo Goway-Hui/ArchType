@@ -3267,7 +3267,7 @@ function App() {
           )}
 
           <Text style={{ color: ui().muted, fontSize: 12 }}>
-            ArchType 设置（NSH 预览版，版本 {Config.version()}）
+            ArchType 设置 · 版本 {Config.version()}
           </Text>
           </View>
         </Scroll>
