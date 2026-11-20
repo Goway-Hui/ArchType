@@ -54,19 +54,10 @@ fn check_update() {
         return;
     }
     let _ = config::state_set("update_checked", &now.to_string());
-    let Ok(text) = net::fetch("https://api.github.com/repos/Goway-Hui/ArchType/releases/latest")
-    else {
+    let Some(tag) = net::latest_release_tag() else {
         return;
     };
-    let Ok(value) = serde_json::from_str::<serde_json::Value>(&text) else {
-        return;
-    };
-    let tag = value["tag_name"]
-        .as_str()
-        .unwrap_or("")
-        .trim_start_matches('v')
-        .to_string();
-    if tag.is_empty() || config::state_get("update_notified") == tag {
+    if config::state_get("update_notified") == tag {
         return;
     }
     if !newer_version(&tag, &config::version()) {

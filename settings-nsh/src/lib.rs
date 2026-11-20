@@ -587,12 +587,10 @@ fn update_install_work(release: String) {
     let release_value: serde_json::Value = serde_json::from_str(&release).unwrap_or_default();
     let sums_url = release_value["assets"]["SHA256SUMS"]["url"]
         .as_str()
-        .unwrap_or("")
-        .to_string();
-    if sums_url.is_empty() {
-        update_set_state("error:发布页缺少 SHA256SUMS".to_string());
-        return;
-    }
+        .map(str::to_string)
+        .unwrap_or_else(|| {
+            format!("https://github.com/Goway-Hui/ArchType/releases/download/v{version}/SHA256SUMS")
+        });
     let sums_path = format!("{dir}/SHA256SUMS");
     if let Err(error) = update_download(&sums_url, &sums_path, 0) {
         update_set_state(format!("error:{error}"));
@@ -1247,56 +1245,61 @@ impl Config {
         ids.join("\n")
     }
 
-    /// 查 GitHub 最新版本；返回 {"ok":true,"current","tag","url","notes","newer"}。
+    /// 最新发布版的版本号（不带 v），只用网页：releases/latest 会跳到 /releases/tag/vX.Y.Z。
+    /// 不查 GitHub 接口，限流（403/429）也不影响检查更新。
+    fn latest_tag_via_web() -> Result<String, String> {
+        let output = std::process::Command::new("curl")
+            .args([
+                "-sS",
+                "-L",
+                "--max-time",
+                "20",
+                "-A",
+                &format!("ArchType/{}", Config::version()),
+                "-o",
+                "/dev/null",
+                "-w",
+                "%{url_effective}",
+                "https://github.com/Goway-Hui/ArchType/releases/latest",
+            ])
+            .output()
+            .map_err(|error| format!("跑不了 curl：{error}"))?;
+        if !output.status.success() {
+            return Err("连不上 GitHub".to_string());
+        }
+        let effective = String::from_utf8_lossy(&output.stdout);
+        let Some((_, tail)) = effective.rsplit_once("/tag/") else {
+            return Err("GitHub 上没有找到发布版本".to_string());
+        };
+        let tag = tail.trim().trim_start_matches('v').to_string();
+        if tag.is_empty() || !tag.chars().any(|c| c.is_ascii_digit()) {
+            return Err("GitHub 上没有找到发布版本".to_string());
+        }
+        Ok(tag)
+    }
+
+    /// 查最新版本；返回 {"ok":true,"current","tag","url","notes","assets","newer"}。
+    /// 只用网页，不查 GitHub 接口。
     pub fn check_update() -> String {
         let current = Config::version();
-        let text = match curl(
-            "https://api.github.com/repos/Goway-Hui/ArchType/releases/latest",
-            "",
-            None,
-            20,
-        ) {
-            Ok(text) => text,
+        let tag = match Self::latest_tag_via_web() {
+            Ok(tag) => tag,
             Err(error) => return json_error(&error),
         };
-        let Ok(value) = serde_json::from_str::<serde_json::Value>(&text) else {
-            return json_error("看不懂 GitHub 的返回");
-        };
-        let tag = value["tag_name"]
-            .as_str()
-            .unwrap_or("")
-            .trim_start_matches('v')
-            .to_string();
-        if tag.is_empty() {
-            return json_error("GitHub 上没有找到发布版本");
-        }
-        let url = value["html_url"].as_str().unwrap_or("").to_string();
-        let notes: String = value["body"].as_str().unwrap_or("").chars().take(20000).collect();
-        // 一键更新要拿资产名和下载地址（旧版自己从发布信息里挑包，不跳网页）
-        let mut assets = serde_json::Map::new();
-        if let Some(items) = value["assets"].as_array() {
-            for item in items {
-                let (Some(name), Some(link)) = (item["name"].as_str(), item["browser_download_url"].as_str())
-                else {
-                    continue;
-                };
-                assets.insert(
-                    name.to_string(),
-                    serde_json::json!({
-                        "url": link,
-                        "size": item["size"].as_u64().unwrap_or(0),
-                    }),
-                );
-            }
-        }
+        let base = format!("https://github.com/Goway-Hui/ArchType/releases/download/v{tag}");
+        // 更新说明单独传成 RELEASE-NOTES.md；更早的版本没有这个文件，就没有说明
+        let notes: String = curl(&format!("{base}/RELEASE-NOTES.md"), "", None, 20)
+            .map(|text| text.chars().take(20000).collect())
+            .unwrap_or_default();
         serde_json::json!({
             "ok": true,
             "current": current,
             "tag": tag,
             "version": tag,
-            "url": url,
+            "url": format!("https://github.com/Goway-Hui/ArchType/releases/tag/v{tag}"),
             "notes": notes,
-            "assets": assets,
+            // 不再靠接口给的资产表：包名和下载地址按平台名拼出来（见 update_plan）
+            "assets": serde_json::Map::new(),
             "newer": newer_version(&tag, &current),
         })
         .to_string()
@@ -1343,24 +1346,13 @@ impl Config {
             "pacman" => format!("archtype-{version}-1-{arch}.pkg.tar.zst"),
             _ => format!("archtype-{version}-1.{distro}.{arch}.rpm"),
         };
-        if assets[&name]["url"].as_str().is_none() {
-            return serde_json::json!({
-                "can_install": false,
-                "reason": format!("这一版没有 {distro} {arch} 的安装包，请按安装说明从源码构建"),
-                "version": version,
-                "files": [],
-            })
-            .to_string();
-        }
-        if assets["SHA256SUMS"]["url"].as_str().is_none() {
-            return serde_json::json!({
-                "can_install": false,
-                "reason": "发布页缺少 SHA256SUMS，暂不自动安装",
-                "version": version,
-                "files": [],
-            })
-            .to_string();
-        }
+        // 只走网页时接口没有资产表，按 GitHub 的发布地址拼；下载不通会在安装时报错
+        let base = format!("https://github.com/Goway-Hui/ArchType/releases/download/v{version}");
+        let file_url = assets[&name]["url"]
+            .as_str()
+            .map(str::to_string)
+            .unwrap_or_else(|| format!("{base}/{name}"));
+        let file_size = assets[&name]["size"].as_u64().unwrap_or(0);
         let note = if manager == "pacman" {
             "要是提示依赖不满足，先在终端运行 sudo pacman -Syu 升级系统"
         } else {
@@ -1375,8 +1367,8 @@ impl Config {
             "version": version,
             "files": [{
                 "name": name,
-                "url": assets[&name]["url"],
-                "size": assets[&name]["size"].as_u64().unwrap_or(0),
+                "url": file_url,
+                "size": file_size,
             }],
         })
         .to_string()

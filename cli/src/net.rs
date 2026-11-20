@@ -50,6 +50,37 @@ pub fn fetch(url: &str) -> Result<String, String> {
     Ok(String::from_utf8_lossy(&output.stdout).to_string())
 }
 
+/// 最新发布版的版本号（不带 v），只用网页：`releases/latest` 会跳到 `/releases/tag/vX.Y.Z`。
+/// 不查 GitHub 接口，接口限流（403/429）也不影响检查更新。
+pub fn latest_release_tag() -> Option<String> {
+    let output = Command::new("curl")
+        .args([
+            "-sS",
+            "-L",
+            "--max-time",
+            "20",
+            "-A",
+            &format!("ArchType/{}", crate::config::version()),
+            "-o",
+            "/dev/null",
+            "-w",
+            "%{url_effective}",
+            "https://github.com/Goway-Hui/ArchType/releases/latest",
+        ])
+        .output()
+        .ok()?;
+    if !output.status.success() {
+        return None;
+    }
+    let effective = String::from_utf8_lossy(&output.stdout);
+    let (_, tail) = effective.rsplit_once("/tag/")?;
+    let tag = tail.trim().trim_start_matches('v');
+    if tag.is_empty() || !tag.chars().any(|c| c.is_ascii_digit()) {
+        return None;
+    }
+    Some(tag.to_string())
+}
+
 /// 文件里某一行的 SHA256（`<摘要>  <文件名>`）。
 pub fn expected_digest(sums: &str, name: &str) -> Option<String> {
     for line in sums.lines() {
