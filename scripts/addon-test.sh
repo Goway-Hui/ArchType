@@ -14,7 +14,7 @@ LEXICON=${1:-$PWD/core/data/demo_lexicon.tsv}
 ENGLISH=${2:-}
 BUILD=$(realpath -m "${ARCHTYPE_ADDON_TEST_BUILD:-fcitx5-addon/build-test}")
 
-cargo build --release -p archtype-core
+cargo build --release -p archtype-core -p archtype-config-cli
 cmake -S fcitx5-addon -B "$BUILD" -DCMAKE_BUILD_TYPE=Release -DARCHTYPE_BUILD_TESTS=ON >/dev/null
 cmake --build "$BUILD" -j
 

@@ -3,7 +3,7 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-cargo build --release -p archtype-core
+cargo build --release -p archtype-core -p archtype-config-cli
 
 LEXICON=${1:-/tmp/archtype_abi.tsv}
 # 旧版本生成的词库可能缺条目，内容不对就重建
