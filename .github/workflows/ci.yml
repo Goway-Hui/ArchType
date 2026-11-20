@@ -41,8 +41,6 @@ jobs:
       - uses: actions/checkout@v4
       - run: for script in install.sh scripts/*.sh; do bash -n "$script"; done
       - run: bash scripts/test-install.sh
-      - run: python3 scripts/test-update.py
-      - run: python3 scripts/test-shift-config.py
       # 设置契约：spec/ 自检 + 设置界面对照（fcitx5 插件在「插件」任务的 addon-test.sh 里对照）
       - run: python3 scripts/test-config-contract.py
 

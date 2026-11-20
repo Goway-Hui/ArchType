@@ -10,13 +10,9 @@
   cmake,
   kdePackages,
   pkg-config,
-  gobject-introspection,
-  wrapGAppsHook4,
   fcitx5,
   alsa-lib,
   gtk4,
-  libadwaita,
-  python3,
 }:
 
 let
@@ -32,7 +28,6 @@ let
     hash = "sha256-s1pK92Vz67HHtALFKF0zu7HOKzJEdwvvnpCCbD/PyKo=";
   };
 
-  pythonEnv = python3.withPackages (ps: [ ps.pygobject3 ]);
 in
 stdenv.mkDerivation {
   pname = "archtype";
@@ -46,6 +41,7 @@ stdenv.mkDerivation {
       ../core
       ../voice
       ../voice-daemon
+      ../cli
       ../fcitx5-addon
       ../icons
       ../themes
@@ -63,16 +59,12 @@ stdenv.mkDerivation {
     cmake
     kdePackages.extra-cmake-modules
     pkg-config
-    gobject-introspection
-    wrapGAppsHook4
   ];
 
   buildInputs = [
     fcitx5
     alsa-lib
     gtk4
-    libadwaita
-    pythonEnv
   ];
 
   # 自检工具默认去 /usr/share/archtype 找词库，改成本包的目录
@@ -81,9 +73,9 @@ stdenv.mkDerivation {
       --replace-fail /usr/share/archtype "$out/share/archtype"
   '';
 
-  # 插件静态链接 Rust 核心：CMake 配置时 target/release/libarchtype_core.a 必须已经在
+  # 插件静态链接 Rust 核心、还要装 Rust 版 archtype-config：CMake 配置时两个产物都必须已经在
   preConfigure = ''
-    cargo build --release --frozen --offline -p archtype-core
+    cargo build --release --frozen --offline -p archtype-core -p archtype-config-cli
   '';
 
   cmakeDir = "../fcitx5-addon";
@@ -124,17 +116,6 @@ stdenv.mkDerivation {
       install -Dm644 data/WUBI-LICENSE "$out/share/licenses/archtype/LICENSE.rime-wubi"
     fi
 
-    # 设置界面：用带 PyGObject 的 Python，词库路径指到本包
-    substituteInPlace "$out/bin/archtype-config" \
-      --replace-fail '#!/usr/bin/python3' '#!${pythonEnv.interpreter}' \
-      --replace-fail /usr/share/archtype "$out/share/archtype" \
-      --replace-fail /usr/share/doc/archtype "$out/share/doc/archtype"
-  '';
-
-  # 只给设置界面套 GTK 环境（GI_TYPELIB_PATH 等），别的 ELF 不用
-  dontWrapGApps = true;
-  postFixup = ''
-    wrapGApp "$out/bin/archtype-config"
   '';
 
   passthru = {
