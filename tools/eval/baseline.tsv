@@ -2,7 +2,7 @@
 # 改了排序、要更新它：scripts/eval.sh <数据目录> --update-baseline，提交说明里贴前后对比（见 tools/eval/README.md）。
 # 数据	2026.11.11.7	927e1cf1d3eeb9bf4be85e3f684dba4dd485b6f6
 # 组	用例	top1	top3	top9	通过
-regress	72	64	68	72	72
+regress	78	68	72	78	78
 common	1000	967	998	1000	967
 mid	1000	942	997	1000	942
 rare	1000	888	986	1000	888

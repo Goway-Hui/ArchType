@@ -643,6 +643,55 @@ pub fn decode(scheme: Scheme, input: &str) -> Vec<Decoded> {
     variants
 }
 
+/// 简拼（只打声母）里一个键代表的声母：这个方案的 zh / ch / sh 键（自然码、小鹤的 `v` `i` `u`，
+/// 智能 ABC 的 `a` `e` `v`）是两字母声母，辅音字母是它自己（`s` 照全拼的简拼算 s 和 sh 开头的都行）。
+/// 元音键（零声母音节的开头）和分号不算声母：只打声母时用不到。
+pub fn abbrev_initial(scheme: Scheme, key: u8) -> Option<&'static str> {
+    let layout = scheme.layout();
+    let key = key.to_ascii_lowercase();
+    if key == layout.zh {
+        return Some("zh");
+    }
+    if key == layout.ch {
+        return Some("ch");
+    }
+    if key == layout.sh {
+        return Some("sh");
+    }
+    if !crate::syllable::is_jianpin_letter(key) {
+        return None;
+    }
+    trailing_initial(scheme, key)
+}
+
+/// 双拼的简拼：每个键都是声母（`sm` -> s'm 什么，自然码 `vg` -> zh'g 中国）时，把每个键当成一个音节的
+/// 声母翻成全拼简拼（音节之间加隔音符，`zh` 这种一个键的两字母声母不会再拆成 z、h），`ends` 一个键一项。
+/// 少于两个键、有哪个键不是声母时返回 None。用户打的隔音符跳过。
+///
+/// 和 [`decode`] 不冲突：同样的键按双拼也读得通时（小鹤的 `zg` 是 zeng），由调用方决定两边怎么排
+/// （照着打的双拼读法在前，见 `Engine::shuangpin_candidates`）。
+pub fn abbrev(scheme: Scheme, input: &str) -> Option<Decoded> {
+    let mut d = Decoded {
+        pinyin: String::new(),
+        ends: Vec::new(),
+    };
+    for (i, &b) in input.as_bytes().iter().enumerate() {
+        if b == b'\'' {
+            if let Some(last) = d.ends.last_mut() {
+                last.1 = i + 1;
+            }
+            continue;
+        }
+        let initial = abbrev_initial(scheme, b)?;
+        if !d.pinyin.is_empty() {
+            d.pinyin.push('\'');
+        }
+        d.pinyin.push_str(initial);
+        d.ends.push((d.pinyin.len(), i + 1));
+    }
+    (d.ends.len() >= 2).then_some(d)
+}
+
 /// 编辑区显示：`vsgo` -> `zhong'guo`，打了一半 `vsg` -> `zhong'g`。
 /// 翻不了的照原样显示。
 pub fn display(scheme: Scheme, input: &str) -> String {
@@ -763,6 +812,32 @@ mod tests {
         // 分号只在用它的方案里算键
         assert_eq!(decode(Scheme::Microsoft, "m;")[0].pinyin, "ming");
         assert!(decode(Scheme::Ziranma, "m;").is_empty());
+    }
+
+    #[test]
+    fn abbrev_keys() {
+        let pinyin = |s: Scheme, input: &str| abbrev(s, input).map(|d| d.pinyin);
+        assert_eq!(pinyin(Scheme::Ziranma, "sm").as_deref(), Some("s'm"));
+        assert_eq!(pinyin(Scheme::Ziranma, "vg").as_deref(), Some("zh'g"));
+        assert_eq!(pinyin(Scheme::Xiaohe, "uiv").as_deref(), Some("sh'ch'zh"));
+        // 智能 ABC 的 zh ch sh 是 a e v
+        assert_eq!(pinyin(Scheme::Abc, "aev").as_deref(), Some("zh'ch'sh"));
+        assert_eq!(pinyin(Scheme::Abc, "ui"), None);
+        // 元音键、单个键不算简拼
+        assert_eq!(pinyin(Scheme::Ziranma, "sa"), None);
+        assert_eq!(pinyin(Scheme::Ziranma, "s"), None);
+        assert_eq!(pinyin(Scheme::Microsoft, "m;"), None);
+        let d = abbrev(Scheme::Ziranma, "v'g").unwrap();
+        assert_eq!(d.pinyin, "zh'g");
+        assert_eq!(d.ends, vec![(2, 2), (4, 3)]);
+        assert_eq!(d.raw_bytes(2, 3), 2);
+        // 每个方案的 zh ch sh 键都是声母
+        for s in SCHEMES {
+            let l = s.layout();
+            for (key, initial) in [(l.zh, "zh"), (l.ch, "ch"), (l.sh, "sh")] {
+                assert_eq!(abbrev_initial(s, key), Some(initial), "{s:?}");
+            }
+        }
     }
 
     #[test]

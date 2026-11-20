@@ -280,6 +280,9 @@ scripts/invariants.sh /usr/share/wowtype --inv-limit 0                      # �
 - **双拼**：按错键纠错和模糊音兜底在双拼下本来就关着（`run_query`、`prefix_candidates`、`append_more_candidates` 里的
   `typo = typo_correction && !shuangpin`、`fuzzy_fallback && !shuangpin`），补全只给悬空的声母，简拼只在全拼走不通时用，
   结构上不会替换照着打的读法。不变量检查不跑双拼用例（`sp=`），这一点是读代码得出的，没有逐键验证。
+  双拼的简拼（`ShuangpinAbbrev`，#268）照同一条规矩：按双拼读得通、有词时，双拼读出来的候选一个不少、先后不变，
+  简拼的词（最多 6 个够常用的整词）插在第 5 个后面（`add_shuangpin_abbrev_words`）；读不通时才整个按简拼出。
+  单元测试 `shuangpin_abbrev_keeps_the_typed_syllable_first`，回归集里有 `sp=` 的 `zg` → 增 第一。
 - **神经语言模型重排**：只在束搜索的路径里重排，72bf8e2 以后以照着打的读法为基准；带 `nnlm.bin` 的检查里
   `typed-kept`（加了模型照着打的读法还在）和其余规则见上表。
 - **会话层**（`core/src/session.rs`）：读了候选怎么拼（`compute_candidates`）、翻页、选句首词（`choose_now`）、学习（`learn`、

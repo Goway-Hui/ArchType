@@ -42,6 +42,13 @@ github	GitHub|github
 python	Python|python
 # 双拼（小鹤）
 womfdewoxihr	我们的我喜欢		sp=xiaohe
+# 双拼简拼（#268）：每个键都是声母时当简拼；按双拼也读得通（小鹤 zg = zeng）时双拼读出来的字在前
+sm	什么		sp=xiaohe
+um	什么		sp=ziranma
+wmdj	我们大家		sp=xiaohe
+zg	增		sp=xiaohe
+zg	中国		top=9 sp=xiaohe
+vg	中国		top=9 sp=ziranma
 
 # 单字：没有上文时句首语言模型分不能把常用字压下去（计划 R1-a）
 le	了

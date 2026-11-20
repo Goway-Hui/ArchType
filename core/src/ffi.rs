@@ -689,6 +689,21 @@ pub unsafe extern "C" fn archtype_engine_set_shuangpin_scheme(
     0
 }
 
+/// 双拼的简拼（ABI 1.14 起，默认开）：每个键都是声母时（`sm`）也当成只打了声母的简拼（什么）；
+/// 同样的键按双拼读得通时双拼读出来的排在前面。返回 0 成功，-1 失败。
+#[no_mangle]
+pub unsafe extern "C" fn archtype_engine_set_shuangpin_abbrev(
+    engine: *mut ArchtypeEngineHandle,
+    on: c_int,
+) -> c_int {
+    if engine.is_null() {
+        set_last_error("engine is null");
+        return -1;
+    }
+    unsafe { &mut *engine }.engine.set_shuangpin_abbrev(on != 0);
+    0
+}
+
 /// 这个双拼方案有没有用分号键（微软、搜狗、紫光的 ing）。不认识的方案返回 0。
 #[no_mangle]
 pub unsafe extern "C" fn archtype_shuangpin_uses_semicolon(name: *const c_char) -> c_int {
@@ -1230,7 +1245,7 @@ pub extern "C" fn archtype_abi_version() -> c_int {
 
 /// C 接口版本，和 `archtype_core.h` 里的 `ARCHTYPE_ABI_VERSION_*` 一致（测试会比对）。
 pub const ABI_VERSION_MAJOR: c_int = 1;
-pub const ABI_VERSION_MINOR: c_int = 12;
+pub const ABI_VERSION_MINOR: c_int = 14;
 
 /// ArchType 版本号字符串。
 #[no_mangle]
@@ -1287,7 +1302,7 @@ mod tests {
         };
         assert_eq!(read("ARCHTYPE_ABI_VERSION_MAJOR"), ABI_VERSION_MAJOR);
         assert_eq!(read("ARCHTYPE_ABI_VERSION_MINOR"), ABI_VERSION_MINOR);
-        assert_eq!(archtype_abi_version(), 1012);
+        assert_eq!(archtype_abi_version(), 1014);
     }
 
     #[test]

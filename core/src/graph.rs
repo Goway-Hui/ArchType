@@ -494,6 +494,20 @@ fn build_full_edges(input: &ParsedInput, allow_erhua: bool, edges: &mut [Vec<Edg
     }
 }
 
+/// 用隔音符单独隔出来的两字母声母（`zh'g` 的 zh、`g'sh` 的 sh）：只当一个声母，不再拆成 z、h 两个简拼。
+/// 双拼的简拼一个键翻成一段（自然码 `vg` -> `zh'g`），拆开就成了三个音节。没有隔音符的 `zh` 照旧两种都算。
+fn isolated_digraph(input: &ParsedInput, pos: usize) -> bool {
+    let letters = &input.letters;
+    let end = pos + 2;
+    if end > letters.len() || jianpin_digraph(letters[pos], letters[pos + 1]).is_none() {
+        return false;
+    }
+    let forced = |p: usize| input.forced_boundaries.contains(&p);
+    (pos == 0 || forced(pos))
+        && (end == letters.len() || forced(end))
+        && (forced(pos) || forced(end))
+}
+
 fn build_jianpin_edges(input: &ParsedInput, edges: &mut [Vec<Edge>]) {
     for (pos, &letter) in input.letters.iter().enumerate() {
         // zh/ch/sh 也可以只打声母：zhch -> 支持（z h 拆开的那条路照样保留）
@@ -514,7 +528,9 @@ fn build_jianpin_edges(input: &ParsedInput, edges: &mut [Vec<Edge>]) {
                 }
             }
         }
-        if is_jianpin_letter(letter) {
+        let in_digraph =
+            isolated_digraph(input, pos) || (pos > 0 && isolated_digraph(input, pos - 1));
+        if is_jianpin_letter(letter) && !in_digraph {
             add_edge(
                 edges,
                 Edge {
@@ -600,6 +616,13 @@ mod tests {
         // 隔音符隔开就不算 zh
         let g = graph("z'h", GraphMode::Jianpin);
         assert!(g.segmentations(8).iter().all(|p| p.len() == 2));
+        // 隔音符单独隔出来的 zh 只当一个声母（双拼的简拼 vg -> zh'g）
+        let g = graph("zh'g", GraphMode::Jianpin);
+        let segs = g.segmentations(8);
+        assert_eq!(segs.len(), 1);
+        assert_eq!(segs[0][0].query(), SyllableQuery::Jianpin { letter: b'Z' });
+        let g = graph("g'sh'm", GraphMode::Jianpin);
+        assert!(g.segmentations(8).iter().all(|p| p.len() == 3));
         // 混着全拼：zh + chi
         let g = graph("zhchi", GraphMode::Mixed);
         assert!(g

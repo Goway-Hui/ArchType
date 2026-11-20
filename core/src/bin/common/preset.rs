@@ -13,6 +13,7 @@
 //! | 按错键纠错 | 默认开（`TypoCorrection=True`） | `typo_correction = true` |
 //! | 扩展 B 区以后的生僻字 | 默认关（`RareExtChars=False`） | `rare_ext_chars = false` |
 //! | 双拼 | 默认关，方案默认自然码 | `shuangpin = false`、`Ziranma` |
+//! | 双拼的简拼 | 默认开（`ShuangpinAbbrev=True`） | `shuangpin_abbrev = true`（引擎默认） |
 //! | 繁体 | 默认关 | `traditional = false` |
 //! | 补全、句首词、后几页补全同音词和单字 | 引擎默认（都开） | 同 |
 //! | 模糊音索引 | `archtype_engine_new` 里预建（`prepare_fuzzy`） | 同 |

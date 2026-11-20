@@ -107,6 +107,10 @@ pub struct EngineConfig {
     pub shuangpin: bool,
     /// 双拼方案（自然码、小鹤……）。
     pub shuangpin_scheme: crate::shuangpin::Scheme,
+    /// 双拼的简拼：每个键都是声母时（`sm` -> 什么）也当成只打了声母的全拼简拼。
+    /// 同样的键按双拼读得通、有词时（小鹤的 `zg` 是 zeng），双拼读出来的排在前面，简拼的词只往后加，
+    /// 见 [`Engine::shuangpin_candidates`]。还要 [`EngineConfig::jianpin_fallback`] 开着。
+    pub shuangpin_abbrev: bool,
     /// 是否在候选末尾追加原始输入（英文/未登录串）。
     pub english_candidate: bool,
     /// 是否把候选转成繁体。
@@ -164,6 +168,7 @@ impl Default for EngineConfig {
             fuzzy_fallback: true,
             shuangpin: false,
             shuangpin_scheme: crate::shuangpin::Scheme::Ziranma,
+            shuangpin_abbrev: true,
             english_candidate: true,
             traditional: false,
             auto_learn: true,
@@ -789,11 +794,31 @@ impl Engine {
         self.config.shuangpin_scheme = scheme;
     }
 
+    /// 双拼的简拼开关（见 [`EngineConfig::shuangpin_abbrev`]）。
+    pub fn set_shuangpin_abbrev(&mut self, on: bool) {
+        self.config.shuangpin_abbrev = on;
+    }
+
+    /// 双拼的简拼读法（每个键当一个声母）；开关关着、不全是声母时 None。
+    fn shuangpin_abbrev_reading(&self, input: &str) -> Option<crate::shuangpin::Decoded> {
+        (self.config.shuangpin_abbrev && self.config.jianpin_fallback)
+            .then(|| crate::shuangpin::abbrev(self.config.shuangpin_scheme, input))
+            .flatten()
+    }
+
     /// 编辑区里怎么显示还没选的输入：双拼翻成全拼（`vsgo` -> `zhong'guo`），全拼返回 None。
+    /// 按双拼读不通、只能当简拼时显示简拼（`sm` -> `s'm`）。
     pub fn shuangpin_display(&self, input: &str) -> Option<String> {
-        self.config
-            .shuangpin
-            .then(|| crate::shuangpin::display(self.config.shuangpin_scheme, input))
+        if !self.config.shuangpin {
+            return None;
+        }
+        let scheme = self.config.shuangpin_scheme;
+        if crate::shuangpin::decode(scheme, input).is_empty() {
+            if let Some(abbrev) = self.shuangpin_abbrev_reading(input) {
+                return Some(abbrev.pinyin);
+            }
+        }
+        Some(crate::shuangpin::display(scheme, input))
     }
 
     /// 开关繁体输出。
@@ -1190,7 +1215,15 @@ impl Engine {
         let leading = raw.len() - raw.trim_start().len();
         let scheme = self.config.shuangpin_scheme;
         let variants = crate::shuangpin::decode(scheme, display);
+        let abbrev = self.shuangpin_abbrev_reading(display);
         let Some(first) = variants.first() else {
+            if let Some(abbrev) = &abbrev {
+                // 按双拼读不通、每个键都是声母（sm）：当全拼的简拼 s'm 打，和全拼打 sm 一样
+                let mut result =
+                    self.pinyin_candidates(&abbrev.pinyin, Some(display), false, None, at_ms)?;
+                map_shuangpin_consumed(&mut result, abbrev, raw, display.len(), leading);
+                return Ok(result);
+            }
             // 翻不了（不是双拼）：只给原始串
             let mut result = Vec::new();
             self.append_raw_candidate(display, &mut result);
@@ -1237,20 +1270,68 @@ impl Engine {
         };
         let mut result =
             self.pinyin_candidates(&primary.pinyin, Some(display), completion, found, at_ms)?;
-        result.retain_mut(|c| {
-            let used = if is_raw_candidate(c) {
-                display.len()
-            } else {
-                primary.raw_bytes(c.consumed, display.len())
-            };
-            c.consumed = if used >= display.len() {
-                raw.len()
-            } else {
-                leading + used
-            };
-            used > 0
-        });
+        map_shuangpin_consumed(&mut result, primary, raw, display.len(), leading);
+        if let Some(abbrev) = abbrev.filter(|a| a.ends.len() <= SHUANGPIN_ABBREV_MAX_KEYS) {
+            self.add_shuangpin_abbrev_words(&abbrev, raw, display, leading, &mut result, at_ms)?;
+        }
         Ok(result)
+    }
+
+    /// 双拼读得通、同样的键也能当简拼时（小鹤的 `zg`：zeng 和 z'g），把简拼对得上的词加进双拼的候选。
+    ///
+    /// 「只能加」（docs/ENGINE-INVARIANTS.md）：双拼读出来的有词时，它的候选一个不少、先后不变，
+    /// 简拼的词（只要词库里够常用的整词，不要几个字硬凑的，最多 [`SHUANGPIN_ABBREV_WORDS`] 个）
+    /// 插在它的前 [`SHUANGPIN_ABBREV_AFTER`] 个后面；双拼读出来的一个认识的词都没有时，
+    /// 简拼的候选整个排在前面，和读不通时一样。
+    fn add_shuangpin_abbrev_words(
+        &self,
+        abbrev: &crate::shuangpin::Decoded,
+        raw: &str,
+        display: &str,
+        leading: usize,
+        result: &mut Vec<Candidate>,
+        at_ms: u64,
+    ) -> Result<()> {
+        let known = |c: &Candidate| {
+            !is_raw_candidate(c) && !c.words.is_empty() && c.words.iter().all(|w| w.known)
+        };
+        if !result.iter().any(known) {
+            let mut front =
+                self.pinyin_candidates(&abbrev.pinyin, Some(display), false, None, at_ms)?;
+            map_shuangpin_consumed(&mut front, abbrev, raw, display.len(), leading);
+            front.retain(|c| !result.iter().any(|r| r.text == c.text));
+            result.splice(0..0, front);
+            result.truncate(self.config.max_candidates.max(1));
+            return Ok(());
+        }
+        let keys = abbrev.ends.len();
+        let mut words: Vec<Candidate> = self
+            .query_plain(&abbrev.pinyin, false, at_ms)?
+            .into_iter()
+            .filter(|c| {
+                c.words.len() == 1
+                    && c.words[0].known
+                    && c.features.typo_count == 0.0
+                    && c.pinyin.split_whitespace().count() == keys
+            })
+            .collect();
+        if self.config.traditional {
+            self.apply_traditional(&mut words);
+        }
+        words.retain(|c| !result.iter().any(|r| r.text == c.text));
+        words.retain(|c| c.words[0].freq >= EXACT_PROTECT_MIN_FREQ);
+        // 候选满了也不挤掉双拼读出来的（翻页长尾最后的生僻字）
+        let room = self.config.max_candidates.max(1).saturating_sub(result.len());
+        words.truncate(SHUANGPIN_ABBREV_WORDS.min(room));
+        if words.is_empty() {
+            return Ok(());
+        }
+        for c in &mut words {
+            c.consumed = raw.len();
+        }
+        let at = SHUANGPIN_ABBREV_AFTER.min(result.len());
+        result.splice(at..at, words);
+        Ok(())
     }
 
     /// 全拼的完整流程。`raw_display` 给了的话（双拼），原始串候选用它而不是 raw。
@@ -3068,6 +3149,43 @@ fn splits_into_syllables(letters: &str) -> bool {
     ok[letters.len()]
 }
 
+/// 双拼读得通时，简拼的词插在双拼候选的第几个后面（见 [`Engine::add_shuangpin_abbrev_words`]）。
+///
+/// 和下面两个数一起按评测定的（全拼的评测集翻成小鹤、自然码的双拼键，8342 条；jianpin.tsv 翻成双拼简拼）：
+/// 插在第 5 个后面、最多 6 个、词频 1000 以上时，双拼打全了的 top1 / top3 / top9 和关掉时一条不差，
+/// 简拼的 top9 从 0 到 88%；插在第 1 个后面 top3 少 136 条，插在第 3 个后面、不限个数 top9 少 10 条。
+const SHUANGPIN_ABBREV_AFTER: usize = 5;
+
+/// 双拼读得通时最多加几个简拼的词。
+const SHUANGPIN_ABBREV_WORDS: usize = 6;
+
+/// 双拼读得通时，最多几个键还试简拼：再长就是打全了的两个音节以上（nihk），简拼的词只是添乱，还要多搜一遍。
+/// 读不通时（sm、wmdj）不限。
+const SHUANGPIN_ABBREV_MAX_KEYS: usize = 4;
+
+/// 双拼候选用掉的全拼字节数换回双拼键的字节数（一个音节都不到的去掉）。
+fn map_shuangpin_consumed(
+    result: &mut Vec<Candidate>,
+    decoded: &crate::shuangpin::Decoded,
+    raw: &str,
+    display_len: usize,
+    leading: usize,
+) {
+    result.retain_mut(|c| {
+        let used = if is_raw_candidate(c) {
+            display_len
+        } else {
+            decoded.raw_bytes(c.consumed, display_len)
+        };
+        c.consumed = if used >= display_len {
+            raw.len()
+        } else {
+            leading + used
+        };
+        used > 0
+    });
+}
+
 /// 全拼对不上时用的简拼图；走不通时返回 None。
 ///
 /// - 全是声母（zg、jzm）：纯简拼，和以前一样；
@@ -4525,6 +4643,87 @@ mod tests {
             e.input("nihk").iter().any(|c| c.text == "你好"),
             "双拼 nihk 应当命中 你好"
         );
+    }
+
+    fn shuangpin_abbrev_engine(scheme: crate::shuangpin::Scheme) -> Engine {
+        let lexicon: Arc<dyn Lexicon> = Arc::new(
+            MemoryLexicon::from_tsv_str(concat!(
+                "shen me\t什么\t90000\n",
+                "zhe ge\t这个\t80000\n",
+                "zhong guo\t中国\t70000\n",
+                "shi chang\t市场\t60000\n",
+                "zeng\t增\t20000\n",
+                "zeng\t曾\t10000\n",
+                "zeng\t赠\t3000\n",
+                "shi\t是\t100000\n",
+                "shi\t时\t50000\n",
+                "shi\t事\t40000\n",
+                "shi\t实\t30000\n",
+                "shi\t十\t20000\n",
+                "shi\t使\t10000\n",
+                "shi\t世\t9000\n",
+            ))
+            .unwrap(),
+        );
+        let lm: Arc<dyn LanguageModel> = Arc::new(BigramLm::default());
+        let mut e = Engine::new(lexicon, lm);
+        e.set_max_candidates(100);
+        e.set_shuangpin(true);
+        e.set_shuangpin_scheme(scheme);
+        e
+    }
+
+    #[test]
+    fn shuangpin_abbrev_initials_only() {
+        // #268：双拼里只打声母（简拼）。s m 在自然码、小鹤里都读不通（sian），整个当简拼
+        use crate::shuangpin::Scheme;
+        for scheme in [Scheme::Ziranma, Scheme::Xiaohe] {
+            let mut e = shuangpin_abbrev_engine(scheme);
+            let c = e.input("sm");
+            assert_eq!(c[0].text, "什么", "{scheme:?} sm：{c:?}");
+            assert_eq!(c[0].consumed, 2);
+            // sh 也能用方案里的声母键 u 打
+            assert_eq!(e.input("um")[0].text, "什么", "{scheme:?} um");
+            assert_eq!(e.shuangpin_display("sm").as_deref(), Some("s'm"));
+            // zg 两个方案里都是 zeng：双拼读出来的字排在前面，简拼的「中国」「这个」只往后加
+            let c = e.input("zg");
+            let at = |t: &str| c.iter().position(|x| x.text == t);
+            assert_eq!(c[0].text, "增", "{scheme:?} zg：{c:?}");
+            let guo = at("中国").unwrap_or_else(|| panic!("{scheme:?} zg 没有中国：{c:?}"));
+            assert!(at("这个").is_some(), "{scheme:?} zg：{c:?}");
+            for zeng in ["增", "曾", "赠"] {
+                assert!(at(zeng).unwrap() < guo, "{scheme:?} zg：{zeng} 该在中国前面：{c:?}");
+            }
+            assert!(c.iter().all(|x| x.consumed == 2 || is_raw_candidate(x)), "{c:?}");
+            // 加进来的带简拼的标记（和全拼的简拼一样，不变量检查、选过的提前都认它）
+            assert!(c[guo].features.full_jianpin > 0.0, "{c:?}");
+            // 关掉以后只有双拼的读法
+            e.set_shuangpin_abbrev(false);
+            assert!(!e.input("sm").iter().any(|x| x.text == "什么"));
+            assert!(!e.input("zg").iter().any(|x| x.text == "中国"));
+            assert_eq!(e.shuangpin_display("sm").as_deref(), Some("sm"));
+        }
+    }
+
+    #[test]
+    fn shuangpin_abbrev_keeps_the_typed_syllable_first() {
+        // 小鹤 ui = shi，也是简拼 sh ch（市场）：shi 的前五个字一个不让，市场接在后面
+        let e = shuangpin_abbrev_engine(crate::shuangpin::Scheme::Xiaohe);
+        let c = e.input("ui");
+        let texts: Vec<&str> = c.iter().map(|x| x.text.as_str()).collect();
+        assert_eq!(&texts[..5], &["是", "时", "事", "实", "十"], "{texts:?}");
+        let market = texts.iter().position(|t| *t == "市场").expect("ui 有市场");
+        assert!(market >= 5, "{texts:?}");
+        for ch in ["使", "世"] {
+            assert!(texts.contains(&ch), "shi 的字一个都不能少：{texts:?}");
+        }
+        // 自然码 vg = zheng，词库里没有 zheng 的字：简拼的整个排在前面（v = zh）
+        let e = shuangpin_abbrev_engine(crate::shuangpin::Scheme::Ziranma);
+        let c = e.input("vg");
+        assert_eq!(c[0].text, "这个", "{c:?}");
+        assert!(c.iter().take(2).any(|x| x.text == "中国"), "{c:?}");
+        // zh 键只当 zh：不会拆成 z、h 两个音节
+        assert!(c.iter().all(|x| x.pinyin.split_whitespace().count() <= 2), "{c:?}");
     }
 
     #[test]

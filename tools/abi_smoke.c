@@ -116,6 +116,11 @@ int main(int argc, char **argv) {
     c = archtype_engine_input(e, "vsgo");
     check(c && has_candidate(c, "中国"), "shuangpin: vsgo -> 中国");
     archtype_candidates_free(c);
+    check(archtype_engine_set_shuangpin_abbrev(e, 1) == 0, "set_shuangpin_abbrev");
+    c = archtype_engine_input(e, "vg"); /* 自然码 v = zh：只打声母 zh g */
+    check(c && has_candidate(c, "中国"), "shuangpin abbrev: vg -> 中国");
+    archtype_candidates_free(c);
+    check(archtype_engine_set_shuangpin_abbrev(NULL, 1) == -1, "set_shuangpin_abbrev(NULL) 返回 -1");
     archtype_engine_set_shuangpin(e, 0);
 
     const char *s2t = argc > 3 ? argv[3] : "";

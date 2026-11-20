@@ -16,7 +16,7 @@
  * 删函数或改参数含义时升主版本。外壳启动时用 archtype_abi_version() 比对主版本。
  * 规则见 docs/ABI.md。 */
 #define ARCHTYPE_ABI_VERSION_MAJOR 1
-#define ARCHTYPE_ABI_VERSION_MINOR 12
+#define ARCHTYPE_ABI_VERSION_MINOR 14
 
 #ifdef __cplusplus
 extern "C" {
@@ -77,6 +77,11 @@ int archtype_engine_set_shuangpin(ArchtypeEngineHandle *engine, int on);
 /* 选双拼方案：ziranma xiaohe microsoft sogou abc ziguang pinyinjiajia（也认中文名）。
  * 返回 0 成功，-1 不认识。 */
 int archtype_engine_set_shuangpin_scheme(ArchtypeEngineHandle *engine, const char *name);
+
+/* 双拼的简拼（1.14 起），默认开：每个键都是声母时（sm、自然码的 vg）也当成只打了声母的简拼
+ * （什么、中国）。同样的键按双拼也读得通、有词时（小鹤的 zg 是 zeng），双拼读出来的排在前面，
+ * 简拼的词只往后加。返回 0 成功。 */
+int archtype_engine_set_shuangpin_abbrev(ArchtypeEngineHandle *engine, int on);
 
 /* 这个双拼方案有没有用分号键（微软、搜狗、紫光的 ing）。 */
 int archtype_shuangpin_uses_semicolon(const char *name);

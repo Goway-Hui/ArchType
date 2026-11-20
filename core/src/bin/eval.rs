@@ -253,6 +253,7 @@ fn main() {
     let mut tail_abbrev_cost: Option<f64> = None;
     let mut completion_cost: Option<f64> = None;
     let mut no_typo = false;
+    let mut no_shuangpin_abbrev = false;
     let mut english_path: Option<String> = None;
     let mut show_top1 = false;
     let mut nnlm_path: Option<String> = None;
@@ -332,6 +333,7 @@ fn main() {
                 completion_cost = value(&mut i, "--completion-cost").parse().ok()
             }
             "--no-typo" => no_typo = true,
+            "--no-shuangpin-abbrev" => no_shuangpin_abbrev = true,
             "--english" => english_path = Some(value(&mut i, "--english")),
             "--no-english" => no_english = true,
             "--show-top1" => show_top1 = true,
@@ -381,7 +383,7 @@ fn main() {
                 println!("archtype-eval (--data <目录> | --lexicon <tsv>) --eval <tsv> [--eval <tsv> ...]");
                 println!("  配置：默认和外壳一致（候选上限 1000、词库旁边的 words.lm / english.txt、纠错开、模糊音关）");
                 println!("            [--legacy | --preset shell|legacy] [--lm|--arpa <file>] [--no-lm] [--english <file>] [--no-english]");
-                println!("            [--max n] [--beam n] [--weights name=v,...] [--fuzzy] [--shuangpin [--scheme 方案]] [--domain-lm <file> [--domain-lm-weight w]]");
+                println!("            [--max n] [--beam n] [--weights name=v,...] [--fuzzy] [--shuangpin [--scheme 方案]] [--no-shuangpin-abbrev] [--domain-lm <file> [--domain-lm-weight w]]");
                 println!("            [--typo-cost x] [--completion-cost x] [--abbrev-cost x] [--tail-abbrev-cost x] [--no-typo]");
                 println!("            [--nnlm <file>] [--nnlm-rerank n] [--lm-weight w] [--learn | --learn-from <tsv>]");
                 println!("  输出：[--k n] [--show-top1] [--misses]");
@@ -474,6 +476,9 @@ fn main() {
     }
     if no_typo {
         config.typo_correction = false;
+    }
+    if no_shuangpin_abbrev {
+        config.shuangpin_abbrev = false;
     }
     if let Some(w) = lm_weight {
         config.beam.lm_weight = w;
