@@ -359,10 +359,10 @@ vim.api.nvim_create_autocmd("InsertEnter", { callback = function() vim.fn.system
 - **按住右 `Alt` 说话，松开**：说的话上屏。
 - **点一下右 `Alt`**：开始听，说完停 1.5 秒自动上屏，或者再点一下右 `Alt` 马上结束。
 - 说话时编辑区里是正在识别的字；按 `Esc` 不要这次说的话；按别的键也会放弃这次说的话，那个键照常打字。
-- **GNOME** 上光标下面会弹出一条语音浮条：绿色话筒（外圈跟着音量呼吸）、「正在听… 离线」和一排跟着你音量跳动的竖条，
-  光标右边也会裂成几根跳动的绿色竖条；松开后显示「识别完成」再淡出。浮条是 ArchType 的 GNOME 扩展画的
-  （和绿色主题是同一个扩展，见[主题](#主题)），**装好或升级后要注销重新登录一次**才会出现。
-  其他桌面（或关掉了绿色主题）在候选框里显示 🎙 和用字符画的波形。
+- **GNOME** 上光标下面会弹出一条语音浮条：蓝色话筒（外圈跟着音量呼吸）、「正在听… 离线」和一排跟着你音量跳动的竖条，
+  光标右边也会裂成几根跳动的蓝色竖条；松开后显示「识别完成」再淡出。浮条是 ArchType 的 GNOME 扩展画的
+  （和蓝色主题是同一个扩展，见[主题](#主题)），**装好或升级后要注销重新登录一次**才会出现。
+  其他桌面（或关掉了蓝色主题）在候选框里显示 🎙 和用字符画的波形。
 
 识别用的是微信输入法的离线语音模型，在你的电脑上算，录音不上传。模型不随 ArchType 分发，
 **要先在 [ArchType 设置](#设置)的「语音」页点「下载」**：从腾讯的服务器下载约 100MB（能取消，断了再点接着下），
@@ -430,7 +430,7 @@ vim.api.nvim_create_autocmd("InsertEnter", { callback = function() vim.fn.system
 
 | 页面 | 能改什么 |
 |---|---|
-| 常规 | 候选排列（横排 / 竖排）、每页个数（3–9）、ArchType 绿色主题（见[主题](#主题)）、候选字号。还会检查 ArchType 有没有加进 fcitx5 的输入法列表，没有的话一键添加；底下的「帮助」能[导出日志](#出问题时导出日志) |
+| 常规 | 候选排列（横排 / 竖排）、每页个数（3–9）、ArchType 蓝色主题（见[主题](#主题)）、候选字号。还会检查 ArchType 有没有加进 fcitx5 的输入法列表，没有的话一键添加；底下的「帮助」能[导出日志](#出问题时导出日志) |
 | 输入 | 词库（默认雾凇，可下载切换到[万象](docs/CONFIG.md#可选词库万象拼音)）、输入方案（拼音、双拼、五笔）、双拼方案（自然码、小鹤、微软、搜狗、智能 ABC、紫光、拼音加加）、五笔的四码唯一自动上屏和编码提示、单按哪个 Shift 切中英文（和 fcitx5 抢 Shift 时提示并能一键让出）、另设一个切换中英文的快捷键、互译的快捷键、切到 ArchType 时是中文还是英文、模糊音（16 组分别开关：z=zh、c=ch、s=sh、n=l、f=h、r=l、an=ang、an=ai、ian=iang、uan=uang、huang=wang、en=eng、eng=ong、in=ing、un=ong、un=iong）、按错键自动纠正、繁体字、中文标点自动配对、日期时间、计算器、v + 空格工具栏、剪贴板历史、联想、中英文之间自动加空格、分号引号选第 2/3 个候选 |
 | 表情 | 打字时推荐 emoji、表情面板快捷键 |
 | 语音 | 下载 / 删除识别模型（有进度、能取消）；下载好模型后才能打开语音输入；语音键（右 Alt / 右 Ctrl / 菜单键 / F8–F10）、识别结果同时复制到剪贴板 |
@@ -467,15 +467,15 @@ vim.api.nvim_create_autocmd("InsertEnter", { callback = function() vim.fn.system
 
 #### 主题
 
-ArchType 默认用自己的绿色主题：选中的词是图标里的那种绿，系统换深色模式时跟着换深色版。
+ArchType 默认用自己的蓝色主题：选中的词是图标里的那种蓝，系统换深色模式时跟着换深色版。
 第一次切到 ArchType 时自动打开（只这一次；你在用别的 fcitx5 主题时不动）。
-不喜欢的话在「ArchType 设置 → 常规 → 外观」里关掉「ArchType 绿色主题」，换回默认。
+不喜欢的话在「ArchType 设置 → 常规 → 外观」里关掉「ArchType 蓝色主题」，换回默认。
 候选框的字嫌小，在同一个地方调「候选字号」（8–32 磅），改了马上生效：GNOME 上改的是 Input Method Panel 扩展的字体，别的桌面改的是 fcitx5 经典界面的字体，两边一起改。
 
 <table>
 <tr>
-<td align="center" width="50%"><img src="docs/images/theme-light.png" alt="ArchType 浅色主题：白底细边框的候选框，第一个候选是绿底白字"><br><sub>浅色</sub></td>
-<td align="center" width="50%"><img src="docs/images/theme-dark.png" alt="ArchType 深色主题：下键展开的候选面板，当前行是绿底"><br><sub>深色（按下键展开）</sub></td>
+<td align="center" width="50%"><img src="docs/images/theme-light.png" alt="ArchType 浅色主题：白底细边框的候选框，第一个候选是蓝底白字"><br><sub>浅色</sub></td>
+<td align="center" width="50%"><img src="docs/images/theme-dark.png" alt="ArchType 深色主题：下键展开的候选面板，当前行是蓝底"><br><sub>深色（按下键展开）</sub></td>
 </tr>
 </table>
 
@@ -484,10 +484,10 @@ ArchType 默认用自己的绿色主题：选中的词是图标里的那种绿�
 - **KDE、X11 等**：fcitx5 自己画（经典界面），用的是主题 `archtype` / `archtype-dark`，打开开关马上生效。
   也可以在 Fcitx 5 配置 → 附加组件 → 经典用户界面里手动选。候选框是不透明的方角加细边框：没开混成器的 X11
   （openbox、i3、关了混成的 xfwm4）上 fcitx5 不处理透明，透明的阴影和圆角会画成一圈黑框，
-  所以这个主题不用它们（选中的词还是圆角的绿块）。
+  所以这个主题不用它们（选中的词还是圆角的蓝块）。
 - **GNOME（Wayland）**：候选框是 Input Method Panel 扩展画的，fcitx5 的主题管不到。ArchType 另带一个只有样式表的小扩展
   `archtype-theme@goway-hui.github.io` 给它换色，打开开关会顺带启用它。**第一次启用要注销重新登录一次**（GNOME 只在登录时加载新装的扩展）。
-  这个扩展同时画[语音浮条](#语音输入)，关掉绿色主题，语音提示也会回到候选框里的文字版。
+  这个扩展同时画[语音浮条](#语音输入)，关掉蓝色主题，语音提示也会回到候选框里的文字版。
 
 主题文件在 `themes/`：`themes/fcitx5/` 是经典界面主题，图片由 `themes/src/*.svg` 经 `themes/render.sh` 生成；`themes/gnome-shell/` 是 GNOME 扩展。
 
