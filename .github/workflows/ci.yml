@@ -94,7 +94,9 @@ jobs:
         working-directory: settings-nsh
         run: |
           nsh check
-          nsh test
+          # arm64 的 runner 上，无头应用第一次启动偶尔超过 open() 内置的 5 秒等待
+          # （后面的测试 700ms 就起来了，说明是冷启动）：失败时再跑一次，第二次有系统缓存
+          nsh test || { echo "第一次 nsh test 失败，重试一次"; nsh test; }
       - name: 版本号
         run: |
           if [ "${GITHUB_REF_TYPE}" = tag ]; then

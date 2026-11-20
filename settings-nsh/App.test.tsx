@@ -1,8 +1,11 @@
 // `nsh test` 在无头 runner 里跑这个文件：页面可以渲染，侧栏和第一页的控件都在。
+// 每个 test 都会新开一次应用（open 内部等首次渲染 5 秒）。arm64 的 CI runner 上第一次
+// 启动偶尔超过这个时间，所以尽量少开几次：窗口与默认页的检查并进统计页这一条。
 import { expect, open, test } from "nsh/test";
 
-test("renders the settings window", async () => {
+test("renders the settings window and the stats page", async () => {
   const app = await open("./App.tsx");
+  // 默认页是「常规」，侧栏也在
   expect(app.texts()).toContain("ArchType");
   expect(app.texts()).toContain("常规");
   expect(app.texts()).toContain("候选词");
@@ -10,10 +13,6 @@ test("renders the settings window", async () => {
   expect(app.texts()).toContain("外观");
   expect(app.texts()).toContain("输入");
   expect(app.texts()).toContain("翻译");
-});
-
-test("shows the stats page", async () => {
-  const app = await open("./App.tsx");
   await app.press("统计");
   expect(app.texts()).toContain("记录打字统计");
   expect(app.texts()).toContain("今日输入");
