@@ -12,7 +12,7 @@ use std::collections::hash_map::Entry;
 use std::collections::HashMap;
 
 use crate::graph::{Edge, GraphMode, SyllableGraph};
-use crate::lexicon::{freq_cost, Lexicon};
+use crate::lexicon::{freq_cost, is_ext_char, Lexicon};
 use crate::lm::LanguageModel;
 use crate::syllable::SyllableQuery;
 
@@ -710,17 +710,17 @@ fn collect_dfs(
         let total_freq = out.total_freq;
         let before_hits = out.hits.len();
         let (hits, text) = (&mut out.hits, &mut out.text);
-        lexicon.visit(keys, common, &mut |entry| {
-            if skip_ext && entry.is_ext_char() {
+        lexicon.visit(keys, common, &mut |word, freq| {
+            if skip_ext && is_ext_char(word) {
                 return;
             }
-            let lexical = freq_cost(entry.freq, total_freq);
+            let lexical = freq_cost(freq, total_freq);
             let at = text.len() as u32;
-            text.push_str(&entry.word);
+            text.push_str(word);
             hits.push(Hit {
                 lookup,
                 text: (at, text.len() as u32),
-                freq: entry.freq,
+                freq,
                 lexical,
                 key: lexical + extra,
             });

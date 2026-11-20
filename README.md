@@ -510,7 +510,7 @@ ArchType 默认用自己的蓝色主题：选中的词是图标里的那种蓝�
 | KDE Wayland 下已经开着的程序能打字，新打开的程序打不了 | fcitx5 是用 `fcitx5 -r` 或托盘「重新启动」重启的，没经过 KWin。运行 `archtype-config --restart-fcitx`，或注销再登录 |
 | 某个程序里打不了中文，别的程序可以 | 重启 fcitx5 以后 Chrome / Electron 程序要彻底退出再打开 |
 | 能打，但候选很少、很多常用词没有 | 没找到词库，用的是演示词库。用安装包装的话重装一遍（安装包自带词库）；从源码装的先跑 `scripts/make-data.sh "" dist/data`，再 `sudo cmake --install build`（词库跟着一起装） |
-| 第一次切到 ArchType 时要等一两秒 | 正常：第一次要载入词库并生成快照，之后约 0.3 秒 |
+| 第一次切到 ArchType 时要等一两秒 | 正常：第一次要载入词库并生成快照，之后约 0.1 秒 |
 | 按右 Alt 提示「没有语音模型」 | 到 ArchType 设置的「语音」页点「下载」（或运行 `archtype-config --install-voice-model`） |
 | 按右 Alt 提示「开不了麦克风」 | 在系统设置的「声音」里确认有输入设备；`arecord -l` 应该能列出麦克风 |
 | 按 Super + . 打不开表情面板 | 只在 ArchType 是当前输入法时有效；桌面或别的程序占了这个键的话，到设置里换成 Ctrl + ; |

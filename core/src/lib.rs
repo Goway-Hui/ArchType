@@ -17,6 +17,7 @@ pub mod fsutil;
 pub mod graph;
 pub mod learn;
 pub mod lexicon;
+mod lexstore;
 pub mod llama;
 pub mod lm;
 pub mod nnlm;

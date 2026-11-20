@@ -370,7 +370,7 @@ macOS 还没有的功能不列；Linux 单独一页的「更新」在「常规�
 | `history.tsv` | 输入习惯：选过哪些词、哪些词常连着用、等第二次的候选新词 |
 | `emoji-recent.txt` | 最近用过的 emoji（表情面板里排最前） |
 | `stats.json` | [打字统计](#打字统计)（默认关，打开了才有）：每天的字数、各类字符数、活跃毫秒、每个键按下的次数、候选位置，不保存输入内容；旁边的 `stats.clear` 是清空计数 |
-| `lexicon.tsv.wcache` | 词库快照，让第二次启动更快（约 0.3 秒）；删了会自动重建 |
+| `lexicon.tsv.wcache` | 词库快照，让第二次启动更快（约 0.1 秒，快照直接映射进内存用）；删了会自动重建 |
 | `wtlocal/` | 语音模型（约 130MB），在设置的「语音」页下载或删除；没有它语音输入打不开，按语音键只提示去下载 |
 | `dicts/wanxiang/` | 可选：万象词库包（`lexicon.tsv`、许可证、来源说明），在设置里下载，见下 |
 | `wetype/nlrgpt2_nnlm.bin` | 可选：导入的微信输入法的整句增强模型（16MB），有它就先用它，不然用安装包自带的 `nnlm.bin`，见下 |
@@ -385,7 +385,7 @@ macOS 还没有的功能不列；Linux 单独一页的「更新」在「常规�
 安装包里自带一份（38 MB，装到 `/usr/share/archtype/words.lm`，许可证 CC BY-SA 4.0），
 是用清华的对话语料 [LCCC](https://huggingface.co/datasets/thu-coai/lccc)（MIT）加中文维基百科（CC BY-SA 4.0）训练的，
 单独下载见 [Release lm-2026.11.09](https://github.com/Gloridust/WowType/releases/tag/lm-2026.11.09)。
-载入约 0.06 秒，多占约 90 MB 内存，对按键速度几乎没有影响。想用自己的语料重新训练：
+载入约 0.03 秒，多占约 45 MB 内存，对按键速度几乎没有影响。想用自己的语料重新训练：
 
 ```bash
 cargo run --release -p archtype-core --bin archtype-lmbuild -- \
@@ -439,7 +439,7 @@ cargo run --release -p archtype-core --bin archtype-lmbuild -- \
   `--use-lexicon rime-ice|wanxiang`。包里只许有哪几个文件、少于多少条不装、怎么校验，和 Linux 的规矩一样
   （`macos/Sources/Shared/LexiconPack.swift`）。正在用万象、开着 `CheckUpdate` 时，输入法每天检查更新时顺带看一眼：
   发布页上有新版万象就在后台下载、校验、换上（和 Linux 设置界面的后台检查一样，不打扰人；没成功的那一版一天以内不再试）。
-- **代价**：多占约 300 MB 内存，第一次载入（建快照）慢一些，之后启动约 2 秒。
+- **代价**：比雾凇多占约 60 MB 内存，第一次载入（建快照）要四五秒，之后启动约 0.1 秒。
 - 只用了万象的词条，没有用它的 `.gram` 语法模型（那是 librime 专用的格式）；整句仍靠 ArchType 自己的 `words.lm`。
   万象故意收的错音错字词库（`dicts/cuoyin`，如「秘鲁 mì lǔ」）没收，因为 ArchType 没有在候选旁提示正确读音的功能。
 - 词库包由 `scripts/make-wanxiang.sh` 生成：拼音去声调，词频整体缩放到和雾凇同一量级，再合进项目热词；包里带万象的 `LICENSE` 和写明来源与改动的 `SOURCE.txt`。

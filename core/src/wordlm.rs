@@ -46,7 +46,10 @@ pub struct WordLm {
     /// 词 -> 编号的开放寻址表：存「编号 + 1」，0 是空位。和词本身分开放，
     /// 束搜索每次查词不用为 String 分配内存、算 SipHash（#227）
     slots: Vec<u32>,
-    words: Vec<String>,
+    /// 词表的字连成一整块，第 i 个词是 `word_bytes[word_end[i-1]..word_end[i]]`（#233：几十万个
+    /// String 各一次堆分配，比字本身多占好几倍）
+    word_bytes: Vec<u8>,
+    word_end: Vec<u32>,
     backoff: Vec<f32>,
     starts: Vec<u32>,
     curs: Vec<u32>,
@@ -55,70 +58,90 @@ pub struct WordLm {
 }
 
 impl WordLm {
+    /// 从文件读。边读边放进最后的数组，不先把整个文件读进内存（#233：38 MB 的模型以前载入时
+    /// 要多占一份文件大小的内存）。
     pub fn load<P: AsRef<Path>>(path: P) -> Result<Self> {
         let path = path.as_ref();
-        let data = std::fs::read(path).with_context(|| format!("读取 {}", path.display()))?;
-        Self::from_bytes(&data).with_context(|| format!("解析 {}", path.display()))
+        let file = std::fs::File::open(path).with_context(|| format!("读取 {}", path.display()))?;
+        let mut reader = std::io::BufReader::with_capacity(1 << 16, file);
+        Self::parse(&mut reader).with_context(|| format!("解析 {}", path.display()))
     }
 
-    pub fn from_bytes(data: &[u8]) -> Result<Self> {
-        let mut r = Reader { d: data, at: 0 };
-        if r.take(4)? != MAGIC {
+    pub fn from_bytes(mut data: &[u8]) -> Result<Self> {
+        Self::parse(&mut data)
+    }
+
+    fn parse(r: &mut impl std::io::Read) -> Result<Self> {
+        let mut magic = [0u8; 4];
+        r.read_exact(&mut magic).context("文件截断")?;
+        if &magic != MAGIC {
             bail!("不是 ArchType 词级语言模型");
         }
-        let version = r.u32()?;
+        let version = read_u32(r)?;
         if version != VERSION {
             bail!("版本 {version} 不认识");
         }
-        let n = r.u32()? as usize;
-        let m = r.u32()? as usize;
-        let mut words = Vec::with_capacity(n);
+        let n = read_u32(r)? as usize;
+        let m = read_u32(r)? as usize;
+        let mut word_bytes = Vec::new();
+        let mut word_end = Vec::with_capacity(n.min(1 << 20));
         let mut marker = None;
         for i in 0..n {
-            let len = r.take(1)?[0] as usize;
-            let w = std::str::from_utf8(r.take(len)?)
-                .context("词表不是 UTF-8")?
-                .to_string();
+            let mut len = [0u8; 1];
+            r.read_exact(&mut len).context("文件截断")?;
+            let start = word_bytes.len();
+            word_bytes.resize(start + usize::from(len[0]), 0);
+            r.read_exact(&mut word_bytes[start..]).context("文件截断")?;
+            let w = std::str::from_utf8(&word_bytes[start..]).context("词表不是 UTF-8")?;
             if i == 1 && w.starts_with(datamark::KEY) {
                 // 版本标记：不当词查（下面建查找表时跳过它）
-                marker = DataMarker::parse(&w);
+                marker = DataMarker::parse(w);
             }
-            words.push(w);
+            word_end.push(u32::try_from(word_bytes.len()).context("词表太大")?);
         }
+        word_bytes.shrink_to_fit();
+        let word_at = |i: usize| {
+            let start = if i == 0 { 0 } else { word_end[i - 1] as usize };
+            &word_bytes[start..word_end[i] as usize]
+        };
         let mut slot_count = 1usize;
         while slot_count < n.saturating_mul(2).max(2) {
             slot_count = slot_count.checked_mul(2).context("词表太大")?;
         }
         let mut slots = vec![EMPTY_SLOT; slot_count];
-        for (id, word) in words.iter().enumerate() {
-            // 版本标记留在 words 里（搭配的编号不变），但不进查找表
-            if id == 1 && word.starts_with(datamark::KEY) {
+        for id in 0..n {
+            let word = word_at(id);
+            // 版本标记留在词表里（搭配的编号不变），但不进查找表
+            if id == 1 && word.starts_with(datamark::KEY.as_bytes()) {
                 continue;
             }
-            let mut slot = hash_word(word) as usize & (slot_count - 1);
+            let mut slot = hash_bytes(word) as usize & (slot_count - 1);
             loop {
                 let stored = slots[slot];
                 // 空位放下；同一个词出现两次时用后面的编号（和原来 HashMap::insert 一样）
-                if stored == EMPTY_SLOT || words[stored as usize - 1] == *word {
+                if stored == EMPTY_SLOT || word_at(stored as usize - 1) == word {
                     slots[slot] = id as u32 + 1;
                     break;
                 }
                 slot = (slot + 1) & (slot_count - 1);
             }
         }
-        let backoff = r.f32s(n)?;
-        let starts = r.u32s(n + 1)?;
-        let curs = r.u32s(m)?;
-        let scores = r.f32s(m)?;
+        let backoff = read_f32s(r, n)?;
+        let starts = read_u32s(r, n + 1)?;
+        let curs = read_u32s(r, m)?;
+        let scores = read_f32s(r, m)?;
         if starts.last().copied() != Some(m as u32) || starts.windows(2).any(|w| w[0] > w[1]) {
             bail!("二元组索引坏了");
         }
-        if r.at != data.len() {
-            bail!("文件末尾多了 {} 字节", data.len() - r.at);
+        let mut rest = Vec::new();
+        r.read_to_end(&mut rest)?;
+        if !rest.is_empty() {
+            bail!("文件末尾多了 {} 字节", rest.len());
         }
         Ok(Self {
             slots,
-            words,
+            word_bytes,
+            word_end,
             backoff,
             starts,
             curs,
@@ -127,13 +150,19 @@ impl WordLm {
         })
     }
 
+    /// 第 i 个词的字。
+    fn word_bytes(&self, i: usize) -> &[u8] {
+        let start = if i == 0 { 0 } else { self.word_end[i - 1] as usize };
+        &self.word_bytes[start..self.word_end[i] as usize]
+    }
+
     /// 词表里的版本标记（官方发布的模型才有；加标记以前的 lm-2026.11.09 没有）。
     pub fn data_marker(&self) -> Option<&DataMarker> {
         self.marker.as_ref()
     }
 
     pub fn words(&self) -> usize {
-        self.words.len()
+        self.word_end.len()
     }
 
     pub fn bigrams(&self) -> usize {
@@ -158,7 +187,7 @@ impl WordLm {
                 return None;
             }
             let id = stored - 1;
-            if self.words[id as usize].as_bytes() == word.as_bytes() {
+            if self.word_bytes(id as usize) == word.as_bytes() {
                 return Some(id);
             }
             slot = (slot + 1) & mask;
@@ -167,8 +196,12 @@ impl WordLm {
 }
 
 fn hash_word(word: &str) -> u64 {
+    hash_bytes(word.as_bytes())
+}
+
+fn hash_bytes(word: &[u8]) -> u64 {
     let mut hash = 0xcbf2_9ce4_8422_2325u64;
-    for byte in word.as_bytes() {
+    for byte in word {
         hash ^= u64::from(*byte);
         hash = hash.wrapping_mul(0x1000_0000_01b3);
     }
@@ -219,7 +252,8 @@ impl LanguageModel for WordLm {
         let mut items: Vec<(String, f64)> = (a..b)
             .map(|i| {
                 (
-                    self.words[self.curs[i] as usize].clone(),
+                    // 载入时每个词都检查过是合法 UTF-8
+                    String::from_utf8_lossy(self.word_bytes(self.curs[i] as usize)).into_owned(),
                     self.scores[i] as f64,
                 )
             })
@@ -228,6 +262,43 @@ impl LanguageModel for WordLm {
         items.truncate(limit);
         items
     }
+}
+
+fn read_u32(r: &mut impl std::io::Read) -> Result<u32> {
+    let mut buf = [0u8; 4];
+    r.read_exact(&mut buf).context("文件截断")?;
+    Ok(u32::from_le_bytes(buf))
+}
+
+/// 读 n 个小端的 4 字节数，一小块一小块地转好放进最后的数组，不经过整份字节的副本。
+fn read_words<T>(
+    r: &mut impl std::io::Read,
+    n: usize,
+    conv: impl Fn([u8; 4]) -> T,
+) -> Result<Vec<T>> {
+    // 流的长度没法先知道：一次最多先开 1M 个，截断的文件不会因为头里写了个大数就先要几 GB
+    let mut out = Vec::with_capacity(n.min(1 << 20));
+    let mut chunk = [0u8; 1 << 14];
+    let mut left = n;
+    while left > 0 {
+        let take = left.min(chunk.len() / 4);
+        r.read_exact(&mut chunk[..take * 4]).context("文件截断")?;
+        out.extend(
+            chunk[..take * 4]
+                .chunks_exact(4)
+                .map(|c| conv([c[0], c[1], c[2], c[3]])),
+        );
+        left -= take;
+    }
+    Ok(out)
+}
+
+fn read_u32s(r: &mut impl std::io::Read, n: usize) -> Result<Vec<u32>> {
+    read_words(r, n, u32::from_le_bytes)
+}
+
+fn read_f32s(r: &mut impl std::io::Read, n: usize) -> Result<Vec<f32>> {
+    read_words(r, n, f32::from_le_bytes)
 }
 
 struct Reader<'a> {
@@ -249,12 +320,6 @@ impl<'a> Reader<'a> {
         let b = self.take(n * 4)?;
         Ok(b.chunks_exact(4)
             .map(|c| u32::from_le_bytes([c[0], c[1], c[2], c[3]]))
-            .collect())
-    }
-    fn f32s(&mut self, n: usize) -> Result<Vec<f32>> {
-        let b = self.take(n * 4)?;
-        Ok(b.chunks_exact(4)
-            .map(|c| f32::from_le_bytes([c[0], c[1], c[2], c[3]]))
             .collect())
     }
 }
