@@ -620,6 +620,14 @@ jobs:
         run: |
           # 「这一版要注意」每次发版前写上这一版的变化（旧设置界面发完就删，见 0.6.1）
           cat > notes.md <<EOF
+          ## 这一版要注意
+
+          - 命令行工具 \`archtype-config\` 换成 Rust 实现（原来那套 Python 脚本删掉了）：\`--setup\`、\`--add-to-group\`、\`--install-lexicon\`、\`--export-log\`、\`--startup\` 等用法不变，不再依赖 PyGObject。
+          - 图形设置界面统一是 NSH 写的「ArchType 设置」（\`archtype-settings\`）；不带参数的 \`archtype-config\` 会直接打开它。
+          - **NixOS 用户终于有图形设置界面**：Nix 包里带上了它（解到 \`lib/archtype/settings\`），桌面入口指向 \`archtype-settings\`。
+          - 安装包的依赖跟着换：不再要 python3-gi / PyGObject，改为 GTK 4、WebKitGTK 6.0、GStreamer。装不上时先用包管理器升级系统再重试。
+          - 设置界面里改完设置立即生效（互译开关、翻译引擎、模型等），不用重启输入法。
+
           ## 安装（Ubuntu / Debian、deepin、Arch Linux、Fedora、NixOS）
 
           一行命令（下载对应发行版的安装包、装好、加进 fcitx5 输入法列表）：
