@@ -46,6 +46,8 @@ jobs:
 
   settings:
     name: 设置界面（NSH） · ${{ matrix.arch }}
+    # 无头 runner 偶发挂死（不是失败、不退出）：给这个任务一个上限，别让发版卡几小时
+    timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
@@ -96,7 +98,8 @@ jobs:
           nsh check
           # arm64 的 runner 上，无头应用第一次启动偶尔超过 open() 内置的 5 秒等待
           # （后面的测试 700ms 就起来了，说明是冷启动）：失败时再跑一次，第二次有系统缓存
-          nsh test || { echo "第一次 nsh test 失败，重试一次"; nsh test; }
+          # timeout 兜底：无头 runner 偶发挂住（不报错也不退出），超时后当作失败重试
+          timeout 600 nsh test || { echo "第一次 nsh test 失败或超时，重试一次"; timeout 600 nsh test; }
       - name: 版本号
         run: |
           if [ "${GITHUB_REF_TYPE}" = tag ]; then
