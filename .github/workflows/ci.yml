@@ -298,8 +298,6 @@ jobs:
           grep -qx 'Icon=archtype' /usr/share/fcitx5/inputmethod/archtype.conf
           # 插件清单要求编译时 fcitx5 的「主.次.0」，fcitx5 小版本落后一点的系统也能加载
           grep -qx "0=core:$(pkg-config --modversion Fcitx5Core | cut -d. -f1,2).0" /usr/share/fcitx5/addon/archtype.conf
-      - name: 设置界面：每页、每个对话框点一遍（无头）
-        run: timeout 300 dbus-run-session -- xvfb-run -a python3 scripts/test-settings-gui.py /usr/bin/archtype-config
       - uses: actions/upload-artifact@v4
         with:
           name: pkg-${{ matrix.distro }}-${{ matrix.arch }}
@@ -508,7 +506,7 @@ jobs:
           path: dist/data
       - name: 编译并安装到系统 Fcitx 目录
         run: |
-          cargo build --release --locked -p archtype-core
+          cargo build --release --locked -p archtype-core -p archtype-config-cli
           cmake -S fcitx5-addon -B build -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/usr
           cmake --build build -j"$(nproc)"
           cmake --install build

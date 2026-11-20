@@ -285,7 +285,7 @@ ArchType 发布的每个数据文件都带一个机器可读的版本标记，�
 3. 没有标记 → 按加标记以前的老办法：第一行是 ArchType 生成的数据（`# 由 tools/rime2tsv.py 生成` 等）而且不比系统目录的新，
    或者 `words.lm` 的字节数是 lm-2026.11.09 的 → 旧副本；别的（自己做的词库、自己训的模型）用用户目录的。
 
-规则改了要四处一起改：`core/src/datamark.rs`、`fcitx5-addon/src/data_files.h`、`settings/archtype-config`、`tools/datamark.py`。
+规则改了要三处一起改：`core/src/datamark.rs`、`fcitx5-addon/src/data_files.h`、`tools/datamark.py`。
 
 **清单** `DATA-MANIFEST`：每行 `名字<TAB>版本<TAB>sha256<TAB>来源`，`#` 开头是注释。`make-data.sh`、`make-wubi.sh`
 跑完时用 `tools/datamark.py manifest <数据目录> core/data/s2t.tsv` 写在数据目录里（列出目录里认识的数据文件和简繁表，

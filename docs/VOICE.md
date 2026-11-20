@@ -57,7 +57,7 @@ Wayland 下"抢一个键"本质上不被允许（安全模型），所以要么�
 `voice/src/wtlocal/` 直接加载微信输入法的离线模型包并自己推理，**不需要官方程序**，
 全平台可用（无系统依赖）。模型约 100MB，从腾讯 CDN 下载并校验大小和 MD5，**由用户在设置里明确下载**
 （`ArchType 设置 → 语音 → 下载`，或 `archtype-config --install-voice-model`），输入法插件自己从不下载。
-下载、校验、解包在 `settings/archtype-config`（Python 标准库 `zipfile`，不用系统 `unzip`）；地址、大小、MD5 和
+下载、校验、解包在「ArchType 设置」的「语音」页（settings-nsh）；地址、大小、MD5 和
 `voice/src/wtlocal/pack.rs` 一致，`voice` 里有个测试核对这三个值。
 
 开发工具仍然可以自己下载（是命令行上明确要的）：

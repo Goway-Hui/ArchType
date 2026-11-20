@@ -58,6 +58,20 @@ fn dispatch(args: &[String]) -> i32 {
     if flag("--export-log") {
         return export_log(args);
     }
+    if args.is_empty() {
+        // 图形界面在 NSH 打的 archtype-settings 里（桌面入口通常直接指它）
+        let status = std::process::Command::new("archtype-settings").status();
+        match status {
+            Ok(status) => return status.code().unwrap_or(0),
+            Err(_) => {
+                eprintln!(
+                    "图形界面是「ArchType 设置」（archtype-settings，NSH 打包的）。\n\
+                     命令行用法见 archtype-config --help"
+                );
+                return 1;
+            }
+        }
+    }
     eprintln!("未知参数：{}", args.join(" "));
     print_help();
     2

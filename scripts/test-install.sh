@@ -195,7 +195,7 @@ run > "$work/output" 2>&1 || fail "apt install: $(cat "$work/output")"
 assert_log 'apt-get update -qq'
 assert_log 'apt-get install -y'
 assert_log 'fcitx5-config-qt fcitx5-frontend-all im-config'
-assert_log 'python3-gi python3-gi-cairo gir1.2-gtk-4.0 gir1.2-adw-1'
+assert_log 'libgtk-4-1 libwebkitgtk-6.0-4 libgstreamer1.0-0 libgstreamer-plugins-base1.0-0'
 assert_log 'archtype_0.3.8_ubuntu24.04_amd64.deb'
 assert_log 'archtype-data-rime-ice_20260101_all.deb'
 assert_log 'archtype-config --setup --yes --no-im-config --no-restart'
@@ -205,7 +205,7 @@ reset $'ID=deepin\nVERSION_ID=25\nVERSION_CODENAME=crimson'
 asset archtype_0.3.8_deepin25_amd64.deb
 run > "$work/output" 2>&1 || fail "apt install deepin: $(cat "$work/output")"
 assert_log 'archtype_0.3.8_deepin25_amd64.deb'
-assert_log 'fcitx5-frontend-all python3-gi'
+assert_log 'fcitx5-frontend-all libgtk-4-1'
 if grep -Eq '(^| )im-config( |$)|fcitx5-config-qt' "$work/commands"; then fail 'deepin 不该装 im-config、fcitx5-config-qt'; fi
 assert_log 'archtype-config --setup --yes --no-im-config --no-restart'
 pass 'deepin keeps its own IM framework and config tool'
@@ -270,10 +270,10 @@ asset archtype-data-rime-ice_20260101_all.deb
 run > "$work/output" 2>&1 || fail "pacman install: $(cat "$work/output")"
 assert_log 'pacman -S --needed --noconfirm'
 if grep -q 'pacman -Syu' "$work/commands"; then fail 'installer ran a full system upgrade'; fi
-assert_log 'python-gobject gtk4 libadwaita'
+assert_log 'gtk4 webkitgtk-6.0 gstreamer'
 assert_log 'pacman -U --noconfirm'
 if grep -q 'archtype-data-rime-ice' "$work/fetches"; then fail 'Arch fetched a Debian data package'; fi
-pass 'Pacman installs GUI dependencies and local package without -Syu'
+pass 'Pacman installs settings dependencies and local package without -Syu'
 
 reset $'ID=fedora\nVERSION_ID=43'
 asset archtype-0.3.8-1.fc43.x86_64.rpm

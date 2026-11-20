@@ -119,13 +119,11 @@ BuildRequires:  gcc-c++
 BuildRequires:  fcitx5-devel
 BuildRequires:  alsa-lib-devel
 Requires:       fcitx5
-# 设置界面要 PyGObject + GTK 4 + libadwaita：缺了的话应用菜单里点「ArchType 设置」没反应，
-# 插件在后台叫的 archtype-config --startup（检查更新、默认主题、提醒重启输入法）也跑不了
-Requires:       python3-gobject
+# 设置界面（NSH：GTK 4 + WebKitGTK 6.0 + GStreamer）：缺了的话应用菜单里点「ArchType 设置」没反应
 Requires:       gtk4
-Requires:       libadwaita
-# PyGObject 载入 Gtk 时要 cairo-1.0.typelib，在这个包里
-Requires:       gobject-introspection
+Requires:       webkitgtk6.0
+Requires:       gstreamer1
+Requires:       gstreamer1-plugins-base
 # emoji 候选要彩色 emoji 字体才画得出来
 Recommends:     google-noto-color-emoji-fonts
 # 互译用 curl 发请求
@@ -141,7 +139,7 @@ Recommends:     curl
 %setup -q -c -n archtype-src
 
 %build
-cargo build --release --locked -p archtype-core
+cargo build --release --locked -p archtype-core -p archtype-config-cli
 cmake -S fcitx5-addon -B build -DCMAKE_BUILD_TYPE=Release \
   -DCMAKE_INSTALL_PREFIX=%{_prefix} -DCMAKE_INSTALL_LIBDIR=%{_lib} \
   -DARCHTYPE_VERSION=%{version}

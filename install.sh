@@ -5,7 +5,7 @@
 #
 # 做这几件事：
 #   1. 从 GitHub Release 下载和你系统对应的最新安装包（词库已经在包里），按 SHA256SUMS 校验
-#   2. 用 apt-get / pacman / dnf 安装（含 fcitx5、GTK 4 / libadwaita）
+#   2. 用 apt-get / pacman / dnf 安装（含 fcitx5、GTK 4、WebKitGTK、GStreamer）
 #   3. 输入法框架不是 fcitx5 时，用 im-config 切到 fcitx5（之后要注销重新登录一次）
 #   4. 把 ArchType 加进 fcitx5 的输入法列表（fcitx5 正在运行时会先重启它一次）
 #   3、4 两步是 archtype-config --setup 做的（直接装包的用户在「ArchType 设置」第一页点「一键设置」也是它）
@@ -224,21 +224,21 @@ install_packages() {
       esac
       "${SUDO[@]}" apt-get update -qq || warn "apt-get update 失败，接着用现有的软件源列表安装"
       "${SUDO[@]}" env DEBIAN_FRONTEND=noninteractive apt-get install -y "${paths[@]}" \
-        "${extra[@]}" python3-gi python3-gi-cairo gir1.2-gtk-4.0 gir1.2-adw-1
+        "${extra[@]}" libgtk-4-1 libwebkitgtk-6.0-4 libgstreamer1.0-0 libgstreamer-plugins-base1.0-0
       ;;
     pacman)
       # 不替用户 -Syu（整机升级该由用户自己决定）；-S 不带 y 不会造成部分升级。
       # 依赖装不上多半是软件源太旧：先 sudo pacman -Syu 再重跑。
       # curl | bash 时标准输入是脚本本身，pacman 的确认要从终端读。
       from_tty "${SUDO[@]}" pacman -S --needed "${yes[@]}" fcitx5 fcitx5-gtk fcitx5-qt \
-        fcitx5-configtool python-gobject gtk4 libadwaita ||
+        fcitx5-configtool gtk4 webkitgtk-6.0 gstreamer gst-plugins-base ||
         die "依赖装不上：先运行 sudo pacman -Syu 升级系统，再重新安装"
       from_tty "${SUDO[@]}" pacman -U "${yes[@]}" "${paths[@]}"
       ;;
     dnf)
       "${SUDO[@]}" dnf install -y "${paths[@]}" \
         fcitx5-configtool fcitx5-gtk3 fcitx5-gtk4 fcitx5-qt5 fcitx5-qt6 fcitx5-autostart \
-        python3-gobject gtk4 libadwaita gobject-introspection
+        gtk4 webkitgtk6.0 gstreamer1 gstreamer1-plugins-base
       ;;
   esac
 }
@@ -388,7 +388,7 @@ main() {
   [[ -n "${ARCHTYPE_NO_IM_CONFIG:-}" || "$distro" == deepin* ]] && setup+=(--no-im-config)
   [[ -n "${ARCHTYPE_NO_RESTART:-}" ]] && setup+=(--no-restart)
   if ! command -v archtype-config >/dev/null || ! archtype-config --self-test >/dev/null 2>&1; then
-    warn "设置界面用不了（缺 PyGObject / GTK 4 / libadwaita？），请在「Fcitx 5 配置」里手动添加 ArchType"
+    warn "命令行工具 archtype-config 跑不起来，请在「Fcitx 5 配置」里手动添加 ArchType"
   else
     from_tty archtype-config "${setup[@]}" || code=$?
     case "$code" in

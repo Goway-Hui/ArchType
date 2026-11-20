@@ -22,7 +22,7 @@
 //!   以 `\n` 或 `\0` 结尾。
 //!
 //! 找标记只看文件前 [`SCAN_BYTES`] 字节。插件（`fcitx5-addon/src/data_files.h`）、
-//! 设置界面（`settings/archtype-config`）、生成工具（`tools/datamark.py`）各有一份同样规则的实现，
+//! 生成工具（`tools/datamark.py`）各有一份同样规则的实现，
 //! 改规则时三处一起改。规则和发布步骤见 `docs/DATA.md` 的「数据版本标记」一节。
 
 use std::cmp::Ordering;

@@ -174,13 +174,19 @@ if(ARCHTYPE_INSTALL_THEMES)
         DESTINATION "${CMAKE_INSTALL_DATADIR}/gnome-shell/extensions")
 endif()
 
-# 设置界面（GTK 4 + libadwaita，Python）：fcitx5 配置工具里的「自定义词和更多设置」也打开它
-option(ARCHTYPE_INSTALL_SETTINGS "Install the archtype-config settings app" ON)
+# 命令行（Rust）：插件在后台调它（--startup），fcitx5 配置工具里的「自定义词和更多设置」也打开它；
+# 图形界面在 settings-nsh（NSH），由包脚本另外装成 archtype-settings。
+option(ARCHTYPE_INSTALL_SETTINGS "Install the archtype-config CLI" ON)
 if(ARCHTYPE_INSTALL_SETTINGS)
-    set(VERSION "${ARCHTYPE_VERSION}")
-    configure_file("${CMAKE_CURRENT_SOURCE_DIR}/../settings/archtype-config"
-        "${CMAKE_CURRENT_BINARY_DIR}/archtype-config" @ONLY)
-    install(PROGRAMS "${CMAKE_CURRENT_BINARY_DIR}/archtype-config"
+    set(_archtype_config_default "${CMAKE_CURRENT_SOURCE_DIR}/../target/release/archtype-config")
+    set(ARCHTYPE_CONFIG_BIN "${_archtype_config_default}"
+        CACHE FILEPATH "Path to the archtype-config binary")
+    if(NOT EXISTS "${ARCHTYPE_CONFIG_BIN}")
+        message(FATAL_ERROR
+            "找不到 ${ARCHTYPE_CONFIG_BIN}。请先在仓库根目录执行 "
+            "cargo build --release -p archtype-config-cli，或用 -DARCHTYPE_CONFIG_BIN=... 指定。")
+    endif()
+    install(PROGRAMS "${ARCHTYPE_CONFIG_BIN}"
         DESTINATION "${CMAKE_INSTALL_BINDIR}")
     install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/../settings/io.github.GowayHui.ArchType.Config.desktop"
         DESTINATION "${CMAKE_INSTALL_DATADIR}/applications")

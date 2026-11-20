@@ -7,7 +7,7 @@
 archtype-config-dump 是 scripts/addon-test.sh 编出来的（fcitx5-addon/test/config_dump.cpp），导出插件里
 ArchtypeConfig 的键、类型、默认值、范围、可选值。
 
-设置界面（settings/archtype-config）没有 .py 后缀，用 importlib 按路径导入。不用装 GTK：导入前塞一个假的 gi，
+旧的 Python 设置界面（settings/archtype-config）已经删除；文件还在时仍按原来的方式导入对照。
 它在模块顶层只用到 gi.require_version、几个当基类的控件和 GObject.Property。XDG 目录都指到临时目录，不碰自己的配置。
 """
 
@@ -505,11 +505,14 @@ def main(argv):
         return 2
     spec, pack = load_spec("config.json"), load_spec("lexicon-pack.json")
     check_spec(spec, pack)
-    with tempfile.TemporaryDirectory() as home:
-        wc = import_settings(home)
-        check_settings(spec, wc, home)
-        check_settings_lexicon(pack, wc, home)
-    ends = "规格、设置界面"
+    ends = "规格"
+    # Python 设置界面已删（命令行在 cli/，图形界面在 settings-nsh）：只在它还在时对照它。
+    if SETTINGS.is_file():
+        with tempfile.TemporaryDirectory() as home:
+            wc = import_settings(home)
+            check_settings(spec, wc, home)
+            check_settings_lexicon(pack, wc, home)
+        ends = "规格、设置界面"
     if fcitx5:
         check_fcitx5(spec, fcitx5)
         ends += "、fcitx5 插件"

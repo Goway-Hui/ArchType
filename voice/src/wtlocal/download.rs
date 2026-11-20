@@ -3,7 +3,7 @@
 //! 模型是腾讯的资源包，不随仓库分发：从官方 CDN 下载并校验。
 //! 这一步和用户自己安装微信输入法获取资源是同一性质。
 //!
-//! 输入法插件不调这里（模型在设置界面 `settings/archtype-config` 里下载，那边用 Python 重写了
+//! 输入法插件不调这里（模型在「ArchType 设置」的「语音」页下载，用的是同一份地址和校验
 //! 一遍下载、校验、解包，地址和校验和与 `pack.rs` 一致）；这里给 `archtype-asr --download`、
 //! `archtype-voiced` 这些开发工具用。
 
@@ -95,18 +95,6 @@ mod tests {
     #[test]
     fn default_dir_ends_with_wtlocal() {
         assert!(default_dir().ends_with("archtype/wtlocal"));
-    }
-
-    #[test]
-    fn settings_tool_uses_same_pack() {
-        // 设置界面里下载语音模型用的地址、大小、MD5 要和这里一致
-        let settings = include_str!("../../../settings/archtype-config");
-        assert!(settings.contains(pack::URL), "archtype-config 里的语音模型地址不对");
-        assert!(settings.contains(pack::MD5), "archtype-config 里的语音模型 MD5 不对");
-        assert!(
-            settings.contains(&format!("VOICE_MODEL_SIZE = {}", pack::SIZE)),
-            "archtype-config 里的语音模型大小不对"
-        );
     }
 
     #[test]

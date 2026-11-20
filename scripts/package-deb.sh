@@ -166,7 +166,7 @@ engine)
   distro="${ARCHTYPE_DISTRO:-${ID}${VERSION_ID:-}}"
   debver="${version}-1~${distro}"
 
-  cargo build --release --locked -p archtype-core
+  cargo build --release --locked -p archtype-core -p archtype-config-cli
   cmake -S fcitx5-addon -B "$work/build" -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/usr \
     -DARCHTYPE_VERSION="$version" >/dev/null
   cmake --build "$work/build" -j"$(nproc)"
@@ -228,9 +228,9 @@ EOF
   mkdir -p "$work/debian"
   printf 'Source: archtype\n\nPackage: archtype\nArchitecture: any\n' > "$work/debian/control"
   shlibs=$(cd "$work" && dpkg-shlibdeps -O "${elfs[@]}" 2>/dev/null | sed -n 's/^shlibs:Depends=//p')
-  # 设置界面（PyGObject + GTK 4 + libadwaita）是硬依赖：缺了的话应用菜单里点「ArchType 设置」没反应，
-  # 插件在后台叫的 archtype-config --startup（检查更新、默认主题、提醒重启输入法）也跑不了
-  depends="${shlibs:+$shlibs, }fcitx5, python3-gi, python3-gi-cairo, gir1.2-gtk-4.0, gir1.2-adw-1"
+  # 设置界面（NSH：GTK 4 + WebKitGTK 6.0 + GStreamer）是硬依赖：缺了的话应用菜单里点
+  # 「ArchType 设置」没反应。命令行 archtype-config 是静态的 Rust 程序，只要 fcitx5。
+  depends="${shlibs:+$shlibs, }fcitx5, libgtk-4-1, libwebkitgtk-6.0-4, libgstreamer1.0-0, libgstreamer-plugins-base1.0-0"
 
   # emoji 要彩色 emoji 字体才画得出来（桌面版系统一般都装了）；互译用 curl 发请求
   RECOMMENDS="fonts-noto-color-emoji, curl" \

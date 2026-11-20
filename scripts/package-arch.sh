@@ -57,9 +57,9 @@ pkgdesc='WeChat-style pinyin input method for fcitx5, with bundled dictionaries 
 arch=('x86_64')
 url='https://github.com/Goway-Hui/ArchType'
 license=('MIT' 'Apache-2.0' 'GPL-3.0-only' 'CC-BY-SA-4.0' 'Unicode-3.0' 'LGPL-3.0-only')
-# 设置界面（python-gobject、gtk4、libadwaita）和 GTK / Qt 程序里打字要的 fcitx5-gtk、fcitx5-qt 都是硬依赖
-depends=('fcitx5' 'fcitx5-gtk' 'fcitx5-qt' 'alsa-lib' 'gcc-libs' 'glibc' 'python'
-         'python-gobject' 'gtk4' 'libadwaita')
+# 设置界面（gtk4、webkitgtk-6.0、gstreamer）和 GTK / Qt 程序里打字要的 fcitx5-gtk、fcitx5-qt 都是硬依赖
+depends=('fcitx5' 'fcitx5-gtk' 'fcitx5-qt' 'alsa-lib' 'gcc-libs' 'glibc'
+         'gtk4' 'webkitgtk-6.0' 'gstreamer' 'gst-plugins-base')
 makedepends=('rust' 'cmake' 'extra-cmake-modules' 'pkgconf')
 optdepends=('noto-fonts-emoji: color emoji in candidates' 'curl: translate mode')
 # makepkg handles ELF stripping and byte-sized .PKGINFO/.MTREE/.BUILDINFO.
@@ -75,7 +75,7 @@ prepare() {
 
 build() {
   cd "$srcdir" || return
-  cargo build --release --frozen -p archtype-core --lib \
+  cargo build --release --frozen -p archtype-core --lib -p archtype-config-cli \
     --bin archtype-check --bin archtype-show
   cmake -S fcitx5-addon -B build -DCMAKE_BUILD_TYPE=None \
     -DCMAKE_INSTALL_PREFIX=/usr -DCMAKE_INSTALL_LIBDIR=lib -DARCHTYPE_VERSION="$pkgver"
