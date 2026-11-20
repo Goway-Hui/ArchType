@@ -1104,7 +1104,7 @@ impl Config {
 
     /// 设置界面版本。
     pub fn version() -> String {
-        "0.6.1".to_string()
+        "0.6.2".to_string()
     }
 
     /// 试一次翻译服务；返回 {"ok":true,"text":"…"} 或 {"ok":false,"error":"…"}。

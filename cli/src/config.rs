@@ -3,7 +3,7 @@
 use std::path::PathBuf;
 
 pub fn version() -> String {
-    "0.6.1".to_string()
+    "0.6.2".to_string()
 }
 
 pub fn home() -> String {
