@@ -3531,10 +3531,13 @@ fn auto_pair_punct_pairs_skips_and_deletes() {
     assert_eq!(f.commit.as_deref(), Some("」"));
     assert_eq!(f.cursor_delta, 0);
 
-    // 6. 数字后面保持 ASCII，不触发配对
+    // 6. 数字后面的左括号也是中文的（1）、（2）这类编号，#250），照常配对；保持半角的（a[3] 的 [）不配对
     let f = type_keys(&mut session, "3(");
+    assert_eq!(f.commit.as_deref(), Some("（）"));
+    assert_eq!(f.cursor_delta, -1);
+    let mut session = auto_pair_session();
+    let f = type_keys(&mut session, "3[");
     assert!(!f.handled);
-    assert_eq!(f.commit, None);
     assert_eq!(f.cursor_delta, 0);
 }
 
@@ -3564,9 +3567,9 @@ fn auto_pair_skips_close_after_digit() {
     assert_eq!(f.commit.as_deref(), Some("）"));
     assert_eq!(f.cursor_delta, 0);
 
-    // 数字后面的左括号照常是半角、不配对，后面的右括号也照常（3(1) 原样）
+    // 数字后面保持半角的符号不配对（a[3] 的 [、3~5 的 ~），后面的数字照常
     let mut session = auto_pair_session();
-    for c in ["3", "(", "1", ")"] {
+    for c in ["3", "[", "1", "]"] {
         let f = type_keys(&mut session, c);
         assert!(!f.handled, "{c} 交给应用");
         assert_eq!(f.commit, None);
