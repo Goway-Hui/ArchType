@@ -10,9 +10,16 @@
   cmake,
   kdePackages,
   pkg-config,
+  autoPatchelfHook,
+  wrapGAppsHook4,
+  gtk4,
+  webkitgtk_6_0,
+  gstreamer,
+  gst-plugins-base,
+  libsoup_3,
+  gsettings-desktop-schemas,
   fcitx5,
   alsa-lib,
-  gtk4,
 }:
 
 let
@@ -52,6 +59,19 @@ stdenv.mkDerivation {
 
   cargoDeps = rustPlatform.importCargoLock { lockFile = ../Cargo.lock; };
 
+  # 图形设置界面（NSH）：直接用发版时 CI 打好的包，hash 跟着发版更新
+  settingsAssets = {
+    x86_64-linux = {
+      url = "https://github.com/Goway-Hui/ArchType/releases/download/v${version}/archtype-settings-nsh-${version}-linux-x86_64.tar.gz";
+      hash = "sha256-GZ/Lb0J75bpQPbNJkQ9sUHqEiWtjpdknIDu6JPXckjo=";
+    };
+    aarch64-linux = {
+      url = "https://github.com/Goway-Hui/ArchType/releases/download/v${version}/archtype-settings-nsh-${version}-linux-aarch64.tar.gz";
+      hash = "sha256-p2lnzQDVvz1QYbALAWsYEHgXPmWVlDwk/mxQCrNfY/U=";
+    };
+  };
+  settingsPackage = fetchurl settingsAssets.${stdenv.hostPlatform.system};
+
   nativeBuildInputs = [
     rustPlatform.cargoSetupHook
     cargo
@@ -59,12 +79,19 @@ stdenv.mkDerivation {
     cmake
     kdePackages.extra-cmake-modules
     pkg-config
+    autoPatchelfHook
+    wrapGAppsHook4
   ];
 
   buildInputs = [
     fcitx5
     alsa-lib
     gtk4
+    webkitgtk_6_0
+    gstreamer
+    gst-plugins-base
+    libsoup_3
+    gsettings-desktop-schemas
   ];
 
   # 自检工具默认去 /usr/share/archtype 找词库，改成本包的目录
@@ -107,6 +134,18 @@ stdenv.mkDerivation {
     install -Dm644 ../README.md "$out/share/doc/archtype/README.md"
     install -Dm644 data/SOURCE.txt "$out/share/doc/archtype/DATA-SOURCE.txt"
     echo ${dataVersion} > "$out/share/doc/archtype/DATA-VERSION"
+    # 图形设置界面（NSH）：解到 lib/archtype/settings，桌面入口指向包装脚本
+    mkdir -p "$out/lib/archtype/settings"
+    tar -xzf ${settingsPackage} -C "$out/lib/archtype/settings" --strip-components=1
+    runner=$(find "$out/lib/archtype/settings" -maxdepth 1 -type f -perm -u+x | head -1)
+    cat > "$out/bin/archtype-settings" <<EOF
+#!${stdenv.shell}
+export XDG_DATA_DIRS="${gtk4}/share:${gsettings-desktop-schemas}/share:${webkitgtk_6_0}/share:\$XDG_DATA_DIRS"
+exec "$out/lib/archtype/settings/$(basename "$runner")" "\$@"
+EOF
+    chmod 755 "$out/bin/archtype-settings"
+    sed -i 's|^Exec=.*|Exec=archtype-settings|' \
+      "$out/share/applications/io.github.GowayHui.ArchType.Config.desktop"
     install -Dm644 data/LICENSE "$out/share/licenses/archtype/LICENSE.rime-ice"
     # 五笔码表（rime-wubi，LGPL-3.0）：make-data.sh 的 REV=5 起，词库包里才有它。上面钉的还是旧包时没有它，
     # 设置里五笔灰掉；发版后 nix-data-pr.sh 换成新包，这个判断就总是成立

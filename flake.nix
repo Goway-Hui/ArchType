@@ -43,6 +43,9 @@
             cat show.txt
             grep -q '1\.你好' show.txt
             archtype-config --self-test
+            # 图形设置界面（NSH）：包装脚本和它解出来的运行时都在
+            test -x ${archtype}/bin/archtype-settings
+            test -d ${archtype}/lib/archtype/settings
             touch $out
           '';
         }

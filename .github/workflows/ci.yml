@@ -589,8 +589,17 @@ jobs:
           pattern: pkg-*
           path: dist
           merge-multiple: true
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: settings-nsh-*
+          path: dist/settings
+          merge-multiple: true
       - name: 校验和
-        run: cd dist && sha256sum -- * > SHA256SUMS && cat SHA256SUMS
+        run: |
+          cd dist
+          sha256sum -- *.deb *.rpm *.pkg.tar.zst *.tar.gz > SHA256SUMS
+          (cd settings && sha256sum -- *.tar.gz >> ../SHA256SUMS)
+          cat SHA256SUMS
       - name: 发布到 GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}
@@ -628,7 +637,9 @@ jobs:
                 "$GITHUB_REPOSITORY" "$GITHUB_SHA" "$GITHUB_REF_NAME"
               cat notes.md; } > notes.pre && mv notes.pre notes.md
           fi
-          gh release create "$GITHUB_REF_NAME" dist/* \
+          gh release create "$GITHUB_REF_NAME" \
+            dist/*.deb dist/*.rpm dist/*.pkg.tar.zst dist/*.tar.gz dist/SHA256SUMS \
+            dist/settings/*.tar.gz \
             --repo "$GITHUB_REPOSITORY" --verify-tag \
             --title "ArchType $GITHUB_REF_NAME" \
             --notes-file notes.md --generate-notes "${extra[@]}"
