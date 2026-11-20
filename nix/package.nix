@@ -28,24 +28,24 @@ let
   # 词库不在 git 里：用发布页上的词库压缩包（scripts/package-deb.sh data 打的），按哈希固定。
   # 换了词库的版本发版后，发布流程会自动开 PR 改这三行（.github/scripts/nix-data-pr.sh）；
   # 手动改的话 hash 在发布页 SHA256SUMS 里，nix hash convert --hash-algo sha256 <十六进制> 转成 SRI 格式。
-  dataVersion = "2026.11.11.7";
+  dataVersion = "2026.11.11.8";
   data = fetchurl {
-    url = "https://github.com/Gloridust/WowType/releases/download/v0.5.1/wowtype-data-rime-ice-${dataVersion}.tar.gz";
-    hash = "sha256-s1pK92Vz67HHtALFKF0zu7HOKzJEdwvvnpCCbD/PyKo=";
+    url = "https://github.com/Goway-Hui/ArchType/releases/download/v0.6.2/archtype-data-rime-ice-${dataVersion}.tar.gz";
+    hash = "sha256-hCYHF2XmmQji+RuZ8kWyl8lsgm/b+/kdZ+GPukTX84w=";
   };
 
   # 图形设置界面（NSH）：直接用发版时 CI 打好的包。版本单独记（和 dataVersion 一样）：
   # 包要发版之后才存在，跟着 ${version} 走的话一 bump 版本、发版那轮 Nix 任务就会去下
   # 还没上传的资产。发版后由 nix-data-pr.sh 的自动 PR 更新这三行。
-  settingsVersion = "0.6.1";
+  settingsVersion = "0.6.2";
   settingsAssets = {
     x86_64-linux = {
       url = "https://github.com/Goway-Hui/ArchType/releases/download/v${settingsVersion}/archtype-settings-nsh-${settingsVersion}-linux-x86_64.tar.gz";
-      hash = "sha256-GZ/Lb0J75bpQPbNJkQ9sUHqEiWtjpdknIDu6JPXckjo=";
+      hash = "sha256-lTsyJpHEvgZuuCfc1K6Tbt/12l/gMzwKPnX0xCuZ8/g=";
     };
     aarch64-linux = {
       url = "https://github.com/Goway-Hui/ArchType/releases/download/v${settingsVersion}/archtype-settings-nsh-${settingsVersion}-linux-aarch64.tar.gz";
-      hash = "sha256-p2lnzQDVvz1QYbALAWsYEHgXPmWVlDwk/mxQCrNfY/U=";
+      hash = "sha256-5AJcpzifOcJDjkovOdM7GvPkG44gLaq4o+HErAnnirM=";
     };
   };
   settingsPackage = fetchurl settingsAssets.${stdenv.hostPlatform.system};
