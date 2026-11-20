@@ -217,7 +217,7 @@ jobs:
         # scripts/invariants.sh <数据目录> --nnlm <nnlm.bin>
         if: ${{ !cancelled() }}
         env:
-          WOWTYPE_EVAL_BIN: target/release/archtype-eval
+          ARCHTYPE_EVAL_BIN: target/release/archtype-eval
         run: scripts/invariants.sh "$EVAL_DATA"
 
   addon:

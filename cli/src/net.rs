@@ -52,6 +52,7 @@ pub fn fetch(url: &str) -> Result<String, String> {
 
 /// 最新发布版的版本号（不带 v），只用网页：`releases/latest` 会跳到 `/releases/tag/vX.Y.Z`。
 /// 不查 GitHub 接口，接口限流（403/429）也不影响检查更新。
+/// 设置界面有一份同样的解析（settings-nsh/src/lib.rs 的 latest_tag_via_web），改这里时两处一起改。
 pub fn latest_release_tag() -> Option<String> {
     let output = Command::new("curl")
         .args([

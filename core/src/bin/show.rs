@@ -82,7 +82,7 @@ fn main() {
             "--legacy" => legacy = true,
             "-h" | "--help" => {
                 println!("archtype-show (--data <目录> | --lexicon <tsv>) [--lm <words.lm> | --no-lm] [--english <txt> | --no-english]");
-                println!("             [--max n] [--show n] [--context 文本] [--shuangpin 方案] [--scores] [--legacy] 拼音...");
+                println!("             [--nnlm <nnlm.bin>] [--max n] [--show n] [--context 文本] [--shuangpin 方案] [--scores] [--legacy] 拼音...");
                 println!("             [--no-typo] [--no-fuzzy-fallback] [--why]  关掉纠错 / 模糊音兜底；--why 标出拼音和是谁加的");
                 return;
             }

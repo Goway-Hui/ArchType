@@ -267,7 +267,7 @@ fn curl(url: &str, key: &str, body: Option<&str>, timeout: u32) -> Result<String
     use std::io::Write;
     let mut command = std::process::Command::new("curl");
     command
-        .arg("-sS")
+        .arg("-sSL")
         .arg("--fail")
         .arg("--max-time")
         .arg(timeout.to_string())
@@ -567,6 +567,30 @@ fn sha256_file(path: &str) -> Result<String, String> {
     Ok(format!("{:x}", hasher.finalize()))
 }
 
+/// 发布页上这个地址是不是真的有文件：跟随跳转发一次 HEAD，网络不通或 404 都算没有。
+fn url_ok(url: &str) -> bool {
+    if url.is_empty() {
+        return false;
+    }
+    std::process::Command::new("curl")
+        .args([
+            "-sS",
+            "-I",
+            "-L",
+            "--fail",
+            "--max-time",
+            "20",
+            "-A",
+            &format!("ArchType/{}", Config::version()),
+            "-o",
+            "/dev/null",
+            url,
+        ])
+        .status()
+        .map(|status| status.success())
+        .unwrap_or(false)
+}
+
 /// 后台线程：下载包 → 按 SHA256SUMS 校验 → 用 pkexec 交给包管理器安装。
 fn update_install_work(release: String) {
     let plan: serde_json::Value =
@@ -591,6 +615,22 @@ fn update_install_work(release: String) {
         .unwrap_or_else(|| {
             format!("https://github.com/Goway-Hui/ArchType/releases/download/v{version}/SHA256SUMS")
         });
+    // 只走网页时资产表是空的：下载前先确认发布页上真有这个包和 SHA256SUMS，
+    // 不然缺包时用户只会看到一句笼统的「下载失败」
+    for file in &files {
+        let url = file["url"].as_str().unwrap_or("");
+        if !url_ok(url) {
+            update_set_state(format!(
+                "error:发布页上没有 {}，请稍后重试或按安装说明手动更新",
+                file["name"].as_str().unwrap_or("安装包")
+            ));
+            return;
+        }
+    }
+    if !url_ok(&sums_url) {
+        update_set_state("error:发布页缺少 SHA256SUMS，暂不自动安装".to_string());
+        return;
+    }
     let sums_path = format!("{dir}/SHA256SUMS");
     if let Err(error) = update_download(&sums_url, &sums_path, 0) {
         update_set_state(format!("error:{error}"));
@@ -1247,6 +1287,7 @@ impl Config {
 
     /// 最新发布版的版本号（不带 v），只用网页：releases/latest 会跳到 /releases/tag/vX.Y.Z。
     /// 不查 GitHub 接口，限流（403/429）也不影响检查更新。
+    /// 命令行也有一份同样的解析（cli/src/net.rs 的 latest_release_tag），改这里时两处一起改。
     fn latest_tag_via_web() -> Result<String, String> {
         let output = std::process::Command::new("curl")
             .args([
@@ -1287,8 +1328,9 @@ impl Config {
             Err(error) => return json_error(&error),
         };
         let base = format!("https://github.com/Goway-Hui/ArchType/releases/download/v{tag}");
-        // 更新说明单独传成 RELEASE-NOTES.md；更早的版本没有这个文件，就没有说明
-        let notes: String = curl(&format!("{base}/RELEASE-NOTES.md"), "", None, 20)
+        // 更新说明单独传成 RELEASE-NOTES.md；更早的版本没有这个文件，就没有说明。
+        // 超时压到 5 秒：这个接口是同步调的，等满 20 秒时设置界面会一直不响应
+        let notes: String = curl(&format!("{base}/RELEASE-NOTES.md"), "", None, 5)
             .map(|text| text.chars().take(20000).collect())
             .unwrap_or_default();
         serde_json::json!({
