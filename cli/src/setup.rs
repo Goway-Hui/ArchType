@@ -62,8 +62,14 @@ fn setup_action(known: Option<bool>, im_active: &Option<String>) -> &'static str
 }
 
 fn ask_terminal(question: &str, assume_yes: bool) -> bool {
-    if assume_yes || !std::io::stdin().is_terminal() {
+    if assume_yes {
         return true;
+    }
+    if !std::io::stdin().is_terminal() {
+        // 非交互（脚本、CI、管道）时不能把「没人回答」当成「同意」：
+        // 默认不做需要确认的操作，调用方会打印「没做，请手动执行」
+        println!("{question}（非交互环境，默认不做；要执行请加 --yes）");
+        return false;
     }
     print!("{question} [Y/n] ");
     use std::io::Write;

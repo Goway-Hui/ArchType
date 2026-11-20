@@ -26,6 +26,9 @@ pub enum Action {
     Stop,
 }
 
+/// 长按模式最长录多久；松手事件丢失时的兜底
+const MAX_HOLD: Duration = Duration::from_secs(120);
+
 #[derive(Clone, Copy, Debug)]
 pub struct TriggerConfig {
     pub hold_threshold: Duration,
@@ -112,18 +115,28 @@ impl VoiceTrigger {
         }
     }
 
-    /// 周期调用；点按模式下静音超时则返回 Stop
+    /// 周期调用；点按模式下静音超时、长按模式下 key-up 丢失超时都返回 Stop
     pub fn tick(&mut self, now: Instant) -> Option<Action> {
-        if !self.recording || self.mode != Mode::Tap {
+        if !self.recording {
             return None;
         }
-        let last = self.last_voice.unwrap_or(now);
-        if now.saturating_duration_since(last) >= self.cfg.silence_timeout {
-            self.reset();
-            Some(Action::Stop)
-        } else {
-            None
+        if self.mode == Mode::Tap {
+            let last = self.last_voice.unwrap_or(now);
+            if now.saturating_duration_since(last) >= self.cfg.silence_timeout {
+                self.reset();
+                return Some(Action::Stop);
+            }
+            return None;
         }
+        // 长按模式靠松手结束；松手事件丢了（焦点切换、X11 抓键异常、Wayland 转发丢失）
+        // 时也要收尾，不能一直录下去
+        if let Some(pressed) = self.pressed_at {
+            if now.saturating_duration_since(pressed) >= MAX_HOLD {
+                self.reset();
+                return Some(Action::Stop);
+            }
+        }
+        None
     }
 
     fn reset(&mut self) {
@@ -244,5 +257,17 @@ mod tests {
         tr.on_down(t0);
         assert_eq!(tr.tick(t0 + Duration::from_secs(5)), None);
         assert!(tr.is_recording());
+    }
+
+    #[test]
+    fn hold_mode_stops_when_key_up_is_lost() {
+        // 松手事件丢了（焦点切换、抓键异常）也要收尾，不能一直录
+        let t0 = Instant::now();
+        let mut tr = VoiceTrigger::new(cfg());
+        tr.on_down(t0);
+        assert_eq!(tr.tick(t0 + Duration::from_secs(119)), None);
+        assert!(tr.is_recording());
+        assert_eq!(tr.tick(t0 + Duration::from_secs(121)), Some(Action::Stop));
+        assert!(!tr.is_recording());
     }
 }

@@ -262,9 +262,20 @@ fn newer_version(candidate: &str, current: &str) -> bool {
     false
 }
 
+/// 进程存活期间存在的临时文件（Drop 时删掉）。
+struct TempFile(std::path::PathBuf);
+
+impl Drop for TempFile {
+    fn drop(&mut self) {
+        let _ = fs::remove_file(&self.0);
+    }
+}
+
 /// 调一次 curl；body 走 stdin，出错时用 stderr 当消息。
+/// Key 通过 `-H @文件` 传入：直接写命令行的话，同机其他用户能从 `ps` / `/proc/<pid>/cmdline` 读到。
 fn curl(url: &str, key: &str, body: Option<&str>, timeout: u32) -> Result<String, String> {
     use std::io::Write;
+    use std::os::unix::fs::OpenOptionsExt;
     let mut command = std::process::Command::new("curl");
     command
         .arg("-sSL")
@@ -273,8 +284,26 @@ fn curl(url: &str, key: &str, body: Option<&str>, timeout: u32) -> Result<String
         .arg(timeout.to_string())
         .arg("-A")
         .arg(format!("ArchType/{}", Config::version()));
+    let mut _header = None;
     if !key.is_empty() {
-        command.arg("-H").arg(format!("Authorization: Bearer {key}"));
+        let nanos = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_nanos())
+            .unwrap_or(0);
+        let path = std::env::temp_dir().join(format!(
+            "archtype-curl-{}-{nanos}.hdr",
+            std::process::id()
+        ));
+        let mut file = fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .mode(0o600)
+            .open(&path)
+            .map_err(|error| format!("建不了临时文件：{error}"))?;
+        writeln!(file, "Authorization: Bearer {key}")
+            .map_err(|error| format!("写不了临时文件：{error}"))?;
+        command.arg("-H").arg(format!("@{}", path.display()));
+        _header = Some(TempFile(path));
     }
     if body.is_some() {
         command

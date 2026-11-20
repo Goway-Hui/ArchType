@@ -86,8 +86,11 @@ pub fn latest_release_tag() -> Option<String> {
 pub fn expected_digest(sums: &str, name: &str) -> Option<String> {
     for line in sums.lines() {
         let mut fields = line.split_whitespace();
-        let digest = fields.next()?;
-        let file = fields.next()?.trim_start_matches('*');
+        // 空行、注释行、字段不全的行直接跳过；以前用 `?` 会让整个查找提前返回 None
+        let (Some(digest), Some(file)) = (fields.next(), fields.next()) else {
+            continue;
+        };
+        let file = file.trim_start_matches('*');
         if file == name && digest.len() == 64 {
             return Some(digest.to_lowercase());
         }
@@ -115,5 +118,26 @@ pub fn human_size(bytes: u64) -> String {
         format!("{bytes} B")
     } else {
         format!("{value:.1} {}", UNITS[unit])
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn digest_skips_blank_and_malformed_lines() {
+        let sums = "\n# comment\nabc\n0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef  pkg.deb\n";
+        assert_eq!(
+            expected_digest(sums, "pkg.deb"),
+            Some("0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef".to_string())
+        );
+        assert_eq!(expected_digest("", "pkg.deb"), None);
+    }
+
+    #[test]
+    fn digest_accepts_binary_marker() {
+        let sums = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef *pkg.deb\n";
+        assert!(expected_digest(sums, "pkg.deb").is_some());
     }
 }
