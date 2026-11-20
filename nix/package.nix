@@ -34,14 +34,17 @@ let
     hash = "sha256-s1pK92Vz67HHtALFKF0zu7HOKzJEdwvvnpCCbD/PyKo=";
   };
 
-  # 图形设置界面（NSH）：直接用发版时 CI 打好的包，hash 跟着发版更新
+  # 图形设置界面（NSH）：直接用发版时 CI 打好的包。版本单独记（和 dataVersion 一样）：
+  # 包要发版之后才存在，跟着 ${version} 走的话一 bump 版本、发版那轮 Nix 任务就会去下
+  # 还没上传的资产。发版后由 nix-data-pr.sh 的自动 PR 更新这三行。
+  settingsVersion = "0.6.1";
   settingsAssets = {
     x86_64-linux = {
-      url = "https://github.com/Goway-Hui/ArchType/releases/download/v${version}/archtype-settings-nsh-${version}-linux-x86_64.tar.gz";
+      url = "https://github.com/Goway-Hui/ArchType/releases/download/v${settingsVersion}/archtype-settings-nsh-${settingsVersion}-linux-x86_64.tar.gz";
       hash = "sha256-GZ/Lb0J75bpQPbNJkQ9sUHqEiWtjpdknIDu6JPXckjo=";
     };
     aarch64-linux = {
-      url = "https://github.com/Goway-Hui/ArchType/releases/download/v${version}/archtype-settings-nsh-${version}-linux-aarch64.tar.gz";
+      url = "https://github.com/Goway-Hui/ArchType/releases/download/v${settingsVersion}/archtype-settings-nsh-${settingsVersion}-linux-aarch64.tar.gz";
       hash = "sha256-p2lnzQDVvz1QYbALAWsYEHgXPmWVlDwk/mxQCrNfY/U=";
     };
   };
