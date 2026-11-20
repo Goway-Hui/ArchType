@@ -2808,6 +2808,9 @@ const SINGLE_INITIAL_TOP: &[(&str, &str)] = &[
 
 /// 输入只是一个声母时，把 [`SINGLE_INITIAL_TOP`] 里的字挪到第一个（在选过最多的字前面；
 /// 自定义词、自定义编码之后还会排到它前面）。候选里没有这个字就不动。
+///
+/// 第一个已经是常选的字（[`promote_picked`] 按 [`strongly_picked`] 提上来的，比如这几天一直在打「赖」）
+/// 时不动：首选跟着用户最近的习惯变，不再死钉着「了」（#156）。
 fn pin_single_initial(input: &str, candidates: &mut Vec<Candidate>) {
     let Some(&(_, top)) = SINGLE_INITIAL_TOP.iter().find(|(key, _)| *key == input) else {
         return;
@@ -2816,6 +2819,24 @@ fn pin_single_initial(input: &str, candidates: &mut Vec<Candidate>) {
         .iter()
         .position(|c| c.text == top && c.words.len() == 1)
     {
+        // 只打一个声母时候选都是简拼出来的（is_picked 不认），这里单独看：最近常选的单字排第一
+        let strong = candidates
+            .iter()
+            .enumerate()
+            .filter(|(j, c)| {
+                *j != i
+                    && c.text.chars().count() == 1
+                    && c.features.typo_count == 0.0
+                    && c.features.history_use_count >= STRONG_PICK_HEAT
+                    && c.features.history_use_count >= 2.0 * candidates[i].features.history_use_count.max(0.5)
+            })
+            .max_by(|a, b| a.1.features.history_use_count.total_cmp(&b.1.features.history_use_count))
+            .map(|(j, _)| j);
+        if let Some(j) = strong {
+            let c = candidates.remove(j);
+            candidates.insert(0, c);
+            return;
+        }
         let pinned = candidates.remove(i);
         candidates.insert(0, pinned);
     }
@@ -2825,9 +2846,11 @@ fn pin_single_initial(input: &str, candidates: &mut Vec<Candidate>) {
 /// SingleUserWordCanbeSecond）。
 ///
 /// - 词和整句：选得最多的那个放第一（第一个候选被选得更多时不动）。
-/// - 单字：第一个候选不动——偶尔选一次生僻字，不该让它以后一直顶掉这个音节最常用的字；
+/// - 单字：第一个候选一般不动——偶尔选一次生僻字，不该让它以后一直顶掉这个音节最常用的字；
 ///   选过的字按热度从第二位起排（#161：找过一次的字下次就在第一页，不只提选得最多的那一个），
 ///   最多 [`PICKED_CHARS_MAX`] 个，免得几次手滑把常用字挤到第二页。
+///   但最近常选的字（[`strongly_picked`]：选了好几次、比第一个选得多得多）排第一，首选跟着习惯变（#156）；
+///   热度按 30 天半衰，不再选了就慢慢退回去，又选回原来的字时更快。
 ///   两样都有时（xian 选过「西安」也选过「先」）词照样放第一，字跟在后面。
 ///
 /// 只看「这个候选本身被选过」（不算末词命中），而且要精确匹配（不是纠错、补全出来的）。
@@ -2867,7 +2890,8 @@ fn promote_picked(candidates: &mut Vec<Candidate>) {
                 rest.push(c);
             }
         }
-        let at = rest.len().min(1);
+        let first_strong = rest.first().is_some_and(|first| strongly_picked(&moved[0], first));
+        let at = if first_strong { 0 } else { rest.len().min(1) };
         rest.splice(at..at, moved);
         *candidates = rest;
         changed = true;
@@ -2879,6 +2903,17 @@ fn promote_picked(candidates: &mut Vec<Candidate>) {
 
 /// [`promote_picked`]：选过的单字最多提前几个。
 const PICKED_CHARS_MAX: usize = 3;
+
+/// 一个字选了这么多次（衰减过的热度）以后，才可能顶掉第一个候选（[`strongly_picked`]）。
+/// 选个三五次只排第二（#161 找过的字在第一页就行）；连着打一阵子（礼单上全是「赖」）才换首选（#156）。
+const STRONG_PICK_HEAT: f32 = 6.0;
+
+/// `picked` 是最近常选的字，该排到 `first` 前面：热度到 [`STRONG_PICK_HEAT`]，而且是 `first` 的两倍以上
+/// （`first` 自己也常选时就不换，免得两个字来回跳）。误选一两次不算。
+fn strongly_picked(picked: &Candidate, first: &Candidate) -> bool {
+    let heat = picked.features.history_use_count;
+    is_picked(picked) && heat >= STRONG_PICK_HEAT && heat >= 2.0 * first.features.history_use_count.max(0.5)
+}
 
 /// 这个候选本身被精确选过（不是靠末词命中、纠错或补全出来的），而且热度够
 /// [`learn::MIN_PICK_HEAT`]（误选一次、过了一个月就不算）。
@@ -5295,6 +5330,34 @@ mod tests {
         }
         let l = texts("l");
         assert_eq!(&l[..2], ["了", "来"], "选过的字排第二，第一个不变：{l:?}");
+    }
+
+    #[test]
+    fn strongly_picked_char_becomes_first_and_goes_back() {
+        // #156：这几天一直在打「赖」（礼单），l 的首选跟着变成「赖」；不再选它、又选回「了」以后回去
+        let e = engine(concat!(
+            "lai\t来\t14837007\n",
+            "le\t了\t3481243\n",
+            "lai\t赖\t200000\n",
+            "ma\t吗\t100000\n",
+            "ma\t骂\t1\n",
+        ));
+        let texts = |raw: &str, at: u64| e.input_at(raw, at).into_iter().map(|c| c.text).collect::<Vec<_>>();
+        for t in 0..8 {
+            e.record_selection_at("赖", t);
+        }
+        assert_eq!(texts("l", 100)[0], "赖", "{:?}", texts("l", 100));
+        assert_eq!(texts("lai", 100)[0], "赖", "打全的拼音也一样");
+        // 又常选「了」：「赖」不再是它的两倍以上，首选回到「了」
+        for t in 200..205 {
+            e.record_selection_at("了", t);
+        }
+        assert_eq!(texts("l", 300)[0], "了", "{:?}", texts("l", 300));
+        // 选几次的生僻字还是排第二（#161）
+        for t in 0..4 {
+            e.record_selection_at("骂", t);
+        }
+        assert_eq!(&texts("ma", 100)[..2], ["吗", "骂"]);
     }
 
     #[test]
