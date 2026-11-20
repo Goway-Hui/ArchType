@@ -30,7 +30,8 @@ fn unzip(args: &[&str]) -> Result<()> {
 
 /// 解出模型与词表到 `dir`：先写临时目录并试加载，成功后整体改名。
 pub fn unpack(pack: &Path, dir: &Path) -> Result<()> {
-    let tmp = dir.with_extension("tmp");
+    // with_extension 会替换已有扩展名（foo.bar → foo.tmp）；这里是在目录名后追加
+    let tmp = std::path::PathBuf::from(format!("{}.tmp", dir.display()));
     let _ = fs::remove_dir_all(&tmp);
     fs::create_dir_all(&tmp)?;
     let pack = pack.to_str().context("路径含非 UTF-8 字符")?;

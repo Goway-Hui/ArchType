@@ -40,7 +40,9 @@ pub struct Resampler {
 
 impl Resampler {
     pub fn new(from: u32, to: u32) -> Self {
-        assert!(from > 0 && to > 0);
+        // 设备偶尔报 0 采样率：退回目标采样率（恒等重采样），别 panic 掉整个采集
+        let from = if from == 0 { TARGET_RATE } else { from };
+        let to = if to == 0 { TARGET_RATE } else { to };
         // 截止频率取目标奈奎斯特频率的 90%
         let lowpass = (from > to).then(|| Lowpass::new(0.45 * to as f32 / from as f32, 63));
         Self {

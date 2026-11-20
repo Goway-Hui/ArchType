@@ -117,6 +117,12 @@ if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/../core/data/s2t.tsv")
     install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/../core/data/s2t.tsv"
         DESTINATION "${CMAKE_INSTALL_DATADIR}/archtype"
     )
+    # s2t.tsv 由 OpenCC 的字符/词组表生成（Apache-2.0）：许可证跟着数据一起装
+    if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/../core/data/OPENCC-LICENSE")
+        install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/../core/data/OPENCC-LICENSE"
+            DESTINATION "${CMAKE_INSTALL_DATADIR}/doc/archtype"
+        )
+    endif()
 endif()
 
 # 真实词库、英文词表、词级语言模型、整句增强模型、五笔码表：scripts/make-data.sh、make-wubi.sh 生成在 dist/data，

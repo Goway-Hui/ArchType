@@ -863,7 +863,6 @@ void runCases(Instance &instance) {
     type(ic.get(), "shi");
     send(ic.get(), Key(FcitxKey_KP_3));
     {
-        const auto p1 = page(ic.get());
         check(ic->committed.size() > 0, "小键盘数字选词，实际 " + ic->committed);
     }
     auto horizontalList = [&]() {

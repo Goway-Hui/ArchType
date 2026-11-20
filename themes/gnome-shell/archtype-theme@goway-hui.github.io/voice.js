@@ -35,7 +35,6 @@ const BAR_W = 3;
 const BAR_PITCH = 5.5;
 const BAR_MIN = 4;
 const BAR_MAX = 30;
-const BARS_W = (BAR_COUNT - 1) * BAR_PITCH + BAR_W;
 const BARS_H = 34;
 
 const POP_MS = 320;           // 弹出
@@ -107,10 +106,19 @@ export class VoiceOverlay {
             GLib.source_remove(this._hideTimeout);
             this._hideTimeout = 0;
         }
-        this._timeline.stop();
-        this._pill.destroy();
-        this._timeline = null;
-        this._caret.destroy();
+        // 幂等：窗口关闭和扩展禁用都会走这里，别对已经销毁的 actor 再 destroy
+        if (this._timeline) {
+            this._timeline.stop();
+            this._timeline = null;
+        }
+        if (this._pill) {
+            this._pill.destroy();
+            this._pill = null;
+        }
+        if (this._caret) {
+            this._caret.destroy();
+            this._caret = null;
+        }
     }
 
     _build() {

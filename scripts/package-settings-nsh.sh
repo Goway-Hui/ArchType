@@ -9,6 +9,10 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 
 VERSION=${1:?用法: package-settings-nsh.sh <版本> [输出目录]}
+if [[ ! "$VERSION" =~ ^[0-9][0-9A-Za-z.+~_-]*$ ]]; then
+  echo "版本号格式不对：$VERSION" >&2
+  exit 1
+fi
 OUT=$(realpath -m "${2:-dist/pkg}")
 mkdir -p "$OUT"
 

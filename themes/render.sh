@@ -3,6 +3,7 @@
 # 用法：themes/render.sh        需要 rsvg-convert（apt install librsvg2-bin）
 set -euo pipefail
 cd "$(dirname "$0")"
+command -v rsvg-convert >/dev/null || { echo "需要 rsvg-convert（apt install librsvg2-bin）" >&2; exit 1; }
 render() { # <svg 名> <主题目录> <png 名>
   rsvg-convert "src/$1.svg" -o "fcitx5/$2/$3.png"
 }

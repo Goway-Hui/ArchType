@@ -300,7 +300,10 @@ impl Nnlm {
         let mut total = 0.0f64;
         for &tok in tokens {
             self.ensure(&mut cache, &seq);
-            let state = cache.states.get(&seq).expect("刚算过");
+            // 缓存被清（容量上限）之类的极端情况：和同文件其它取锁失败一样降级，别 panic
+            let Some(state) = cache.states.get(&seq) else {
+                return total;
+            };
             total += (self.logit(tok, &state.y) - state.lse) as f64;
             seq.push(tok);
         }

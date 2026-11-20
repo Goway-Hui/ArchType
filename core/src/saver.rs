@@ -163,9 +163,19 @@ fn run(shared: &Shared) {
 
 /// 起不了线程时在交活的线程上写。
 fn run_now(shared: &Shared) {
+    // 和线程路径一样先占住 writing：否则另一个线程趁这会儿进来会并发写同一批文件
+    {
+        let mut state = shared.lock();
+        if state.writing {
+            return;
+        }
+        state.writing = true;
+    }
     let jobs = std::mem::take(&mut shared.lock().pending);
     let errors = write_all(jobs);
-    shared.lock().errors.extend(errors);
+    let mut state = shared.lock();
+    state.writing = false;
+    state.errors.extend(errors);
     shared.idle.notify_all();
 }
 

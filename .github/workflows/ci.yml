@@ -36,6 +36,7 @@ env:
 jobs:
   installer:
     name: 安装与更新回归
+    timeout-minutes: 20
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
@@ -89,7 +90,8 @@ jobs:
           NSH_VERSION: v0.6.0
         run: |
           if [ "${{ steps.nsh-cli.outputs.cache-hit }}" != "true" ]; then
-            curl -fsSL https://nsh.dev/install.sh | sh
+            curl -fsSL https://nsh.dev/install.sh -o "$RUNNER_TEMP/nsh-install.sh"
+            sh "$RUNNER_TEMP/nsh-install.sh"
           fi
           echo "$HOME/.local/bin" >> "$GITHUB_PATH"
       - name: 类型检查与无头测试
@@ -118,6 +120,7 @@ jobs:
 
   core:
     name: Rust 核心测试
+    timeout-minutes: 20
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
@@ -138,6 +141,7 @@ jobs:
 
   data:
     name: 词库（rime-ice）
+    timeout-minutes: 40
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
@@ -167,6 +171,7 @@ jobs:
   # 可选的万象词库包（不进安装包，用户在设置里下载切换），随发布上传
   data-wanxiang:
     name: 词库（万象，可选）
+    timeout-minutes: 30
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
@@ -187,6 +192,7 @@ jobs:
   # 本地跑同一套、改了排序怎么更新基线：tools/eval/README.md。
   ranking-eval:
     name: 排序评测（真实词库）
+    timeout-minutes: 30
     needs: data
     runs-on: ubuntu-24.04
     steps:
@@ -227,6 +233,7 @@ jobs:
 
   addon:
     name: 插件 · ${{ matrix.distro }} · ${{ matrix.arch }}
+    timeout-minutes: 60
     needs: [data, data-wanxiang, settings]
     runs-on: ${{ matrix.arch == 'arm64' && 'ubuntu-24.04-arm' || 'ubuntu-24.04' }}
     container: ${{ matrix.image }}
@@ -333,9 +340,11 @@ jobs:
 
   arch:
     name: 插件 · archlinux
+    timeout-minutes: 40
     needs: [data, settings]
     runs-on: ubuntu-24.04
-    container: archlinux:latest
+    # 固定到具体构建：latest 漂移会让「某天突然编不过」无法复现；刷新时改这里（hub 上是 base-devel-<日期>）
+    container: archlinux:base-devel-20261108.0.623074
     defaults:
       run:
         shell: bash
@@ -417,6 +426,7 @@ jobs:
 
   fedora:
     name: 插件 · fedora${{ matrix.version }} · ${{ matrix.arch }}
+    timeout-minutes: 40
     needs: [data, settings]
     runs-on: ${{ matrix.arch == 'aarch64' && 'ubuntu-24.04-arm' || 'ubuntu-24.04' }}
     container: fedora:${{ matrix.version }}
@@ -513,8 +523,10 @@ jobs:
 
   opensuse:
     name: 源码安装 · openSUSE Tumbleweed
+    timeout-minutes: 40
     needs: data
     runs-on: ubuntu-24.04
+    # tumbleweed 在 Docker Hub 上只有 latest（没有日期 tag），只能跟着滚动
     container: opensuse/tumbleweed:latest
     defaults:
       run:
@@ -557,6 +569,7 @@ jobs:
     # flake.lock 固定的是 nixos-unstable；用户一般用 inputs.nixpkgs.follows 跟自己系统的 nixpkgs，
     # 所以稳定版也要能编。新稳定版出来（每年 5 月、11 月）时把 nixos-26.05 换成新的。
     name: Nix · ${{ matrix.nixpkgs }} · ${{ matrix.system }}
+    timeout-minutes: 40
     runs-on: ${{ matrix.system == 'aarch64-linux' && 'ubuntu-24.04-arm' || 'ubuntu-24.04' }}
     strategy:
       fail-fast: false
@@ -583,6 +596,7 @@ jobs:
 
   release:
     name: 发布
+    timeout-minutes: 20
     if: startsWith(github.ref, 'refs/tags/v')
     needs: [installer, core, data, data-wanxiang, ranking-eval, addon, arch, fedora, opensuse, nix]
     runs-on: ubuntu-24.04
@@ -627,8 +641,12 @@ jobs:
       - name: 校验和
         run: |
           cd dist
-          sha256sum -- *.deb *.rpm *.pkg.tar.zst *.tar.gz > SHA256SUMS
-          (cd settings && sha256sum -- *.tar.gz >> ../SHA256SUMS)
+          # 某一类包没产出时，裸 glob 会被当成文件名：用数组 + nullglob，并确认至少有一个
+          shopt -s nullglob
+          files=(*.deb *.rpm *.pkg.tar.zst *.tar.gz)
+          ((${#files[@]})) || { echo "没有可发布的包" >&2; exit 1; }
+          sha256sum -- "${files[@]}" > SHA256SUMS
+          (cd settings && files=(*.tar.gz) && ((${#files[@]})) && sha256sum -- "${files[@]}") >> SHA256SUMS
           cat SHA256SUMS
       - name: 发布到 GitHub Release
         env:

@@ -1,7 +1,7 @@
 /*
  * ArchType 主题：给 Input Method Panel（kimpanel@kde.org）画的候选框换颜色。
  * 只用 kimpanel 自己的样式类，不影响 GNOME Shell 的其它菜单。
- * 主色取自 ArchType 图标：#2F6FED。
+ * 主色取自 ArchType 图标：#2F6FED；改色时图标、themes/fcitx5 和 docs/images 里的截图要一起改。
  * Yaru 给 .popup-menu-item:hover 写了 !important，这里的背景色也得带上才盖得住。
  */
 

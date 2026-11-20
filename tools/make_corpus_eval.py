@@ -39,6 +39,8 @@ def main():
     ap.add_argument('--max-chars', type=int, default=20)
     ap.add_argument('--seed', type=int, default=20261114)
     args = ap.parse_args()
+    if not args.tatoeba and not args.text:
+        ap.error("--tatoeba 与 --text 至少给一个")
 
     try:
         import opencc

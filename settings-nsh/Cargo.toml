@@ -5,6 +5,7 @@ edition = "2024"
 publish = false
 
 [workspace]
+# 独立的空工作区：nsh 管这个 crate 的构建，不跟根工作区共用版本号、lockfile 与依赖解析
 
 [dependencies]
 nsh-core = "0.6.0"

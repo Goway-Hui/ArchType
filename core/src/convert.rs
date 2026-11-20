@@ -39,7 +39,7 @@ impl Converter {
         self.phrases.len()
     }
 
-    /// 从 TSV 文本加载：简体<TAB>繁体。以 # 开头的是注释。
+    /// 从 TSV 文本加载：简体<TAB>繁体（只取前两列，多余的列忽略）。以 # 开头的是注释。
     ///
     /// 两边都是单字的行进字符表，其余进词组表。
     pub fn from_tsv_str(data: &str) -> Result<Self> {

@@ -50,11 +50,14 @@ fn version_key(version: &str) -> Vec<u64> {
         .collect()
 }
 
-/// 发布页上最新的万象词库包：(文件名, 下载地址)。按 spec 取版本最大的，不是第一个匹配的。
-fn latest_asset() -> Result<(String, String), String> {
+/// 读一次发布页（资产列表与下载地址都用它，别每次安装请求两遍）。
+fn release() -> Result<serde_json::Value, String> {
     let text = net::fetch(RELEASE_API)?;
-    let value: serde_json::Value =
-        serde_json::from_str(&text).map_err(|_| "看不懂 GitHub 的返回".to_string())?;
+    serde_json::from_str(&text).map_err(|_| "看不懂 GitHub 的返回".to_string())
+}
+
+/// 发布页上最新的万象词库包：(文件名, 下载地址)。按 spec 取版本最大的，不是第一个匹配的。
+fn latest_asset(value: &serde_json::Value) -> Result<(String, String), String> {
     let assets = value["assets"]
         .as_array()
         .ok_or_else(|| "发布页上没有资产".to_string())?;
@@ -78,10 +81,7 @@ fn latest_asset() -> Result<(String, String), String> {
         .ok_or_else(|| "最新版的发布页上还没有万象词库包".to_string())
 }
 
-fn sums_url() -> Result<String, String> {
-    let text = net::fetch(RELEASE_API)?;
-    let value: serde_json::Value =
-        serde_json::from_str(&text).map_err(|_| "看不懂 GitHub 的返回".to_string())?;
+fn sums_url(value: &serde_json::Value) -> Result<String, String> {
     value["assets"]
         .as_array()
         .and_then(|assets| {
@@ -96,13 +96,14 @@ fn sums_url() -> Result<String, String> {
 
 /// 下载并安装万象词库，返回版本号。
 pub fn install_wanxiang() -> Result<String, String> {
-    let (name, url) = latest_asset()?;
+    let release = release()?;
+    let (name, url) = latest_asset(&release)?;
     println!("下载 {name}");
     let work = format!("{}/updates/lexicon", config::data_dir());
     let _ = std::fs::create_dir_all(&work);
     let path = format!("{work}/{name}");
     net::download(&url, &path)?;
-    let sums = net::fetch(&sums_url()?)?;
+    let sums = net::fetch(&sums_url(&release)?)?;
     let expected = net::expected_digest(&sums, &name)
         .ok_or_else(|| format!("SHA256SUMS 里没有 {name}"))?;
     let actual = net::sha256(&path)?;

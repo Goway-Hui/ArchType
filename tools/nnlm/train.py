@@ -112,9 +112,15 @@ class Stream:
         self.train = starts[:cut][starts[:cut] + seq + 1 <= length]
         self.valid = starts[cut:][starts[cut:] + seq + 1 <= length]
         self.seq = seq
+        if len(self.train) == 0:
+            raise SystemExit(
+                f"训练池为空：语料太短（starts={len(starts)}，seq={seq}，holdout={holdout}）"
+            )
 
     def batch(self, n, rng, valid=False):
         pool = self.valid if valid else self.train
+        if len(pool) == 0:
+            raise SystemExit("验证池为空：语料太短，调小 --holdout 或换更长的语料")
         picks = pool[rng.integers(0, len(pool), n)]
         rows = np.stack([self.data[p:p + self.seq + 1] for p in picks]).astype(np.int64)
         return torch.from_numpy(rows)

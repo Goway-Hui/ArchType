@@ -447,7 +447,9 @@ pub fn load_history_lines(
                     loaded += 1;
                 }
             }
-            ["n", word, pinyin, at] if !word.is_empty() && !pinyin.is_empty() => {
+            ["n", word, pinyin, at]
+                if !word.is_empty() && !pinyin.is_empty() && !plain_ascii(word) =>
+            {
                 if let Ok(at_ms) = at.parse() {
                     let new = NewWord {
                         pinyin: (*pinyin).to_string(),

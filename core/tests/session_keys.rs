@@ -18,6 +18,11 @@ use archtype_core::lm::BigramLm;
 
 /// clipboard 是进程级全局状态：用到它的测试串行跑，免得并行时互相清空。
 static CLIPBOARD_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+/// ISO_Next_Group（键盘布局切换键）。
+const ISO_NEXT_GROUP: u32 = 0xfe08;
+/// Control_L。
+const CONTROL_L: u32 = 0xffe3;
 use archtype_core::session::{
     keysym, modifier, ArrowKeys, CandidateKind, Config, Frame, Key, Panel, PunctStyle, Selection,
     Session,
@@ -1712,7 +1717,7 @@ fn shift_tap_rules() {
     // 松开时按键码认：同一个键松开时翻成了别的符号也算
     let mut session = with(engine());
     session.key(&shift(keysym::SHIFT_L, false, 1000));
-    let other = Key { keysym: 0xfe08, code: 50, release: true, time_ms: 1100, ..Key::default() };
+    let other = Key { keysym: ISO_NEXT_GROUP, code: 50, release: true, time_ms: 1100, ..Key::default() };
     assert!(session.key(&other).mode_changed, "ISO_Next_Group 松开");
     // 只用右 Shift：左边的不算
     let mut session = with(engine());
@@ -3079,7 +3084,7 @@ fn backspace_right_after_commit_unlearns_it() {
     // 单按修饰键不算别的键（松开也不算，type_keys 每个键都松开）
     type_keys(&mut session, "kaixin<sp>");
     assert_eq!(engine.history_count("开心"), 3);
-    session.key(&Key::press(0xffe3)); // Control_L 按下
+    session.key(&Key::press(CONTROL_L)); // Control_L 按下
     type_keys(&mut session, "<bs>");
     assert_eq!(engine.history_count("开心"), 2);
 
@@ -3159,8 +3164,9 @@ fn associating(engine: &'static Engine) -> Session<'static> {
     session
 }
 
+/// 同 [`shown_texts`]：保留旧名字给后面的用例用，别各写一份。
 fn shown_texts_of(session: &mut Session) -> Vec<String> {
-    session.shown().iter().map(|c| c.text.clone()).collect()
+    shown_texts(session)
 }
 
 #[test]

@@ -10,11 +10,13 @@ pub const SAMPLE_RATE: u32 = 16_000;
 
 /// 写 16kHz 单声道 16bit WAV。
 pub fn write_wav<P: AsRef<Path>>(path: P, samples: &[i16]) -> Result<()> {
-    let data_len = (samples.len() * 2) as u32;
+    // RIFF 的长度字段是 32 位：样本太多时直接报错，别让 `as u32` 静默截断
+    let data_len = u32::try_from(samples.len().saturating_mul(2)).context("WAV 太大")?;
+    let riff_len = data_len.checked_add(36).context("WAV 太大")?;
     let mut f = File::create(path.as_ref())
         .with_context(|| format!("创建 WAV 失败: {}", path.as_ref().display()))?;
     f.write_all(b"RIFF")?;
-    f.write_all(&(36 + data_len).to_le_bytes())?;
+    f.write_all(&riff_len.to_le_bytes())?;
     f.write_all(b"WAVEfmt ")?;
     f.write_all(&16u32.to_le_bytes())?;
     f.write_all(&1u16.to_le_bytes())?;

@@ -2184,14 +2184,6 @@ void ArchtypeEngine::commitCandidate(fcitx::InputContext *ic,
     updateInputPanel(ic, state);
 }
 
-void ArchtypeEngine::commitCurrent(fcitx::InputContext *ic, ArchtypeState *state) {
-    // 和按空格一样：上屏光标处的候选，没有候选时上屏原始输入
-    const ArchtypeFrame *frame = sessionKey(ic, state, fcitx::Key(FcitxKey_space));
-    if (frame && frame->handled) {
-        applySessionFrame(ic, state, frame);
-    }
-}
-
 void ArchtypeEngine::keyEvent(const fcitx::InputMethodEntry & /*entry*/,
                              fcitx::KeyEvent &event) {
     auto *ic = event.inputContext();

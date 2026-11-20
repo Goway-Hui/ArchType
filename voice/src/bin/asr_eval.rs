@@ -88,6 +88,7 @@ fn main() {
     let mut first_ms = vec![0f64; partials.len()];
     let mut total = 0usize;
     let mut items = 0usize;
+    let mut skipped = 0usize;
 
     for line in text
         .lines()
@@ -99,6 +100,7 @@ fn main() {
         let path = format!("{audio}/{name}.wav");
         let Ok((16_000, 1, pcm)) = wav::read_wav(&path) else {
             eprintln!("跳过 {path}");
+            skipped += 1;
             continue;
         };
         let r = normalize(reference);
@@ -145,6 +147,10 @@ fn main() {
             }
         }
         println!("{row}");
+    }
+    if items == 0 {
+        eprintln!("没有可用样本（{skipped} 个被跳过：采样率/声道不是 16kHz 单声道）");
+        std::process::exit(1);
     }
     println!("\n{items} 条，参考 {total} 字");
     for (k, (label, _)) in modes.iter().enumerate() {

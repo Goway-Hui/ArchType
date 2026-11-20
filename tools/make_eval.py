@@ -117,6 +117,8 @@ def main():
         help="取同音词里第几高频的作为期望（2/3 用来测候选广度）",
     )
     args = ap.parse_args()
+    if args.count <= 0:
+        ap.error("--count 要正整数")
 
     per_pinyin = defaultdict(list)  # pinyin -> [(freq, word)]
     rows = []

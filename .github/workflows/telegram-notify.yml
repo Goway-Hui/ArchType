@@ -28,7 +28,8 @@ permissions:
 jobs:
   notify:
     runs-on: ubuntu-latest
-    if: ${{ vars.TELEGRAM_CHAT_ID != '' }}
+    # PR 评论脚本本来就会跳过；这里提前挡住，别为每条 PR 评论拉起一个 runner
+    if: ${{ vars.TELEGRAM_CHAT_ID != '' && (github.event_name != 'issue_comment' || !github.event.issue.pull_request) }}
     steps:
       - uses: actions/checkout@v4
       - name: Render & send to Telegram

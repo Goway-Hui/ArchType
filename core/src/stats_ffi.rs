@@ -152,6 +152,10 @@ pub unsafe extern "C" fn archtype_stats_clear(path: *const c_char) -> c_int {
         set_last_error("stats path is null or not utf8");
         return -1;
     };
+    if path.trim().is_empty() {
+        set_last_error("stats path is empty");
+        return -1;
+    }
     match stats::clear(std::path::Path::new(&path)) {
         Ok(()) => 0,
         Err(error) => {

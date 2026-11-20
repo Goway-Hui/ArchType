@@ -61,8 +61,8 @@ impl CommandSink {
         }
     }
 
-    fn run(mut cmd: Vec<String>, extra: &str) {
-        if let Some((bin, args)) = cmd.split_first_mut() {
+    fn run(cmd: &[String], extra: &str) {
+        if let Some((bin, args)) = cmd.split_first() {
             let mut command = std::process::Command::new(bin);
             command.args(args.iter());
             // 空串不能作为参数传进去，否则 ydotool key 14:1 14:0 "" 会报错
@@ -76,11 +76,11 @@ impl CommandSink {
 
 impl TextSink for CommandSink {
     fn insert(&mut self, text: &str) {
-        Self::run(self.type_cmd.clone(), text);
+        Self::run(&self.type_cmd, text);
     }
     fn backspace(&mut self, count: usize) {
         for _ in 0..count {
-            Self::run(self.backspace_cmd.clone(), "");
+            Self::run(&self.backspace_cmd, "");
         }
     }
 }

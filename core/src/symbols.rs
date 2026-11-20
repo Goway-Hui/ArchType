@@ -35,7 +35,7 @@ pub const SYMBOLS: &[Symbol] = &[
     s("》", &["shuminghao", "书名号"]),
     s("——", &["pozhehao", "破折号"]),
     s("……", &["shengluehao", "省略号"]),
-    s("·", &["jianhaohao", "间隔号"]),
+    s("·", &["jiangehao", "间隔号"]),
     s("～", &["bolanghao", "波浪号"]),
     s("￥", &["renminbi", "人民币", "yuan"]),
     s("＄", &["meiyuan", "美元"]),

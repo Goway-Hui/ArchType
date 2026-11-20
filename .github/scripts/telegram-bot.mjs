@@ -211,7 +211,10 @@ async function onCallback(cb) {
   const tries = Number(triesRaw) || 0;
 
   if (verdict === 'ok') {
-    const r = await tg('approveChatJoinRequest', { chat_id: chatId, user_id: userId });
+    const r = await tg('approveChatJoinRequest', {
+      chat_id: Number(chatId),
+      user_id: Number(userId),
+    });
     // 重复处理（作业被取消导致更新重放）时 Telegram 会报错，属正常，不当失败
     await tg('answerCallbackQuery', { callback_query_id: cb.id, text: r.ok ? '验证通过 ✅' : '已处理过' });
     return tg('editMessageText', {
@@ -223,7 +226,7 @@ async function onCallback(cb) {
 
   const used = tries + 1;
   if (used >= MAX_TRIES) {
-    await tg('declineChatJoinRequest', { chat_id: chatId, user_id: userId });
+    await tg('declineChatJoinRequest', { chat_id: Number(chatId), user_id: Number(userId) });
     await tg('answerCallbackQuery', { callback_query_id: cb.id, text: '答错次数过多' });
     return tg('editMessageText', {
       chat_id: cb.message.chat.id,

@@ -5,7 +5,7 @@
 
 use crate::Options;
 use anyhow::{anyhow, Context, Result};
-use std::sync::mpsc::{channel, Receiver, Sender};
+use std::sync::mpsc::{channel, Sender};
 use std::time::{Duration, Instant};
 use archtype_voice::{
     asr::{MockChannel, MultiChannel, ProcessChannel},
@@ -128,7 +128,9 @@ pub fn build_channel(opt: &Options) -> Result<MultiChannel> {
         }
         "cmd" => match opt.asr_cmd.as_deref() {
             Some(cmd) if !cmd.trim().is_empty() => {
-                println!("识别渠道：外部命令 {cmd}");
+                // 只打印程序名：参数里可能有 API key/token，别写进日志
+                let program = cmd.split_whitespace().next().unwrap_or("cmd");
+                println!("识别渠道：外部命令 {program}（参数不打印）");
                 Ok(MultiChannel::new(vec![Box::new(
                     ProcessChannel::from_command_line("cmd", cmd),
                 )]))
@@ -298,6 +300,3 @@ fn hotkey_loop(name: &str, tx: Sender<KeyMsg>, ready: Sender<Result<()>>) -> Res
         }
     }
 }
-
-#[allow(dead_code)]
-fn _unused(_: Receiver<Vec<i16>>) {}

@@ -17,8 +17,9 @@ fn context_does_not_leak() {
     let e = engine("xian\t先\t50000\nxi an\t西安\t1000\n");
     e.set_context("我");
     // 没有 LM 时上下文不起作用，但也不该把结果搞坏
-    assert!(!e.input("xian").is_empty());
-    let before = e.input("xian")[0].text.clone();
+    let with_context = e.input("xian");
+    assert!(!with_context.is_empty());
+    let before = with_context[0].text.clone();
     e.set_context("");
     assert_eq!(e.input("xian")[0].text, before);
 }
@@ -45,10 +46,11 @@ fn learned_word_survives_save_load() {
         let e = Engine::new(lexicon, Arc::new(BigramLm::default()));
         let loaded = e.load_user_dict(&path).expect("加载用户词库失败");
         assert_eq!(loaded, 1);
+        let found = e.input("ate");
         assert!(
-            e.input("ate").iter().any(|c| c.text == "阿特"),
+            found.iter().any(|c| c.text == "阿特"),
             "重启后学到的词应当还在: {:?}",
-            e.input("ate").iter().map(|c| &c.text).collect::<Vec<_>>()
+            found.iter().map(|c| &c.text).collect::<Vec<_>>()
         );
     }
     let _ = std::fs::remove_file(&path);

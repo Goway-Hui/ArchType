@@ -302,8 +302,20 @@ fn main() {
                     .unwrap_or(domain_lm_weight)
             }
             "--arpa" => arpa_path = Some(value(&mut i, "--arpa")),
-            "--beam" => beam = value(&mut i, "--beam").parse().ok(),
-            "--max" => max_candidates = value(&mut i, "--max").parse().ok(),
+            "--beam" => {
+                let raw = value(&mut i, "--beam");
+                beam = match raw.parse() {
+                    Ok(n) => Some(n),
+                    Err(_) => fail("--beam 要一个正整数"),
+                };
+            }
+            "--max" => {
+                let raw = value(&mut i, "--max");
+                max_candidates = match raw.parse() {
+                    Ok(n) => Some(n),
+                    Err(_) => fail("--max 要一个正整数"),
+                };
+            }
             "--k" => top_k = value(&mut i, "--k").parse().unwrap_or(3).max(1),
             "--weights" => {
                 let spec = value(&mut i, "--weights");

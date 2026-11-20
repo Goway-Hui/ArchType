@@ -825,12 +825,6 @@ const tips: [string, string][] = [
 
 const issuesUrl = "https://github.com/Goway-Hui/ArchType/issues/new";
 
-const inputSchemeItems = [
-  { value: "Quanpin", title: "拼音输入" },
-  { value: "Shuangpin", title: "双拼输入" },
-  { value: "Wubi86", title: "五笔输入" },
-];
-
 const shuangpinItems = [
   { value: "Ziranma", title: "自然码" },
   { value: "Xiaohe", title: "小鹤双拼" },
@@ -1093,6 +1087,25 @@ function humanSize(bytes: number): string {
   return bytes >= 1e9 ? `${(bytes / 1e9).toFixed(2)} GB` : `${Math.round(bytes / 1e6)} MB`;
 }
 
+/// 界面主题偏好："system" / "light" / "dark"。
+function schemeOf(value: string): "light" | "dark" | "system" {
+  if (value === "light") return "light";
+  if (value === "dark") return "dark";
+  return "system";
+}
+
+function shiftLabel(key: string): string {
+  if (key === "Shift_L") return "左 Shift";
+  if (key === "Shift_R") return "右 Shift";
+  return key;
+}
+
+/// 下载按钮的文字：忙时是「取消」，装好了是「删除」，否则「下载」。
+function downloadButtonTitle(busy: boolean, installed: boolean): string {
+  if (busy) return "取消";
+  return installed ? "删除" : "下载";
+}
+
 function formatNumber(value: number): string {
   return Math.round(value)
     .toString()
@@ -1153,7 +1166,7 @@ function App() {
       .split("\n")
       .map((line) => line.split("=")[1] ?? "")
       .filter((key) => key !== "")
-      .map((key) => (key === "Shift_L" ? "左 Shift" : key === "Shift_R" ? "右 Shift" : key));
+      .map(shiftLabel);
     const unique = Array.from(new Set(names));
     return unique.length > 0 ? `${unique.join("、")} 已被 fcitx5 的「临时切换输入法」占用` : "";
   });
@@ -1775,7 +1788,7 @@ function App() {
   const applyTheme = (value: string) => {
     theme.set(value);
     Config.stateSet("theme", value);
-    setColorScheme(value === "light" ? "light" : value === "dark" ? "dark" : "system");
+    setColorScheme(schemeOf(value));
   };
 
   // fcitx5 按系统的深浅挑 Theme / DarkTheme 其中之一;把两个都写成同一套就等于钉死。
@@ -2842,7 +2855,7 @@ function App() {
               <Card>
                 <Row title="语音模型" subtitle={voiceModelSubtitle()}>
                   <SmallButton
-                    title={voiceBusy() ? "取消" : voiceModel() ? "删除" : "下载"}
+                    title={downloadButtonTitle(voiceBusy(), Boolean(voiceModel()))}
                     tone={voiceModel() || voiceBusy() ? "plain" : "accent"}
                     onPress={voiceBusy() ? cancelVoice : voiceModel() ? deleteVoice : downloadVoice}
                   />
@@ -3085,7 +3098,7 @@ function App() {
                   <Card>
                     <Row title="翻译模型" subtitle={localSubtitle()}>
                       <SmallButton
-                        title={localBusy() ? "取消" : localMissing() === "ready" ? "删除" : "下载"}
+                        title={downloadButtonTitle(localBusy(), localMissing() === "ready")}
                         tone={localMissing() === "ready" || localBusy() ? "plain" : "accent"}
                         onPress={
                           localBusy()
@@ -3266,7 +3279,7 @@ function App() {
 // 启动时就应用保存的主题:否则 colorScheme 还是系统的,配置里的浅色要手动切一次才对。
 {
   const saved = Config.stateGet("theme") || "system";
-  setColorScheme(saved === "light" ? "light" : saved === "dark" ? "dark" : "system");
+  setColorScheme(schemeOf(saved));
 }
 
 mount(App);

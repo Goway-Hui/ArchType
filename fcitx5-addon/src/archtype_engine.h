@@ -550,8 +550,6 @@ private:
     bool countLearned(const ArchtypeFrame *frame);
     /// 上屏已选的词 + 还没选的原始输入（切输入法、打到一半切英文），原始输入也记一次选词。
     void commitInput(fcitx::InputContext *ic, ArchtypeState *state);
-    /// 选中光标所在的候选；没有候选时上屏原始输入（交给会话按一次空格）。
-    void commitCurrent(fcitx::InputContext *ic, ArchtypeState *state);
     /// 攒够上屏次数（force 时不管次数）就在后台存用户词库和输入习惯（按键的线程上不等磁盘）。
     /// wait：等后台写完再返回（析构、换词库前：新引擎要读这些文件）。
     void maybeSaveUserDict(bool force, bool wait = false);

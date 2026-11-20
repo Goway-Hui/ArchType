@@ -38,9 +38,13 @@ def parse(path):
     stats = {"rows": 0, "comment": 0, "z": 0, "zero": 0, "noweight": 0, "dup": 0}
     with open(path, encoding="utf-8") as f:
         lines = f.read().split("\n")
-    try:
-        start = lines.index("...") + 1  # YAML 头之后才是词条
-    except ValueError:
+    # CRLF 或「...」后面带空格：和下面的词条行一样先归一化再找
+    start = None
+    for idx, line in enumerate(lines):
+        if line.strip() == "...":
+            start = idx + 1
+            break
+    if start is None:
         sys.exit(f"{path}：找不到 YAML 头的结束行「...」，不像 Rime 词库")
     for lineno, line in enumerate(lines[start:], start + 1):
         line = line.rstrip("\r")

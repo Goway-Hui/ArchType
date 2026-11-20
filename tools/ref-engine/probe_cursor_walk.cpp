@@ -53,7 +53,6 @@ static std::string read_str(void* s){
   return std::string((const char*)(b+1),n);
 }
 
-typedef bool (*tryfn)(const void*, int);
 typedef bool (*movefn)(void*, int);
 typedef unsigned long long (*freqfn)(const void*);
 typedef bool (*leaffn)(const void*);

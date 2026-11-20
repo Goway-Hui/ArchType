@@ -335,15 +335,20 @@ fn main() {
             read += line.chars().count() as u64;
             batch.push(line);
             if batch.len() == 512 {
-                tx.send(std::mem::replace(&mut batch, Vec::with_capacity(512)))
-                    .unwrap();
+                // worker 线程 panic 后 receiver 会被丢弃：安静收工，别跟着 panic
+                if tx
+                    .send(std::mem::replace(&mut batch, Vec::with_capacity(512)))
+                    .is_err()
+                {
+                    break 'files;
+                }
             }
             if read >= max_chars {
-                tx.send(batch).unwrap();
+                let _ = tx.send(batch);
                 break 'files;
             }
         }
-        tx.send(batch).unwrap();
+        let _ = tx.send(batch);
     }
     drop(tx);
 

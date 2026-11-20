@@ -79,6 +79,15 @@ def parse_header(lines):
                 col = {name: idx for idx, name in enumerate(order)}
             continue
         if raw.startswith("import_tables:"):
+            rest = stripped[len("import_tables:"):].strip()
+            if rest:
+                # 行内写法：import_tables: [a.dict.yaml, b.dict.yaml]
+                for name in rest.strip("[]").split(","):
+                    name = name.split("#", 1)[0].strip().strip("'\"")
+                    if name:
+                        imports.append(name)
+                i += 1
+                continue
             in_imports = True
             i += 1
             continue

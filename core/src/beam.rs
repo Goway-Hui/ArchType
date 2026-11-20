@@ -206,8 +206,9 @@ pub fn beam_search(
 
         for state in states {
             let parent = arena.len();
+            // spans 在这一轮只读：直接借上一词的文字，别为每条状态克隆一次
+            let prev_text: Option<&str> = state.word.map(|(f, i)| spans[f][i].word.text.as_str());
             arena.push(state);
-            let prev_text = state.word.map(|(f, i)| spans[f][i].word.text.clone());
             for (idx, span) in spans[pos].iter().enumerate() {
                 let word = &span.word;
                 if state.typos + word.typos > config.max_typos {

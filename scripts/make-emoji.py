@@ -46,7 +46,11 @@ def keywords(emoji, *tables):
 
 
 def main():
+    if len(sys.argv) < 2:
+        sys.exit("用法：make-emoji.py <CLDR 解压目录> [输出文件]")
     src = sys.argv[1]
+    if not os.path.isdir(src):
+        sys.exit(f"CLDR 目录不存在：{src}")
     dst = sys.argv[2] if len(sys.argv) > 2 else os.path.join(
         os.path.dirname(__file__), "..", "core", "src", "emoji", "cldr.tsv")
     zh = load_annotations(os.path.join(src, "cldr-annotations-full-zh.json"), "annotations")

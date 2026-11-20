@@ -9,7 +9,7 @@ use archtype_voice::asr::{AsrChannel, ProcessChannel};
 use archtype_voice::sink::TextSink;
 use archtype_voice::{read_wav, vad::Vad, write_wav, Typer};
 
-const FRAME: usize = 160; // 16kHz 下 10ms
+const FRAME: usize = 320; // 16kHz 下 20ms（和 VAD 的 ONSET_FRAMES/HANGOVER_FRAMES 文档一致）
 
 fn silence(frames: usize) -> Vec<i16> {
     vec![0i16; FRAME * frames]

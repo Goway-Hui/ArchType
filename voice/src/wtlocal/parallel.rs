@@ -44,6 +44,9 @@ pub fn for_each_chunk_mut<T: Send>(
 }
 
 /// 并行遍历 `0..n`，任务从共享计数器动态领取，适合长度不均的分块。
+///
+/// 每次调用 new spawn 一组线程（帧级调用，规模 = CPU 核数）：池化能再降一点开销，
+/// 但会让推理库自己长期持有线程，当前先保持简单。
 pub fn for_each_index<F: Fn(usize) + Sync>(n: usize, f: F) {
     if n == 0 {
         return;

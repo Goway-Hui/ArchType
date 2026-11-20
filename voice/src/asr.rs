@@ -47,7 +47,15 @@ impl MultiChannel {
             .collect()
     }
 
+    /// 第一个非空的中间结果（边说边出字只用一个渠道），不分配 Vec。
+    pub fn partial(&self) -> Option<&str> {
+        self.channels
+            .iter()
+            .find_map(|c| c.partial().filter(|p| !p.is_empty()))
+    }
+
     pub fn finish(&mut self) -> Vec<Transcript> {
+        let started = std::time::Instant::now();
         let mut out = Vec::new();
         for c in &mut self.channels {
             if let Some(text) = c.finish() {
@@ -55,7 +63,8 @@ impl MultiChannel {
                     out.push(Transcript {
                         channel: c.name().to_string(),
                         text,
-                        latency_ms: 0,
+                        // 各渠道自己的耗时没有暴露：这里是整段定稿的墙钟时间
+                        latency_ms: started.elapsed().as_millis() as u64,
                         is_final: true,
                     });
                 }

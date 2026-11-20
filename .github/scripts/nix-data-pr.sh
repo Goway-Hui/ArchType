@@ -24,6 +24,7 @@ fi
 nix=nix/package.nix
 repo=$GITHUB_REPOSITORY
 tag=$GITHUB_REF_NAME
+tag_version=${tag#v}
 dry=${NIX_DATA_PR_DRY_RUN:-}
 
 git fetch -q origin +refs/heads/main:refs/remotes/origin/main
@@ -40,7 +41,7 @@ settings_sri() {
   h=$(sha256sum "$path" | cut -d' ' -f1)
   if [ -z "$dry" ]; then
     local remote
-    remote=$(curl -fsSL --retry 3 "https://github.com/${repo}/releases/download/${tag}/$(basename "$path")" | sha256sum | cut -d' ' -f1)
+    remote=$(curl -fsSL --retry 3 "https://github.com/${repo}/releases/download/v${tag_version}/$(basename "$path")" | sha256sum | cut -d' ' -f1)
     if [ "$remote" != "$h" ]; then
       echo "::error title=Nix 设置界面::发布页上的 $(basename "$path")（${remote}）和本地算 hash 的（${h}）不一样"
       exit 1

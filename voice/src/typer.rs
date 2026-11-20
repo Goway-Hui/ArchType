@@ -52,6 +52,8 @@ impl Typer {
             .zip(nxt.iter())
             .take_while(|(a, b)| a == b)
             .count();
+        // backspaces 按 char 计：下游一次 BackSpace 删除一个「用户感知字符」，
+        // 组合字符（emoji ZWJ、组合音标）会多删一格；ASR 输出基本是 CJK/ASCII，暂不引入 grapheme 依赖
         let update = Update {
             backspaces: self.typed.len() - common,
             insert: nxt[common..].iter().collect(),

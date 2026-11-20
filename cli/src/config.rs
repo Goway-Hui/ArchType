@@ -131,10 +131,15 @@ pub fn state_set(key: &str, value: &str) -> bool {
 
 pub fn json_set(path: &str, key: &str, value: &str) -> bool {
     let text = read(path);
-    let mut object = serde_json::from_str::<serde_json::Value>(&text)
-        .ok()
-        .and_then(|value| value.as_object().cloned())
-        .unwrap_or_default();
+    // 文件坏了（并发写坏、只写了一半）时别当成空对象整个写回：那会丢掉其它键
+    let mut object = if text.trim().is_empty() {
+        serde_json::Map::new()
+    } else {
+        let Ok(parsed) = serde_json::from_str::<serde_json::Value>(&text) else {
+            return false;
+        };
+        parsed.as_object().cloned().unwrap_or_default()
+    };
     object.insert(
         key.to_string(),
         serde_json::Value::String(value.to_string()),

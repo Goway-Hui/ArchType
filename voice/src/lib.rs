@@ -87,12 +87,8 @@ impl VoiceSession {
             self.asr.feed(&frame);
         }
         if self.on_screen {
-            let partial = self
-                .asr
-                .partials()
-                .first()
-                .map(|(_, t)| t.to_string())
-                .unwrap_or_default();
+            // 只看第一个渠道的中间结果：partials() 会为所有渠道分配 Vec，这里用借用的单值
+            let partial = self.asr.partial().unwrap_or_default().to_string();
             if partial != self.last_partial {
                 let update = self.typer.update(&partial);
                 self.sink.apply(update);
@@ -132,8 +128,6 @@ mod tests {
             Box::new(StdoutSink),
             false,
         );
-        let key = |_: ()| ();
-        key(());
         s.trigger.on_down(t0);
         s.push_pcm(&vec![0i16; 1600], t0 + Duration::from_millis(200));
         let out = s.finish();

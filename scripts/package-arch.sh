@@ -29,7 +29,7 @@ trap 'rm -rf "$work"' EXIT
 # 只打包构建输入，不带现有 target/、CMake 缓存或 .git。makepkg 在独立目录重建，
 # 不依赖按键测试留下的二进制，也不往 checkout 写 root 所有的构建文件。
 mkdir -p "$work/source/dist/data"
-tar --exclude=target --exclude='build*' -cf - \
+tar --exclude=target --exclude=build --exclude=build-test -cf - \
   Cargo.toml Cargo.lock core voice voice-daemon cli fcitx5-addon icons themes settings README.md |
   tar -xf - -C "$work/source"
 cp "$DATA"/{lexicon.tsv,english.txt,words.lm,LICENSE,SOURCE.txt} "$work/source/dist/data/"

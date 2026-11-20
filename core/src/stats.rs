@@ -437,6 +437,11 @@ impl Recorder {
         if !self.enabled {
             return;
         }
+        // 密码框里的按键不计数，也不能占用 held 位图 / 更新 last_release：
+        // 否则之后真正的按键会被当成「X11 合成的一次重复」丢掉
+        if flags & SENSITIVE != 0 {
+            return;
+        }
         match platform {
             0 => {
                 if !down {
@@ -457,9 +462,6 @@ impl Recorder {
             // macOS 的 InputMethodKit 只送按下（没有松开），自动重复由外壳的 `isARepeat` 挡掉
             1 if down => {}
             _ => return,
-        }
-        if flags & SENSITIVE != 0 {
-            return;
         }
         let Some(id) = key_id(platform, code) else {
             return;

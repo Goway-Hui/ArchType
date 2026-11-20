@@ -34,7 +34,7 @@ mkdir -p "$work"/{SOURCES,SPECS,BUILD,BUILDROOT,SRPMS}
 # 不依赖按键测试留下的二进制。
 src="$work/source"
 mkdir -p "$src/dist/data" "$src/packaging"
-tar --exclude=target --exclude='build*' -cf - \
+tar --exclude=target --exclude=build --exclude=build-test -cf - \
   Cargo.toml Cargo.lock core voice voice-daemon cli fcitx5-addon icons themes settings README.md |
   tar -xf - -C "$src"
 cp "$DATA"/{lexicon.tsv,english.txt,words.lm,LICENSE,SOURCE.txt} "$src/dist/data/"

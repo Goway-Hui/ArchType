@@ -59,8 +59,10 @@ require_py() {
   fi
 }
 
+clone_root=""
 if [[ -z "$RIME" ]]; then
-  RIME=$(mktemp -d)/rime-ice
+  clone_root=$(mktemp -d)
+  RIME="$clone_root/rime-ice"
   git clone --depth 1 https://github.com/iDvel/rime-ice.git "$RIME"
 fi
 
@@ -70,7 +72,7 @@ EXTRA=()
 python3 tools/rime2tsv.py ${EXTRA[@]+"${EXTRA[@]}"} "$RIME/rime_ice.dict.yaml" > "$OUT/lexicon.rime.tsv"
 
 tmp=$(mktemp -d)
-trap 'rm -rf "$tmp"' EXIT
+trap 'rm -rf "${tmp:-}" "${clone_root:-}"' EXIT
 
 # 语料词频放在热词表之前：data/ 下手工定的词频（只提不降）和黑名单最后套，不会被冲掉。
 # 语料词频：每个词最多抬到 20 * max(原频次, 1000)，免得小语料里出现得多的词（Tatoeba 的「汤姆」）抬得离谱；

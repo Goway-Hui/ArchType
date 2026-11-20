@@ -6,9 +6,12 @@ cd "$(dirname "$0")/.."
 cargo build --release -p archtype-core -p archtype-config-cli
 
 LEXICON=${1:-/tmp/archtype_abi.tsv}
-# 旧版本生成的词库可能缺条目，内容不对就重建
-if [[ ! -f "$LEXICON" ]] || ! grep -q 'zhi dao' "$LEXICON" 2>/dev/null; then
+# 自己生成的词库可以重建；调用方给的文件不覆盖，缺条目时说清楚
+if [[ ! -f "$LEXICON" ]]; then
   printf '# abi smoke\nni hao\t你好\t100000\ntian\t天\t5000\ntian\t田\t2000\nzhong guo\t中国\t8000\nzhi dao\t知道\t6000\n' > "$LEXICON"
+elif ! grep -q 'zhi dao' "$LEXICON" 2>/dev/null; then
+  echo "词库 $LEXICON 里没有 zhi dao；冒烟测试需要它（不覆盖调用方给的文件）" >&2
+  exit 1
 fi
 
 BIGRAM=${2:-/tmp/archtype_abi_bigram.tsv}

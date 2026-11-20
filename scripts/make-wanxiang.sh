@@ -22,7 +22,9 @@ PKG=${3:-}
 mkdir -p "$OUT"
 
 if [[ -z "$SRC" ]]; then
-  SRC=$(mktemp -d)/rime_wanxiang
+  clone_root=$(mktemp -d)
+  trap 'rm -rf "$clone_root"' EXIT
+  SRC="$clone_root/rime_wanxiang"
   git clone --depth 1 https://github.com/amzxyz/rime_wanxiang.git "$SRC"
 fi
 

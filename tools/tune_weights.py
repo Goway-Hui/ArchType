@@ -25,7 +25,7 @@ PARAMS = [
     ("lm_weight", "--lm-weight", 1.0, [0.7, 0.85, 1.15, 1.3]),
     ("typo_cost", "--typo-cost", None, [4.5, 5.0, 7.0, 8.0]),
     ("completion_cost", "--completion-cost", None, [0.8, 1.0, 1.5, 1.8]),
-    ("abbrev_cost", "--abbrev-cost", None, None),
+    ("abbrev_cost", "--abbrev-cost", None, [0.5, 1.0, 1.5, 2.0]),
     ("context_bigram_score", "weights", 1.0, [0.5, 0.75, 1.5, 2.0]),
     ("head_word_nnlm", "weights", 1.0, [0.5, 0.75, 1.25, 1.5]),
     ("coverage_score", "weights", 2.0, [1.0, 1.5, 2.5, 3.0]),

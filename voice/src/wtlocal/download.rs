@@ -50,7 +50,18 @@ pub fn ensure(dir: &Path) -> Result<()> {
 fn download(dest: &Path) -> Result<()> {
     let part = dest.with_extension("part");
     let status = Command::new("curl")
-        .args(["-L", "--fail", "--retry", "2", "-o"])
+        // 只允许 https（防止被重定向到明文 http）；--fail 让 404 直接报错
+        .args([
+            "-L",
+            "--fail",
+            "--retry",
+            "2",
+            "--proto",
+            "=https",
+            "--proto-redir",
+            "=https",
+            "-o",
+        ])
         .arg(&part)
         .arg(pack::URL)
         .status()

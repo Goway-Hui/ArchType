@@ -588,14 +588,6 @@ fn update_download(url: &str, path: &str, total_hint: u64) -> Result<(), String>
     fs::rename(&part, path).map_err(|error| format!("换不到位置：{error}"))
 }
 
-fn sha256_file(path: &str) -> Result<String, String> {
-    use sha2::{Digest, Sha256};
-    let bytes = fs::read(path).map_err(|error| error.to_string())?;
-    let mut hasher = Sha256::new();
-    hasher.update(&bytes);
-    Ok(format!("{:x}", hasher.finalize()))
-}
-
 /// 发布页上这个地址是不是真的有文件：跟随跳转发一次 HEAD，网络不通或 404 都算没有。
 fn url_ok(url: &str) -> bool {
     if url.is_empty() {
@@ -694,7 +686,7 @@ fn update_install_work(release: String) {
             return;
         }
         update_set_state("verifying".to_string());
-        match sha256_file(&path) {
+        match sha256_of(&path) {
             Ok(actual) if actual == expected => {}
             Ok(_) => {
                 let _ = fs::remove_file(&path);
@@ -2029,11 +2021,31 @@ impl Config {
         if let Some(parent) = Path::new(&path).parent() {
             let _ = fs::create_dir_all(parent);
         }
-        if !atomic_write(&path, &(key.trim().to_string() + "\n")) {
+        // 先建同目录临时文件（create_new + 0600），再 rename：不留「先 0644 再 chmod」的空窗
+        use std::io::Write;
+        use std::os::unix::fs::OpenOptionsExt;
+        let tmp = format!("{path}.tmp");
+        let Ok(mut file) = fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .mode(0o600)
+            .open(&tmp)
+        else {
+            return false;
+        };
+        let written = writeln!(file, "{}", key.trim()).is_ok();
+        drop(file);
+        if !written {
+            let _ = fs::remove_file(&tmp);
             return false;
         }
-        use std::os::unix::fs::PermissionsExt;
-        fs::set_permissions(&path, fs::Permissions::from_mode(0o600)).is_ok()
+        match fs::rename(&tmp, &path) {
+            Ok(()) => true,
+            Err(_) => {
+                let _ = fs::remove_file(&tmp);
+                false
+            }
+        }
     }
 
     /// 清除统计：stats.clear 计数加一（输入法据此丢掉旧计数），删掉 stats.json 和 .bad。

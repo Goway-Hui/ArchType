@@ -2780,6 +2780,8 @@ impl<'e> Session<'e> {
         self.forgot = frame.forgot;
         self.learned = frame.learned;
         self.mode_changed = frame.mode_changed;
+        self.cursor_delta = frame.cursor_delta;
+        self.delete_next = frame.delete_next;
         let (start, count) = (frame.cand_start, frame.cand_count);
         &self.display_candidates()[start..start + count]
     }
