@@ -138,7 +138,7 @@ public struct ArchtypeConfig: Equatable {
         public var note: String {
             switch self {
             case .local: return "不联网、不用账号，打的字不出这台电脑；一句话等 1–3 秒"
-            case .bilibili: return "哔哩哔哩的 Index-Translate，不用注册、不用 API Key；要联网，一句话不到 1 秒"
+            case .bilibili: return "哔哩哔哩的 Index-Translate，不用注册；要联网，一句话不到 1 秒"
             case .custom: return "填你自己的翻译接口（DeepSeek、通义千问、Ollama……），要联网"
             }
         }

@@ -351,6 +351,10 @@ static void activate(GtkApplication *app, gpointer data) {
     gtk_layer_set_anchor(o->win, GTK_LAYER_SHELL_EDGE_TOP, TRUE);
     gtk_layer_set_anchor(o->win, GTK_LAYER_SHELL_EDGE_LEFT, TRUE);
     gtk_layer_set_keyboard_mode(o->win, GTK_LAYER_SHELL_KEYBOARD_MODE_NONE);
+    // 不设这个的话 layer-shell 窗口的四角是合成器画的实底黑角
+    gtk_widget_add_css_class(GTK_WIDGET(o->win), "transparent");
+    // 抗锯齿圆角：pill 自身的圆角 14px，比它小就裁不干净
+    gtk_widget_set_overflow(GTK_WIDGET(o->win), GTK_OVERFLOW_HIDDEN);
 
     GtkWidget *pill = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 0);
     gtk_widget_add_css_class(pill, "archtype-voice-pill");
@@ -377,6 +381,12 @@ static void activate(GtkApplication *app, gpointer data) {
 
     GtkCssProvider *css = gtk_css_provider_new();
     gtk_css_provider_load_from_string(css,
+        // 顶层窗口的默认底色是实色，四角会露出黑角：透明掉，pill 自己画底
+        ".transparent {"
+        "  background: transparent;"
+        "  border-radius: 14px;"
+        "  overflow: hidden;"
+        "}"
         ".archtype-voice-pill {"
         "  background-color: #ffffff;"
         "  border: 1.5px solid #dce3df;"
