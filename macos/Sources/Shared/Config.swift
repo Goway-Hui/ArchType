@@ -16,7 +16,7 @@ import Glibc
 import Darwin
 #endif
 
-public struct ArchTypeConfig: Equatable {
+public struct ArchtypeConfig: Equatable {
     public enum ShiftToggle: String, CaseIterable {
         case both = "Both", left = "Left", right = "Right", off = "Off"
     }
@@ -89,13 +89,13 @@ public struct ArchTypeConfig: Equatable {
 
     /// 现在的强调色；文件里写的认不出时已经是默认的绿色
     public var accent: AccentPreset {
-        ArchTypeConfig.accentPresets.first { $0.value == settingsAccent } ?? ArchTypeConfig.accentPresets[0]
+        ArchtypeConfig.accentPresets.first { $0.value == settingsAccent } ?? ArchtypeConfig.accentPresets[0]
     }
 
     /// 双拼方案在配置文件里的名字（和 Linux 一样），核心也认小写、别名。
     public static let shuangpinSchemes = ["Ziranma", "Xiaohe", "Microsoft", "Sogou", "ABC", "Ziguang", "PinyinJiajia"]
 
-    /// 互译语言：设置窗口里的名字、配置文件里的代码（和 Linux 的 ArchTypeTranslateTarget、
+    /// 互译语言：设置窗口里的名字、配置文件里的代码（和 Linux 的 ArchtypeTranslateTarget、
     /// 设置界面的 TRANSLATE_LANGUAGES、核心的 translate::LANGUAGES 一样）。
     public static let translateLanguages: [(String, String)] = [
         ("英语", "en"), ("日语", "ja"), ("韩语", "ko"), ("法语", "fr"), ("德语", "de"), ("西班牙语", "es"),
@@ -192,7 +192,7 @@ public struct ArchTypeConfig: Equatable {
     /// 现在用的翻译引擎：TranslateLocal 是本地；否则接口地址是哔哩哔哩的就是哔哩哔哩，别的都是自定义
     public var translateEngine: TranslateEngine {
         if translateLocal { return .local }
-        return ArchTypeConfig.isBilibili(translateBaseUrl) ? .bilibili : .custom
+        return ArchtypeConfig.isBilibili(translateBaseUrl) ? .bilibili : .custom
     }
 
     public var horizontal = true
@@ -345,17 +345,17 @@ public struct ArchTypeConfig: Equatable {
     // MARK: 读写
 
     /// 读配置文件；读不到（还没建）就是默认值。
-    public static func load(path: String) -> ArchTypeConfig {
+    public static func load(path: String) -> ArchtypeConfig {
         guard let text = readFile(path) else {
-            return ArchTypeConfig()
+            return ArchtypeConfig()
         }
         return parse(text)
     }
 
     /// 解析 fcitx5 的 INI 格式：一行一个 Key=Value，# 开头是注释，值可以带双引号。
     /// 只认最外层的键（[分组] 下面的不是 ArchType 的设置）。同一个键写了几次，算最后一次。
-    public static func parse(_ text: String) -> ArchTypeConfig {
-        var config = ArchTypeConfig()
+    public static func parse(_ text: String) -> ArchtypeConfig {
+        var config = ArchtypeConfig()
         var inGroup = false
         var sawTranslateLocal = false
         var sawInputScheme = false
@@ -394,7 +394,7 @@ public struct ArchTypeConfig: Equatable {
     }
 
     /// 文件里没写 TranslateLocal 时它是什么：0.3.10 及以前没有这一项，已经填好翻译接口（TranslateBaseUrl）的
-    /// 接着用接口（False），没填的用默认的本地模型。三端一样（插件的 loadArchTypeConfig、Linux 设置的 read_config），
+    /// 接着用接口（False），没填的用默认的本地模型。三端一样（插件的 loadArchtypeConfig、Linux 设置的 read_config），
     /// 见 spec/config.json。
     static func impliedTranslateLocal(baseUrl: String) -> Bool {
         baseUrl.allSatisfy { $0 == " " || $0 == "\t" || $0 == "\r" || $0 == "\n" }
@@ -419,7 +419,7 @@ public struct ArchTypeConfig: Equatable {
     ]
 
     /// 开关类的键（True / False）
-    private static let boolKeys: [String: WritableKeyPath<ArchTypeConfig, Bool>] = [
+    private static let boolKeys: [String: WritableKeyPath<ArchtypeConfig, Bool>] = [
         "PageKeysMinusEqual": \.pageKeysMinus, "PageKeysBracket": \.pageKeysBracket,
         "PageKeysCommaPeriod": \.pageKeysComma, "PageKeysTab": \.pageKeysTab,
         "Fuzzy": \.fuzzy, "FuzzyZh": \.fuzzyZh, "FuzzyCh": \.fuzzyCh, "FuzzySh": \.fuzzySh,
@@ -439,7 +439,7 @@ public struct ArchTypeConfig: Equatable {
 
     /// 按文件里的写法改一项。不认识的键、认不出的值不管（保持原值）。
     public mutating func setValue(_ value: String, forKey key: String) {
-        if let path = ArchTypeConfig.boolKeys[key] {
+        if let path = ArchtypeConfig.boolKeys[key] {
             setBool(&self[keyPath: path], value)
             return
         }
@@ -453,7 +453,7 @@ public struct ArchTypeConfig: Equatable {
         case "InputScheme":
             if let v = matchName(value, InputScheme.allCases.map(\.rawValue)) { inputScheme = InputScheme(rawValue: v)! }
         case "ShuangpinScheme":
-            if let v = matchName(value, ArchTypeConfig.shuangpinSchemes) { shuangpinScheme = v }
+            if let v = matchName(value, ArchtypeConfig.shuangpinSchemes) { shuangpinScheme = v }
         case "ShiftToggle":
             if let v = matchName(value, ShiftToggle.allCases.map(\.rawValue)) { shiftToggle = ShiftToggle(rawValue: v)! }
         case "InitialMode":
@@ -477,7 +477,7 @@ public struct ArchTypeConfig: Equatable {
             }
         case "ToggleKey", "TranslateModeKey":
             // 留空是不用；写错了保持原样
-            let path: WritableKeyPath<ArchTypeConfig, Shortcut?> = key == "ToggleKey" ? \.toggleKey : \.translateModeKey
+            let path: WritableKeyPath<ArchtypeConfig, Shortcut?> = key == "ToggleKey" ? \.toggleKey : \.translateModeKey
             if value.isEmpty {
                 self[keyPath: path] = nil
             } else if let shortcut = Shortcut(name: value) {
@@ -486,9 +486,9 @@ public struct ArchTypeConfig: Equatable {
         case "SettingsTheme":
             if let v = matchName(value, SettingsTheme.allCases.map(\.rawValue)) { settingsTheme = SettingsTheme(rawValue: v)! }
         case "SettingsAccent":
-            if let v = matchName(value, ArchTypeConfig.accentPresets.map(\.value)) { settingsAccent = v }
+            if let v = matchName(value, ArchtypeConfig.accentPresets.map(\.value)) { settingsAccent = v }
         case "TranslateTarget":
-            if let v = matchName(value, ArchTypeConfig.translateTargets) { translateTarget = v }
+            if let v = matchName(value, ArchtypeConfig.translateTargets) { translateTarget = v }
         case "TranslateBaseUrl": translateBaseUrl = value
         case "TranslateModel": translateModel = value
         case "TranslateLocalModel": translateLocalModel = value
@@ -502,7 +502,7 @@ public struct ArchTypeConfig: Equatable {
 
     /// 这一项在文件里的写法（True / False、枚举名、数字、原样的路径）；不认识的键是 nil。
     public func value(forKey key: String) -> String? {
-        if let path = ArchTypeConfig.boolKeys[key] {
+        if let path = ArchtypeConfig.boolKeys[key] {
             return self[keyPath: path] ? "True" : "False"
         }
         switch key {
@@ -544,7 +544,7 @@ public struct ArchTypeConfig: Equatable {
     /// text 是 nil 或空的（还没有文件）时从带说明的模板开始。
     public func serialized(into text: String?) -> String {
         guard let text, text.contains(where: { !$0.isWhitespace }) else {
-            return serialized(into: ArchTypeConfig.template())
+            return serialized(into: ArchtypeConfig.template())
         }
         // 按 \n 拆（\r\n 在 Swift 里是一个字符，要按码位拆），每行末尾的 \r 留着
         var lines = text.unicodeScalars.split(separator: "\n", omittingEmptySubsequences: false).map(String.init)
@@ -565,7 +565,7 @@ public struct ArchTypeConfig: Equatable {
             if body.hasPrefix("[") {
                 firstGroup = firstGroup ?? i
             }
-            if firstGroup == nil, let key = ArchTypeConfig.commentedKey(body), commented[key] == nil {
+            if firstGroup == nil, let key = ArchtypeConfig.commentedKey(body), commented[key] == nil {
                 commented[key] = i
             }
             if firstGroup != nil || body.isEmpty || body.hasPrefix("#") || body.hasPrefix(";") {
@@ -585,7 +585,7 @@ public struct ArchTypeConfig: Equatable {
             seen.insert(key)
             // 这一行单独读出来（从默认值开始）已经是要的值：不动。认不出的值读出来是默认值，
             // 要的正好是默认值也不动；前面同一个键的行都已经是要的值，所以整份读出来还是对的。
-            var probe = ArchTypeConfig()
+            var probe = ArchtypeConfig()
             probe.setValue(unquote(trim(line[line.index(after: eq)...])), forKey: key)
             if probe.value(forKey: key) == wanted {
                 continue
@@ -599,10 +599,10 @@ public struct ArchTypeConfig: Equatable {
 
         // 文件里没有的键读出来是默认值；TranslateLocal 没写时跟着 TranslateBaseUrl 走（见 parse），按读回来的值比。
         // 有注释掉的那一行（模板里的 # 键=默认值）就地换掉，免得同一个键一行注释着默认值、文件末尾又写一行
-        var implied = ArchTypeConfig()
-        implied.translateLocal = ArchTypeConfig.impliedTranslateLocal(baseUrl: translateBaseUrl)
+        var implied = ArchtypeConfig()
+        implied.translateLocal = ArchtypeConfig.impliedTranslateLocal(baseUrl: translateBaseUrl)
         var missing: [String] = []
-        for key in ArchTypeConfig.keys {
+        for key in ArchtypeConfig.keys {
             guard !seen.contains(key), let v = value(forKey: key), v != implied.value(forKey: key) else {
                 continue
             }
@@ -633,9 +633,9 @@ public struct ArchTypeConfig: Equatable {
 
     /// 设置窗口保存时用：只把 base → self 改过的键写进文件现在的原文。窗口开着时文件在别处改了
     /// （文本编辑、Linux 同步过来），别处改的键不会被窗口里的旧值盖掉。
-    public func merged(changesFrom base: ArchTypeConfig, into text: String?) -> String {
-        var target = text.map(ArchTypeConfig.parse) ?? ArchTypeConfig()
-        for key in ArchTypeConfig.keys {
+    public func merged(changesFrom base: ArchtypeConfig, into text: String?) -> String {
+        var target = text.map(ArchtypeConfig.parse) ?? ArchtypeConfig()
+        for key in ArchtypeConfig.keys {
             if let mine = value(forKey: key), mine != base.value(forKey: key) {
                 target.setValue(mine, forKey: key)
             }
@@ -649,7 +649,7 @@ public struct ArchTypeConfig: Equatable {
         let rest = body.dropFirst()
         guard let eq = rest.firstIndex(of: "=") else { return nil }
         let key = trim(rest[..<eq])
-        return ArchTypeConfig.keys.contains(key) ? key : nil
+        return ArchtypeConfig.keys.contains(key) ? key : nil
     }
 
     /// 第一次打开设置时写出来的文件：带说明，每项都是注释掉的默认值（# PageSize=9），一项都不生效。
@@ -662,7 +662,7 @@ public struct ArchTypeConfig: Equatable {
 
     /// 模板的原文：说明 + 每项「键=默认值」（template 再把设置行注释掉）。
     private static func defaultsDocument() -> String {
-        let d = ArchTypeConfig()
+        let d = ArchtypeConfig()
         func b(_ v: Bool) -> String { v ? "True" : "False" }
         return """
         # ArchType 设置（键名和 Linux 的 archtype.conf 一样，见 docs/CONFIG.md）。

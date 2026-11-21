@@ -64,7 +64,7 @@ public final class Translator: TranslationBackend {
     /// 照设置配：keyFile 是 API Key 文件（不在就不带 Key）；defaultLocalModel 是设置里
     /// TranslateLocalModel 留空时用的模型文件；llamaServer 是 TranslateLlamaServer 留空时
     /// 外壳找到的 llama-server（输入法进程的 PATH 里没有 Homebrew）。
-    public func configure(_ config: ArchTypeConfig, keyFile: String, defaultLocalModel: String,
+    public func configure(_ config: ArchtypeConfig, keyFile: String, defaultLocalModel: String,
                           llamaServer: String = "") {
         archtype_translate_configure(handle, config.translateBaseUrl, config.translateModel,
                                     config.translateTarget, config.translateFormal ? 1 : 0, keyFile)
@@ -233,9 +233,9 @@ final class TranslateBridge {
         free(tagString)
     }
 
-    var table: ArchTypeTranslateBackend {
-        var table = ArchTypeTranslateBackend()
-        table.size = UInt32(MemoryLayout<ArchTypeTranslateBackend>.size)
+    var table: ArchtypeTranslateBackend {
+        var table = ArchtypeTranslateBackend()
+        table.size = UInt32(MemoryLayout<ArchtypeTranslateBackend>.size)
         table.user = Unmanaged.passUnretained(self).toOpaque()
         table.start = { user, text in
             guard let user, let text else { return }

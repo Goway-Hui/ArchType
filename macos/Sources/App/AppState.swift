@@ -17,7 +17,7 @@ final class AppState {
     private let saveEvery = 20
 
     /// archtype.conf 的内容（键名同 Linux）。改了以后 configGeneration 加一，输入控制器照着重新设置会话。
-    private(set) var config = ArchTypeConfig()
+    private(set) var config = ArchtypeConfig()
     private(set) var configGeneration = 0
     /// 互译的翻译器：设置里第一次打开 Translate 时建，之后一直留着（和 Linux 一样），所有输入框共用。
     /// 本地模型的 llama-server 也只有这一个，第一次翻译时才起
@@ -182,7 +182,7 @@ final class AppState {
     /// 输入法按键时看到文件变了就换词库；万象包更新了、路径没变时，词库文件的大小、时间变了也会重载。
     func setLexicon(_ path: String) throws {
         let text = readText(configPath)
-        let base = ArchTypeConfig.parse(text ?? "")
+        let base = ArchtypeConfig.parse(text ?? "")
         var wanted = base
         wanted.lexicon = path
         try FileManager.default.createDirectory(at: supportDir, withIntermediateDirectories: true)
@@ -259,7 +259,7 @@ final class AppState {
     /// 读设置文件。没有就用默认值（和 Linux 一样，不自动建文件；设置窗口改了设置、或者用文本编辑打开时才建）。
     func loadConfig() {
         configStamp = FileStamp(configPath)
-        let loaded = ArchTypeConfig.load(path: configPath)
+        let loaded = ArchtypeConfig.load(path: configPath)
         if loaded != config || configGeneration == 0 {
             config = loaded
             configGeneration += 1
@@ -298,7 +298,7 @@ final class AppState {
         case .local:
             service = "本地 HY-MT"
         case .bilibili:
-            service = "哔哩哔哩 " + (config.translateModel.isEmpty ? ArchTypeConfig.bilibiliDefaultModel : config.translateModel)
+            service = "哔哩哔哩 " + (config.translateModel.isEmpty ? ArchtypeConfig.bilibiliDefaultModel : config.translateModel)
         case .custom:
             service = "\(config.translateModel) @ \(config.translateBaseUrl)"
         }
@@ -307,7 +307,7 @@ final class AppState {
 
     /// 退出时停掉本地模型的 llama-server（它是输入法起的子进程）。
     func shutdownTranslator() {
-        translator?.configure(ArchTypeConfig(), keyFile: "", defaultLocalModel: "")
+        translator?.configure(ArchtypeConfig(), keyFile: "", defaultLocalModel: "")
     }
 
     /// 候选框的设置（字号）。
@@ -501,7 +501,7 @@ final class AppState {
     func openConfigFile() {
         if !FileManager.default.fileExists(atPath: configPath) {
             try? FileManager.default.createDirectory(at: supportDir, withIntermediateDirectories: true)
-            try? ArchTypeConfig.template().write(toFile: configPath, atomically: true, encoding: .utf8)
+            try? ArchtypeConfig.template().write(toFile: configPath, atomically: true, encoding: .utf8)
         }
         openInTextEditor(configPath)
     }

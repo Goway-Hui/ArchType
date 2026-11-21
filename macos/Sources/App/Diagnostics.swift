@@ -15,7 +15,7 @@ enum Diagnostics {
         let fm = FileManager.default
         let support = state.supportDir
         let configText = readText(state.configPath)
-        let config = ArchTypeConfig.parse(configText ?? "")
+        let config = ArchtypeConfig.parse(configText ?? "")
         var out: [String] = []
         func add(_ line: String) { out.append(line) }
 

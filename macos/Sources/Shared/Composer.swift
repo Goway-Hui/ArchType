@@ -107,7 +107,7 @@ public final class Engine {
     /// conversion 是简繁对照表 s2t.tsv 的路径，没有就不出繁体；wubi 是五笔码表 wubi86.tsv 的路径，
     /// 没有时五笔照全拼打（候选框上方会话会说）。返回要记日志的问题。
     @discardableResult
-    public func apply(_ config: ArchTypeConfig, conversion: String? = nil, wubi: String? = nil) -> [String] {
+    public func apply(_ config: ArchtypeConfig, conversion: String? = nil, wubi: String? = nil) -> [String] {
         var problems: [String] = []
         archtype_engine_set_fuzzy(handle, config.fuzzy ? 1 : 0)
         archtype_engine_set_fuzzy_groups(handle, config.fuzzyGroups)
@@ -271,7 +271,7 @@ public final class Composer {
         }
     }
     /// 设置（archtype.conf）里管会话和外壳的部分；管引擎的部分用 Engine.apply。
-    public private(set) var config = ArchTypeConfig()
+    public private(set) var config = ArchtypeConfig()
     /// 一页几个候选
     public var pageSize: Int {
         get { config.pageSize }
@@ -355,7 +355,7 @@ public final class Composer {
     }
 
     /// 换设置。Shift 切换关掉、也没另设切换键时回到中文（切不回来了；进出「译」的键只进出「译」，不算）；剪贴板历史关掉时马上清空；关掉了互译或者翻译器没配好时离开「译」（和 Linux 一样）。
-    public func apply(_ config: ArchTypeConfig) {
+    public func apply(_ config: ArchtypeConfig) {
         self.config = config
         let noWayBack = config.shiftToggle == .off && config.toggleKey == nil
         if noWayBack || (mode == .translate && !translateAvailable) {
@@ -486,8 +486,8 @@ public final class Composer {
     @discardableResult
     public func shiftChanged(down: Bool, otherModifiers: Bool, now: Double, right: Bool = false) -> Bool {
         configure() // 翻译器可能刚配好（本地模型下载完）：「译」这一档跟着
-        var raw = ArchTypeKey()
-        raw.size = UInt32(MemoryLayout<ArchTypeKey>.size)
+        var raw = ArchtypeKey()
+        raw.size = UInt32(MemoryLayout<ArchtypeKey>.size)
         raw.keysym = right ? 0xffe2 : 0xffe1
         raw.release = down ? 0 : 1
         raw.modifiers = otherModifiers ? Modifiers.control.rawValue : 0
@@ -505,16 +505,16 @@ public final class Composer {
 
     /// 别的修饰键变了（Command、Option 等）：这次 Shift 不算单按（等双击的那一下单按先切）。
     public func otherModifierChanged() {
-        var raw = ArchTypeKey()
-        raw.size = UInt32(MemoryLayout<ArchTypeKey>.size)
+        var raw = ArchtypeKey()
+        raw.size = UInt32(MemoryLayout<ArchtypeKey>.size)
         raw.action = UInt32(ARCHTYPE_KEY_ACTION_OBSERVE)
         followObserved(archtype_session_key(session, &raw))
     }
 
     /// 告诉会话有这个键（只用来打断单按 Shift，不处理）。
     private func observe(_ key: KeyInput) {
-        var raw = ArchTypeKey()
-        raw.size = UInt32(MemoryLayout<ArchTypeKey>.size)
+        var raw = ArchtypeKey()
+        raw.size = UInt32(MemoryLayout<ArchtypeKey>.size)
         raw.keysym = key.keysym
         raw.modifiers = key.modifiers.rawValue
         raw.action = UInt32(ARCHTYPE_KEY_ACTION_OBSERVE)
@@ -523,7 +523,7 @@ public final class Composer {
 
     /// OBSERVE 的 frame 里切了模式：等双击的单按 Shift 被这个键打断（#253），会话先切了
     /// （打到一半切英文时字母在 frame 里），这个键照新模式处理。
-    private func followObserved(_ frame: UnsafePointer<ArchTypeFrame>?) {
+    private func followObserved(_ frame: UnsafePointer<ArchtypeFrame>?) {
         if let frame, frame.pointee.mode_changed != 0 {
             apply(frame)
         }
@@ -654,9 +654,9 @@ public final class Composer {
     // MARK: 内部
 
     private func configure() {
-        var config = ArchTypeSessionConfig()
+        var config = ArchtypeSessionConfig()
         let settings = self.config
-        config.size = UInt32(MemoryLayout<ArchTypeSessionConfig>.size)
+        config.size = UInt32(MemoryLayout<ArchtypeSessionConfig>.size)
         config.page_size = UInt32(max(settings.pageSize, 1))
         config.calculator = settings.calculator ? 1 : 0
         config.date_time = settings.dateTime ? 1 : 0
@@ -741,8 +741,8 @@ public final class Composer {
                 configure()
             }
         }
-        var raw = ArchTypeKey()
-        raw.size = UInt32(MemoryLayout<ArchTypeKey>.size)
+        var raw = ArchtypeKey()
+        raw.size = UInt32(MemoryLayout<ArchtypeKey>.size)
         raw.keysym = key.keysym
         raw.modifiers = key.modifiers.rawValue
         raw.release = key.release ? 1 : 0
@@ -780,7 +780,7 @@ public final class Composer {
         let handled = frame.pointee.handled != 0
         if handled {
             apply(frame)
-        } else if Int(frame.pointee.size) >= MemoryLayout<ArchTypeFrame>.size, frame.pointee.delete_next != 0,
+        } else if Int(frame.pointee.size) >= MemoryLayout<ArchtypeFrame>.size, frame.pointee.delete_next != 0,
                   client?.edit(.deletePair) == true {
             // 自动配对：空的一对按退格，左右两半一起删（这个退格吃掉，不再交给应用）
             refresh()
@@ -798,8 +798,8 @@ public final class Composer {
     }
 
     /// 按会话给的 frame 上屏、更新编辑区和候选框。
-    func apply(_ frame: UnsafePointer<ArchTypeFrame>?) {
-        let delta = frame.map { Int($0.pointee.size) >= MemoryLayout<ArchTypeFrame>.size ? Int($0.pointee.cursor_delta) : 0 } ?? 0
+    func apply(_ frame: UnsafePointer<ArchtypeFrame>?) {
+        let delta = frame.map { Int($0.pointee.size) >= MemoryLayout<ArchtypeFrame>.size ? Int($0.pointee.cursor_delta) : 0 } ?? 0
         var inserted = ""
         if let frame, let commit = frame.pointee.commit {
             // 会话已经补好了空格、记了上文；互译时上屏的是译文、原文
@@ -818,7 +818,7 @@ public final class Composer {
             // 自动配对：上屏「（）」后光标放到中间（-1），跳过补好的右半边（+1）。紧跟在上屏后面、下一个键之前
             _ = client?.edit(CaretEdit.move(by: delta, inserted: inserted, next: keyNextCharacter))
         }
-        if let frame, Int(frame.pointee.size) >= MemoryLayout<ArchTypeFrame>.size, frame.pointee.forgot != 0 {
+        if let frame, Int(frame.pointee.size) >= MemoryLayout<ArchtypeFrame>.size, frame.pointee.forgot != 0 {
             onForget?()
         }
         refresh()
@@ -870,7 +870,7 @@ public final class Composer {
     }
 
     /// 会话这一页 / 展开面板这一屏的候选；没有候选是 nil。
-    private func candidatePage(_ frame: UnsafePointer<ArchTypeFrame>) -> CandidatePage? {
+    private func candidatePage(_ frame: UnsafePointer<ArchtypeFrame>) -> CandidatePage? {
         let f = frame.pointee
         // 只读显示的这些：候选可能有上千个
         var texts: [String] = []
@@ -920,7 +920,7 @@ public final class Composer {
         return frame.pointee.wake_after_ms > 0
     }
 
-    private func translateSignature(_ frame: UnsafePointer<ArchTypeFrame>) -> String {
+    private func translateSignature(_ frame: UnsafePointer<ArchtypeFrame>) -> String {
         let f = frame.pointee
         return [f.translate_source, f.translate_text, f.translate_status, f.translate_title]
             .map { String(cString: $0) }.joined(separator: "|") + "|\(f.translate_done)"
@@ -928,7 +928,7 @@ public final class Composer {
 
     /// 互译时画编辑区和候选框（Linux 的 fillTranslateView）：编辑区里是译文，
     /// 候选框顶上是「中→英 互译：」+ 原文 + 正在打的拼音，底下是状态。内容都是会话给的。
-    private func refreshTranslate(_ frame: UnsafePointer<ArchTypeFrame>) {
+    private func refreshTranslate(_ frame: UnsafePointer<ArchtypeFrame>) {
         let f = frame.pointee
         translateDrawn = translateSignature(frame)
         if f.wake_after_ms > 0 {
@@ -951,8 +951,8 @@ public final class Composer {
     public func allCandidates() -> [String] {
         var out: [String] = []
         for i in 0..<Int(archtype_session_candidate_total(session)) {
-            var info = ArchTypeCandidateInfo()
-            info.size = UInt32(MemoryLayout<ArchTypeCandidateInfo>.size)
+            var info = ArchtypeCandidateInfo()
+            info.size = UInt32(MemoryLayout<ArchtypeCandidateInfo>.size)
             if archtype_session_candidate_info(session, i, &info) == 0, let text = info.text {
                 out.append(String(cString: text))
             }

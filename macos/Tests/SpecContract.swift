@@ -1,4 +1,4 @@
-// 设置契约：拿 spec/config.json、spec/lexicon-pack.json 对照 macOS 的 ArchTypeConfig 和 LexiconPack。
+// 设置契约：拿 spec/config.json、spec/lexicon-pack.json 对照 macOS 的 ArchtypeConfig 和 LexiconPack。
 // Linux 那两端（fcitx5 插件、设置界面）在 scripts/test-config-contract.py 里对照同一份规格。
 // 规格目录由 macos/test.sh 用 ARCHTYPE_SPEC_DIR 传进来（没设时用当前目录下的 spec/）。
 
@@ -45,11 +45,11 @@ func checkConfigContract() {
     }
     let mine = all.filter { s in s["platforms"]?.array?.contains { $0.string == "macos" } == true }
     let specKeys = Set(mine.compactMap { $0["key"]?.string })
-    let ours = Set(ArchTypeConfig.keys)
+    let ours = Set(ArchtypeConfig.keys)
     check(ours == specKeys, "契约：macOS 认的键和规格一样",
           "规格里有、macOS 没有：\(specKeys.subtracting(ours).sorted())；macOS 有、规格里没有：\(ours.subtracting(specKeys).sorted())")
 
-    let d = ArchTypeConfig()
+    let d = ArchtypeConfig()
     let policy = spec["readRules"]?["outOfRange"]?["macos"]?.string ?? "?"
     for s in mine {
         guard let key = s["key"]?.string, let type = s["type"]?.string,
@@ -61,7 +61,7 @@ func checkConfigContract() {
         check(d.value(forKey: key) == def, "契约：\(key) 的默认值是 \(def)", d.value(forKey: key) ?? "（不认这个键）")
         /// 文件里写的是 raw，读出来是什么
         func readBack(_ raw: String) -> String? {
-            var c = ArchTypeConfig()
+            var c = ArchtypeConfig()
             c.setValue(raw, forKey: key)
             return c.value(forKey: key)
         }
@@ -104,11 +104,11 @@ func checkConfigContract() {
             let file = (c["file"]?.object ?? [:]).sorted { $0.key < $1.key }
                 .map { "\($0.key)=\($0.value.string ?? "")\n" }.joined()
             let expect = c["expect"].flatMap(fileText)
-            let parsed = ArchTypeConfig.parse(file)
+            let parsed = ArchtypeConfig.parse(file)
             check(parsed.value(forKey: key) == expect, "契约：文件是 \(file.debugDescription) 时 \(key) 是 \(expect ?? "?")",
                   parsed.value(forKey: key) ?? "nil")
             let written = parsed.serialized(into: file)
-            check(ArchTypeConfig.parse(written) == parsed, "契约：文件是 \(file.debugDescription) 时写回去再读一样", written)
+            check(ArchtypeConfig.parse(written) == parsed, "契约：文件是 \(file.debugDescription) 时写回去再读一样", written)
         }
     }
 
@@ -118,15 +118,15 @@ func checkConfigContract() {
         if let key = s["key"]?.string { byKey[key] = s }
     }
     let lists: [(String, [String])] = [
-        ("InputScheme", ArchTypeConfig.InputScheme.allCases.map(\.rawValue)),
-        ("ShuangpinScheme", ArchTypeConfig.shuangpinSchemes),
-        ("ShiftToggle", ArchTypeConfig.ShiftToggle.allCases.map(\.rawValue)),
-        ("InitialMode", ArchTypeConfig.InitialMode.allCases.map(\.rawValue)),
-        ("WindowMode", ArchTypeConfig.WindowMode.allCases.map(\.rawValue)),
-        ("SelectKeys", ArchTypeConfig.SelectKeys.allCases.map(\.rawValue)),
-        ("TranslateTarget", ArchTypeConfig.translateTargets),
-        ("SettingsTheme", ArchTypeConfig.SettingsTheme.allCases.map(\.rawValue)),
-        ("SettingsAccent", ArchTypeConfig.accentPresets.map(\.value)),
+        ("InputScheme", ArchtypeConfig.InputScheme.allCases.map(\.rawValue)),
+        ("ShuangpinScheme", ArchtypeConfig.shuangpinSchemes),
+        ("ShiftToggle", ArchtypeConfig.ShiftToggle.allCases.map(\.rawValue)),
+        ("InitialMode", ArchtypeConfig.InitialMode.allCases.map(\.rawValue)),
+        ("WindowMode", ArchtypeConfig.WindowMode.allCases.map(\.rawValue)),
+        ("SelectKeys", ArchtypeConfig.SelectKeys.allCases.map(\.rawValue)),
+        ("TranslateTarget", ArchtypeConfig.translateTargets),
+        ("SettingsTheme", ArchtypeConfig.SettingsTheme.allCases.map(\.rawValue)),
+        ("SettingsAccent", ArchtypeConfig.accentPresets.map(\.value)),
     ]
     for (key, values) in lists {
         let expected = byKey[key].map(enumValues) ?? []
@@ -135,7 +135,7 @@ func checkConfigContract() {
     let schemeNames = (byKey["InputScheme"]?["values"]?.array ?? []).map {
         ($0["name"]?.string ?? "", $0["value"]?.string ?? "")
     }
-    let ourSchemes = ArchTypeConfig.InputScheme.allCases.map { ($0.name, $0.rawValue) }
+    let ourSchemes = ArchtypeConfig.InputScheme.allCases.map { ($0.name, $0.rawValue) }
     check(ourSchemes.map { $0.0 } == schemeNames.map { $0.0 } && ourSchemes.map { $0.1 } == schemeNames.map { $0.1 },
           "契约：输入方案的名字", "规格 \(schemeNames)，macOS \(ourSchemes)")
     // whenMissing 的 ifTrue 指着的旧键（InputScheme 的 Shuangpin）已经不是设置项：从只有旧键的文件读进来，
@@ -145,12 +145,12 @@ func checkConfigContract() {
             continue
         }
         let file = "\(old)=True\n"
-        let base = ArchTypeConfig.parse(file)
+        let base = ArchtypeConfig.parse(file)
         for value in enumValues(s) {
             var wanted = base
             wanted.setValue(value, forKey: key)
             let written = wanted.merged(changesFrom: base, into: file)
-            check(ArchTypeConfig.parse(written).value(forKey: key) == value,
+            check(ArchtypeConfig.parse(written).value(forKey: key) == value,
                   "契约：\(old)=True 的文件改成 \(key)=\(value) 存盘再读", written)
             check(!written.split(separator: "\n").contains { $0.hasPrefix("\(old)=") },
                   "契约：存盘以后文件里还有旧键 \(old)", written)
@@ -159,14 +159,14 @@ func checkConfigContract() {
     let languages = (byKey["TranslateTarget"]?["values"]?.array ?? []).map {
         ($0["name"]?.string ?? "", $0["value"]?.string ?? "")
     }
-    check(ArchTypeConfig.translateLanguages.map { $0.0 } == languages.map { $0.0 }
-          && ArchTypeConfig.translateLanguages.map { $0.1 } == languages.map { $0.1 },
-          "契约：互译语言的名字和代码", "规格 \(languages)，macOS \(ArchTypeConfig.translateLanguages)")
+    check(ArchtypeConfig.translateLanguages.map { $0.0 } == languages.map { $0.0 }
+          && ArchtypeConfig.translateLanguages.map { $0.1 } == languages.map { $0.1 },
+          "契约：互译语言的名字和代码", "规格 \(languages)，macOS \(ArchtypeConfig.translateLanguages)")
     // 设置窗口的主题、强调色：名字和颜色表和规格一样（Linux 的 SETTINGS_THEMES、SETTINGS_ACCENTS 对照同一份）
     let themes = (byKey["SettingsTheme"]?["values"]?.array ?? []).map {
         [$0["name"]?.string ?? "", $0["value"]?.string ?? ""]
     }
-    let ourThemes = ArchTypeConfig.SettingsTheme.allCases.map { [$0.name, $0.rawValue] }
+    let ourThemes = ArchtypeConfig.SettingsTheme.allCases.map { [$0.name, $0.rawValue] }
     check(ourThemes == themes, "契约：设置窗口主题的名字", "规格 \(themes)，macOS \(ourThemes)")
     func hex(_ value: UInt32) -> String {
         let digits = String(value, radix: 16, uppercase: true)
@@ -176,7 +176,7 @@ func checkConfigContract() {
         [$0["name"]?.string ?? "", $0["value"]?.string ?? "", $0["color"]?.string ?? "?", $0["strong"]?.string ?? "?",
          $0["light"]?.string ?? "?"]
     }
-    let ourAccents = ArchTypeConfig.accentPresets.map { [$0.name, $0.value, hex($0.color), hex($0.strong), hex($0.light)] }
+    let ourAccents = ArchtypeConfig.accentPresets.map { [$0.name, $0.value, hex($0.color), hex($0.strong), hex($0.light)] }
     check(ourAccents == accents, "契约：强调色的表", "规格 \(accents)，macOS \(ourAccents)")
     let providers = (spec["translateProviders"]?["items"]?.array ?? []).map {
         [$0["name"]?.string ?? "", $0["url"]?.string ?? "", $0["model"]?.string ?? ""]
@@ -192,26 +192,26 @@ func checkConfigContract() {
         check(ours == presets, "契约：\(key) 的选项（macOS）", "规格 \(presets)，macOS \(ours)")
         check(ours.dropFirst().allSatisfy { Shortcut(name: $0)?.name == $0 }, "契约：\(key) 的选项都认得")
     }
-    let ourProviders = ArchTypeConfig.translateProviders.map { [$0.name, $0.url, $0.model] }
+    let ourProviders = ArchtypeConfig.translateProviders.map { [$0.name, $0.url, $0.model] }
     check(ourProviders == providers, "契约：翻译服务商", "规格 \(providers)，macOS \(ourProviders)")
 
     // 翻译引擎和哔哩哔哩（和 Linux 设置的 TRANSLATE_ENGINES、BILIBILI_* 对照同一份规格）
     let engines = (spec["translateEngines"]?["items"]?.array ?? []).map {
         [$0["id"]?.string ?? "", $0["name"]?.string ?? "", $0["note"]?.string ?? ""]
     }
-    let ourEngines = ArchTypeConfig.TranslateEngine.allCases.map { [$0.rawValue, $0.name, $0.note] }
+    let ourEngines = ArchtypeConfig.TranslateEngine.allCases.map { [$0.rawValue, $0.name, $0.note] }
     check(ourEngines == engines, "契约：翻译引擎的选项", "规格 \(engines)，macOS \(ourEngines)")
     let bili = spec["translateBilibili"]
-    let ourBili = [ArchTypeConfig.bilibiliURL, ArchTypeConfig.bilibiliHost, ArchTypeConfig.bilibiliDefaultModel,
-                   ArchTypeConfig.bilibiliPrivacy]
+    let ourBili = [ArchtypeConfig.bilibiliURL, ArchtypeConfig.bilibiliHost, ArchtypeConfig.bilibiliDefaultModel,
+                   ArchtypeConfig.bilibiliPrivacy]
     let specBili = ["url", "host", "default", "privacy"].map { bili?[$0]?.string ?? "" }
     check(ourBili == specBili, "契约：哔哩哔哩的地址、主机、默认模型、隐私说明", "规格 \(specBili)，macOS \(ourBili)")
     let biliModels = (bili?["models"]?.array ?? []).map { [$0["id"]?.string ?? "", $0["name"]?.string ?? ""] }
-    let ourBiliModels = ArchTypeConfig.bilibiliModels.map { [$0.id, $0.name] }
+    let ourBiliModels = ArchtypeConfig.bilibiliModels.map { [$0.id, $0.name] }
     check(ourBiliModels == biliModels, "契约：哔哩哔哩的模型", "规格 \(biliModels)，macOS \(ourBiliModels)")
     // 选中哪个引擎从 TranslateLocal 和 TranslateBaseUrl 推出来
     let bilibiliURL = bili?["url"]?.string ?? "?"
-    let engineCases: [(String, ArchTypeConfig.TranslateEngine)] = [
+    let engineCases: [(String, ArchtypeConfig.TranslateEngine)] = [
         ("TranslateLocal=True\nTranslateBaseUrl=\(bilibiliURL)", .local),
         ("TranslateLocal=False\nTranslateBaseUrl=\(bilibiliURL)", .bilibili),
         ("TranslateBaseUrl=\(bilibiliURL)/chat/completions", .bilibili),
@@ -222,7 +222,7 @@ func checkConfigContract() {
         ("", .local),
     ]
     for (file, want) in engineCases {
-        let got = ArchTypeConfig.parse(file).translateEngine
+        let got = ArchtypeConfig.parse(file).translateEngine
         check(got == want, "契约：文件是 \(file.debugDescription) 时翻译引擎是 \(want.rawValue)", got.rawValue)
     }
 
@@ -232,14 +232,14 @@ func checkConfigContract() {
             check(false, "契约：readRules.cases 的例子写得不全")
             continue
         }
-        let parsed = ArchTypeConfig.parse(file)
+        let parsed = ArchtypeConfig.parse(file)
         for (key, value) in expect.sorted(by: { $0.key < $1.key }) {
             let want = value.string ?? "?"
             check(parsed.value(forKey: key) == want, "契约：文件是 \(file.debugDescription) 时 \(key) 是 \(want)",
                   parsed.value(forKey: key) ?? "nil")
         }
         let written = parsed.serialized(into: file)
-        check(ArchTypeConfig.parse(written) == parsed, "契约：文件是 \(file.debugDescription) 时写回去再读一样", written)
+        check(ArchtypeConfig.parse(written) == parsed, "契约：文件是 \(file.debugDescription) 时写回去再读一样", written)
     }
 }
 

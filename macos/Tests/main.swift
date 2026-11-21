@@ -532,8 +532,8 @@ do {
 // MARK: 设置（archtype.conf）
 
 /// 照设置配好引擎和会话；测完把引擎改回默认（所有测试共用一个引擎）。
-func withConfig(_ change: (inout ArchTypeConfig) -> Void, _ body: (Composer, FakeClient) -> Void) {
-    var config = ArchTypeConfig()
+func withConfig(_ change: (inout ArchtypeConfig) -> Void, _ body: (Composer, FakeClient) -> Void) {
+    var config = ArchtypeConfig()
     change(&config)
     let problems = engine.apply(config, conversion: "core/data/s2t.tsv")
     if !problems.isEmpty {
@@ -542,21 +542,21 @@ func withConfig(_ change: (inout ArchTypeConfig) -> Void, _ body: (Composer, Fak
     let (c, client) = fresh()
     c.apply(config)
     body(c, client)
-    engine.apply(ArchTypeConfig())
+    engine.apply(ArchtypeConfig())
 }
 
 do {
-    // 默认值和 Linux 的 ArchTypeConfig 一样
-    let d = ArchTypeConfig()
+    // 默认值和 Linux 的 ArchtypeConfig 一样
+    let d = ArchtypeConfig()
     check(d.horizontal && d.pageSize == 9 && d.pageKeys == 1, "默认横排、每页 9 个、- = 翻页")
     check(!d.fuzzy && d.fuzzyGroups == 1 | 2 | 4 | 64 | 128 | 256 | 512 | 1024, "默认模糊音关，分组同核心默认", "\(d.fuzzyGroups)")
     check(d.typoCorrection && !d.rareExtChars && !d.shuangpin && d.shuangpinScheme == "Ziranma", "默认纠错开、双拼关（自然码）")
-    check(d.shuangpinAbbrev && !ArchTypeConfig.parse("ShuangpinAbbrev=False\n").shuangpinAbbrev, "双拼简拼默认开，写 False 关")
+    check(d.shuangpinAbbrev && !ArchtypeConfig.parse("ShuangpinAbbrev=False\n").shuangpinAbbrev, "双拼简拼默认开，写 False 关")
     check(d.shiftToggle == .both && !d.traditional && !d.halfwidthPunct && d.selectKeys == .off, "默认 Shift 切换、简体、全角标点")
     check(d.pickChar && d.dateTime && d.calculator && d.emojiSuggest && d.autoSpaceFlags == 0 && d.lexicon.isEmpty,
           "默认以词定字、日期、计算器、emoji 推荐开，自动空格关，自带词库")
-    check(ArchTypeConfig.parse(ArchTypeConfig.template()) == d, "写出来的设置模板读回来是默认值")
-    check(ArchTypeConfig.load(path: "/nonexistent/archtype.conf") == d, "没有设置文件用默认值")
+    check(ArchtypeConfig.parse(ArchtypeConfig.template()) == d, "写出来的设置模板读回来是默认值")
+    check(ArchtypeConfig.load(path: "/nonexistent/archtype.conf") == d, "没有设置文件用默认值")
 
     let text = """
     # 注释
@@ -582,20 +582,20 @@ do {
     [Hotkey]
     PageSize=4
     """
-    let c = ArchTypeConfig.parse(text)
+    let c = ArchtypeConfig.parse(text)
     check(!c.horizontal && c.pageSize == 9, "竖排；每页个数超出 3–9 取 9；[分组] 里的不算", "\(c.pageSize)")
     check(c.fuzzy && c.fuzzyGroups == (1 | 2 | 4 | 64 | 128 | 256 | 512 | 1024) & ~1 | 8, "模糊音分组", "\(c.fuzzyGroups)")
     check(!c.typoCorrection, "键值两边的空格不算")
     check(c.shuangpin && c.shuangpinScheme == "Xiaohe", "双拼方案", c.shuangpinScheme)
     // 和 fcitx5 一样区分大小写，认不出的回到默认（三端一样，见 spec/config.json 的 readRules）
-    check(ArchTypeConfig.parse("ShuangpinScheme=xiaohe").shuangpinScheme == "Ziranma"
-          && ArchTypeConfig.parse("ShuangpinScheme=Dvorak").shuangpinScheme == "Ziranma", "双拼方案写错、大小写不对用默认")
+    check(ArchtypeConfig.parse("ShuangpinScheme=xiaohe").shuangpinScheme == "Ziranma"
+          && ArchtypeConfig.parse("ShuangpinScheme=Dvorak").shuangpinScheme == "Ziranma", "双拼方案写错、大小写不对用默认")
     check(c.shiftToggle == .right && c.halfwidthPunct && c.selectKeys == .semicolonQuote, "枚举值")
     check(c.pageKeys == 2, "翻页键", "\(c.pageKeys)")
     check(c.autoSpaceFlags == 1, "自动空格只加字母", "\(c.autoSpaceFlags)")
     check(c.lexicon == "~/dicts/my lexicon.tsv" && c.candidateFontSize == 20, "带引号的值、字号", c.lexicon)
     check(!c.traditional, "认不出的值保持默认")
-    check(ArchTypeConfig.parse("PageSize=5\r\nFuzzy=True\r\n") == { var w = ArchTypeConfig(); w.pageSize = 5; w.fuzzy = true; return w }(),
+    check(ArchtypeConfig.parse("PageSize=5\r\nFuzzy=True\r\n") == { var w = ArchtypeConfig(); w.pageSize = 5; w.fuzzy = true; return w }(),
           "Windows 换行（\\r\\n）")
 }
 
@@ -625,11 +625,11 @@ withConfig({ $0.inputScheme = .shuangpin; $0.shuangpinAbbrev = false }) { c, cli
 }
 
 do {
-    var config = ArchTypeConfig()
+    var config = ArchtypeConfig()
     config.inputScheme = .shuangpin
     config.shuangpinScheme = "Dvorak"
     check(!engine.apply(config).isEmpty, "不认识的双拼方案报出来（改用自然码）")
-    engine.apply(ArchTypeConfig())
+    engine.apply(ArchtypeConfig())
 }
 
 withConfig({ _ in }) { c, client in
@@ -639,14 +639,14 @@ withConfig({ _ in }) { c, client in
 
 // 五笔：码表用 rime-wubi 的原样几行
 do {
-    check(ArchTypeConfig.parse("Shuangpin=True\n").inputScheme == .shuangpin, "旧设置 Shuangpin=True 读成双拼")
-    check(ArchTypeConfig.parse("InputScheme=Wubi86\nShuangpin=True\n").inputScheme == .wubi86, "有 InputScheme 时不看 Shuangpin")
-    var wubi = ArchTypeConfig()
+    check(ArchtypeConfig.parse("Shuangpin=True\n").inputScheme == .shuangpin, "旧设置 Shuangpin=True 读成双拼")
+    check(ArchtypeConfig.parse("InputScheme=Wubi86\nShuangpin=True\n").inputScheme == .wubi86, "有 InputScheme 时不看 Shuangpin")
+    var wubi = ArchtypeConfig()
     wubi.inputScheme = .wubi86
     let written = wubi.serialized(into: "Shuangpin=True\n")
     check(!written.contains("Shuangpin=") && written.contains("InputScheme=Wubi86"), "写回去删掉旧的 Shuangpin 开关", written)
 
-    var noTable = ArchTypeConfig()
+    var noTable = ArchtypeConfig()
     noTable.inputScheme = .wubi86
     check(engine.apply(noTable, wubi: nil).contains { $0.contains("五笔码表") }, "没有码表时报出来")
     let (c, client) = fresh()
@@ -654,22 +654,22 @@ do {
     type(c, "nihao")
     check(client.page?.aux?.contains("没有五笔码表") == true && client.page?.texts.first == "你好",
           "没有码表时照全拼打，候选框上方说为什么", "\(client.page?.aux ?? "nil") \(client.page?.texts ?? [])")
-    engine.apply(ArchTypeConfig())
+    engine.apply(ArchtypeConfig())
 
     let table = "/tmp/archtype-macos-harness-\(getpid()).wubi86.tsv"
     writeFile(table, "g\t一\t2015124793\nggl\t一\t2830000000\nggll\t一\t2830000000\nv\t发\t395047607\n"
               + "w\t人\t1002212710\nwq\t你\t597727619\nwqin\t您\t3090000000\nwqvb\t你好\t70500000\n"
               + "wqvb\t您好\t34700000\n")
     defer { unlink(table) }
-    func withWubi(_ change: (inout ArchTypeConfig) -> Void = { _ in }, _ body: (Composer, FakeClient) -> Void) {
-        var config = ArchTypeConfig()
+    func withWubi(_ change: (inout ArchtypeConfig) -> Void = { _ in }, _ body: (Composer, FakeClient) -> Void) {
+        var config = ArchtypeConfig()
         config.inputScheme = .wubi86
         change(&config)
         check(engine.apply(config, wubi: table).isEmpty, "五笔码表载入")
         let (c, client) = fresh()
         c.apply(config)
         body(c, client)
-        engine.apply(ArchTypeConfig())
+        engine.apply(ArchtypeConfig())
     }
     withWubi { c, client in
         type(c, "ggll")
@@ -844,27 +844,27 @@ withConfig({ _ in }) { c, _ in
 
 do {
     // 设置窗口写回 archtype.conf：只改认识的键，别的行原样留着；读回来就是写进去的设置
-    let d = ArchTypeConfig()
-    check(d.serialized(into: nil) == ArchTypeConfig.template(), "没有设置文件：写出来的是模板")
-    check(Set(ArchTypeConfig.keys).count == ArchTypeConfig.keys.count
-          && ArchTypeConfig.keys.allSatisfy { d.value(forKey: $0) != nil }, "每个键都有写法")
-    let template = ArchTypeConfig.template()
-    check(ArchTypeConfig.keys.allSatisfy { template.contains("\n# " + $0 + "=") }, "模板里每个键都有（注释掉的默认值）")
+    let d = ArchtypeConfig()
+    check(d.serialized(into: nil) == ArchtypeConfig.template(), "没有设置文件：写出来的是模板")
+    check(Set(ArchtypeConfig.keys).count == ArchtypeConfig.keys.count
+          && ArchtypeConfig.keys.allSatisfy { d.value(forKey: $0) != nil }, "每个键都有写法")
+    let template = ArchtypeConfig.template()
+    check(ArchtypeConfig.keys.allSatisfy { template.contains("\n# " + $0 + "=") }, "模板里每个键都有（注释掉的默认值）")
     // 加了新设置（模板里多了一行）却没加进 keys / setValue / value(forKey:)：设置窗口写不回去
     let templateKeys = template.split(separator: "\n").compactMap { line -> String? in
         guard line.hasPrefix("# "), let eq = line.firstIndex(of: "=") else { return nil }
         let key = line[line.index(line.startIndex, offsetBy: 2)..<eq]
         return key.allSatisfy({ $0.isASCII && $0.isLetter }) ? String(key) : nil
     }
-    check(Set(templateKeys) == Set(ArchTypeConfig.keys) && templateKeys.allSatisfy { d.value(forKey: $0) != nil },
-          "模板里的键都能写回去", "\(Set(templateKeys).symmetricDifference(ArchTypeConfig.keys))")
+    check(Set(templateKeys) == Set(ArchtypeConfig.keys) && templateKeys.allSatisfy { d.value(forKey: $0) != nil },
+          "模板里的键都能写回去", "\(Set(templateKeys).symmetricDifference(ArchtypeConfig.keys))")
     // 模板里一项都不生效：以后改了默认值，没改过的人跟着变
     let activeLines = template.split(separator: "\n").filter { !$0.hasPrefix("#") && $0.contains("=") }
     check(activeLines.isEmpty, "模板里的设置行都注释掉了", "\(activeLines)")
     check(d.value(forKey: "NoSuchKey") == nil, "不认识的键没有写法")
 
     // 从模板写：只写改过的键，就地换掉注释掉的那一行，别的键还是注释
-    var one = ArchTypeConfig()
+    var one = ArchtypeConfig()
     one.pageSize = 5
     one.traditional = true
     let fromTemplate = one.serialized(into: nil)
@@ -872,14 +872,14 @@ do {
     check(written == ["PageSize=5", "Traditional=True"], "从模板写只写改过的键", "\(written)")
     check(!fromTemplate.contains("# PageSize=") && fromTemplate.contains("# 每页候选个数，3–9\nPageSize=5\n")
           && fromTemplate.contains("\n# Fuzzy=False\n"), "改过的键换掉注释掉的那一行，说明还在上面", fromTemplate)
-    check(ArchTypeConfig.parse(fromTemplate) == one && one.serialized(into: fromTemplate) == fromTemplate,
+    check(ArchtypeConfig.parse(fromTemplate) == one && one.serialized(into: fromTemplate) == fromTemplate,
           "从模板写的读回来一样，再写一次不变")
     check(one.serialized(into: "# 我的设置\n#PageSize=7\n") == "# 我的设置\nPageSize=5\nTraditional=True\n",
           "自己注释掉的设置行也就地换掉", one.serialized(into: "# 我的设置\n#PageSize=7\n"))
 
     // 每一项都改成不是默认值：写出来读回来一样（不管从模板、空文件还是只有注释的文件开始）
-    var all = ArchTypeConfig()
-    for key in ArchTypeConfig.keys {
+    var all = ArchtypeConfig()
+    for key in ArchtypeConfig.keys {
         if d.value(forKey: key) == "True" { all.setValue("False", forKey: key) }
         if d.value(forKey: key) == "False" { all.setValue("True", forKey: key) }
     }
@@ -907,11 +907,11 @@ do {
     all.windowMode = .english
     all.settingsTheme = .dark
     all.settingsAccent = "Purple"
-    check(ArchTypeConfig.keys.allSatisfy { all.value(forKey: $0) != d.value(forKey: $0) }, "每一项都改了",
-          "\(ArchTypeConfig.keys.filter { all.value(forKey: $0) == d.value(forKey: $0) })")
+    check(ArchtypeConfig.keys.allSatisfy { all.value(forKey: $0) != d.value(forKey: $0) }, "每一项都改了",
+          "\(ArchtypeConfig.keys.filter { all.value(forKey: $0) == d.value(forKey: $0) })")
     for (name, base) in [("模板", nil), ("空文件", ""), ("只有注释", "# 我的设置\n")] as [(String, String?)] {
         let out = all.serialized(into: base)
-        check(ArchTypeConfig.parse(out) == all, "每一项改过的设置写进\(name)再读回来一样", out)
+        check(ArchtypeConfig.parse(out) == all, "每一项改过的设置写进\(name)再读回来一样", out)
         check(all.serialized(into: out) == out, "再写一次不变（\(name)）")
     }
     check(all.serialized(into: "# 我的设置\n").hasPrefix("# 我的设置\nCandidateLayout=Vertical\nArrowKeys=Caret\nPageSize=4\n"),
@@ -936,7 +936,7 @@ do {
     PageSize=4
 
     """
-    let parsed = ArchTypeConfig.parse(linux)
+    let parsed = ArchtypeConfig.parse(linux)
     check(parsed.serialized(into: linux) == linux, "设置没改：文件一个字都不动")
 
     var changed = parsed
@@ -946,7 +946,7 @@ do {
     changed.fuzzyNL = true
     changed.traditional = true
     let out = changed.serialized(into: linux)
-    check(ArchTypeConfig.parse(out) == changed, "改过的设置读回来一样", out)
+    check(ArchtypeConfig.parse(out) == changed, "改过的设置读回来一样", out)
     check(out.contains("\nPageSize=5\n") && out.contains("\n  TypoCorrection = True\n")
           && out.contains("\nTraditional=True\n"), "改的行只换值，前面的空格留着", out)
     check(out.contains("CandidateLayout=horizontal\n") && out.contains("Lexicon=\"~/dicts/my lexicon.tsv\"\n")
@@ -959,12 +959,12 @@ do {
     var back = changed
     back.traditional = false
     let unparsable = back.serialized(into: linux)
-    check(unparsable.contains("\nTraditional=maybe\n") && ArchTypeConfig.parse(unparsable) == back,
+    check(unparsable.contains("\nTraditional=maybe\n") && ArchtypeConfig.parse(unparsable) == back,
           "认不出的值：要的是默认值就不动", unparsable)
 
     // 同一个键写了两次：都改；Windows 换行留着
     let twice = "PageSize=5\r\nFuzzy=False\r\nPageSize=7\r\n"
-    var three = ArchTypeConfig.parse(twice)
+    var three = ArchtypeConfig.parse(twice)
     three.pageSize = 3
     three.traditional = true
     check(three.serialized(into: twice) == "PageSize=3\r\nFuzzy=False\r\nPageSize=3\r\nTraditional=True\r\n",
@@ -972,12 +972,12 @@ do {
 
     // 窗口开着时文件在别处改了：窗口只写自己改的键
     let opened = "PageSize=7\nFuzzy=False\nVoice=True\n"
-    let base = ArchTypeConfig.parse(opened)
+    let base = ArchtypeConfig.parse(opened)
     var window = base
     window.pageSize = 4
     let edited = "PageSize=7\nFuzzy=True\nVoice=True\nTraditional=True\n"
     let merged = window.merged(changesFrom: base, into: edited)
-    let mergedConfig = ArchTypeConfig.parse(merged)
+    let mergedConfig = ArchtypeConfig.parse(merged)
     check(merged == "PageSize=4\nFuzzy=True\nVoice=True\nTraditional=True\n", "合并：别处改的留着，窗口改的写上", merged)
     check(mergedConfig.pageSize == 4 && mergedConfig.fuzzy && mergedConfig.traditional, "合并后读回来")
     check(window.merged(changesFrom: base, into: nil) == window.serialized(into: nil), "文件被删了：从模板写")
@@ -1091,14 +1091,14 @@ do {
 
 do {
     // 默认值、快捷键的键名（和 fcitx5 一样）
-    let d = ArchTypeConfig()
+    let d = ArchtypeConfig()
     check(d.toolbar && !d.clipboardHistory && d.emojiKey == .emojiDefault && d.emojiKey?.name == "Control+period",
           "默认工具栏开、剪贴板历史关、表情面板快捷键 Control+period", d.emojiKey?.name ?? "nil")
-    check(ArchTypeConfig.parse("EmojiKey=Super+period").emojiKey == .emojiDefault,
+    check(ArchtypeConfig.parse("EmojiKey=Super+period").emojiKey == .emojiDefault,
           "Linux 的默认值 Super+period 拷过来是 Control+.")
-    check(ArchTypeConfig.parse("EmojiKey=").emojiKey == nil, "EmojiKey 留空：不用快捷键")
-    check(ArchTypeConfig.parse("EmojiKey=Hyper+F12").emojiKey == .emojiDefault, "认不出的快捷键保持默认")
-    let e = ArchTypeConfig.parse("Toolbar=False\nClipboardHistory=True\nEmojiKey=Control+Shift+E")
+    check(ArchtypeConfig.parse("EmojiKey=").emojiKey == nil, "EmojiKey 留空：不用快捷键")
+    check(ArchtypeConfig.parse("EmojiKey=Hyper+F12").emojiKey == .emojiDefault, "认不出的快捷键保持默认")
+    let e = ArchtypeConfig.parse("Toolbar=False\nClipboardHistory=True\nEmojiKey=Control+Shift+E")
     check(!e.toolbar && e.clipboardHistory, "Toolbar、ClipboardHistory")
     check(e.emojiKey?.matches(.char("E", [.control, .shift])) == true, "Control+Shift+E：按下时 macOS 给大写也认")
     check(e.emojiKey?.name == "Control+Shift+E" && Shortcut(name: "Control+Shift+e")?.name == "Control+Shift+E"
@@ -1453,8 +1453,8 @@ struct TranslateRig {
 }
 
 /// 打开互译、切到「译」的输入框。
-func translateRig(_ change: (inout ArchTypeConfig) -> Void = { _ in }) -> TranslateRig {
-    var config = ArchTypeConfig()
+func translateRig(_ change: (inout ArchtypeConfig) -> Void = { _ in }) -> TranslateRig {
+    var config = ArchtypeConfig()
     config.translate = true
     change(&config)
     let (c, client) = fresh()
@@ -1471,28 +1471,28 @@ func translateRig(_ change: (inout ArchTypeConfig) -> Void = { _ in }) -> Transl
 
 do {
     // 设置：键名、默认值和 Linux 一样
-    let d = ArchTypeConfig()
+    let d = ArchtypeConfig()
     check(!d.translate && d.translateTarget == "en" && d.translateBaseUrl.isEmpty && d.translateModel.isEmpty
           && !d.translateFormal && d.translateLocal && d.translateLocalModel.isEmpty
           && d.translateLlamaServer.isEmpty && d.translateIdleMinutes == 5,
           "互译默认关、译成英文、默认用本地模型")
     // 0.3.10 及以前的文件没有 TranslateLocal：填了翻译接口的接着用接口（三端一样，见 spec/config.json）
     let old = "Translate=True\nTranslateBaseUrl=https://api.deepseek.com/v1\nTranslateModel=deepseek-chat\n"
-    check(!ArchTypeConfig.parse(old).translateLocal, "旧文件填了接口、没写 TranslateLocal：用接口")
-    check(ArchTypeConfig.parse("Translate=True\nTranslateBaseUrl=\n").translateLocal, "没填接口：用本地模型")
-    check(ArchTypeConfig.parse(old + "TranslateLocal=True\n").translateLocal, "写了 TranslateLocal 就照写的")
-    check(ArchTypeConfig.parse(old).serialized(into: old) == old, "旧文件读进来没改：一个字都不动")
-    var keepLocal = ArchTypeConfig.parse("Translate=True\n")
+    check(!ArchtypeConfig.parse(old).translateLocal, "旧文件填了接口、没写 TranslateLocal：用接口")
+    check(ArchtypeConfig.parse("Translate=True\nTranslateBaseUrl=\n").translateLocal, "没填接口：用本地模型")
+    check(ArchtypeConfig.parse(old + "TranslateLocal=True\n").translateLocal, "写了 TranslateLocal 就照写的")
+    check(ArchtypeConfig.parse(old).serialized(into: old) == old, "旧文件读进来没改：一个字都不动")
+    var keepLocal = ArchtypeConfig.parse("Translate=True\n")
     keepLocal.translateBaseUrl = "https://api.example.com/v1"
     let keepLocalText = keepLocal.serialized(into: "Translate=True\n")
-    check(keepLocalText.contains("\nTranslateLocal=True\n") && ArchTypeConfig.parse(keepLocalText).translateLocal,
+    check(keepLocalText.contains("\nTranslateLocal=True\n") && ArchtypeConfig.parse(keepLocalText).translateLocal,
           "填了接口又要用本地模型：TranslateLocal=True 要写进文件，不然读回来成了 False", keepLocalText)
-    var useService = ArchTypeConfig.parse(old)
+    var useService = ArchtypeConfig.parse(old)
     useService.translateBaseUrl = ""
     let useServiceText = useService.serialized(into: old)
-    check(useServiceText.contains("\nTranslateLocal=False\n") && !ArchTypeConfig.parse(useServiceText).translateLocal,
+    check(useServiceText.contains("\nTranslateLocal=False\n") && !ArchtypeConfig.parse(useServiceText).translateLocal,
           "清空接口但还选着服务：TranslateLocal=False 要写进文件", useServiceText)
-    let c = ArchTypeConfig.parse("""
+    let c = ArchtypeConfig.parse("""
     Translate=True
     TranslateTarget=ja
     TranslateBaseUrl=https://api.example.com/v1
@@ -1508,8 +1508,8 @@ do {
     check(c.translateLocal && c.translateLocalModel == "~/models/hy.gguf"
           && c.translateLlamaServer == "/opt/homebrew/bin/llama-server" && c.translateIdleMinutes == 240,
           "本地模型的各项；闲置分钟数超出 0–240 取 240", "\(c.translateIdleMinutes)")
-    check(ArchTypeConfig.parse("TranslateTarget=klingon").translateTarget == "en", "不认识的语言保持 en")
-    check(ArchTypeConfig.template().contains("TranslateBaseUrl=") && !ArchTypeConfig.template().contains("TranslateKey="),
+    check(ArchtypeConfig.parse("TranslateTarget=klingon").translateTarget == "en", "不认识的语言保持 en")
+    check(ArchtypeConfig.template().contains("TranslateBaseUrl=") && !ArchtypeConfig.template().contains("TranslateKey="),
           "设置模板里有互译的项，没有 Key")
 }
 
@@ -1554,9 +1554,9 @@ do {
 
 do {
     // 另设的切换键（#143），和 Linux 一样
-    check(ArchTypeConfig().toggleKey == nil, "默认不用另设的切换键")
-    check(ArchTypeConfig.parse("ToggleKey=Control+space").toggleKey?.name == "Control+space", "读出切换键")
-    check(ArchTypeConfig.parse("ToggleKey=Hyper+F12").toggleKey == nil, "认不出的键保持不用")
+    check(ArchtypeConfig().toggleKey == nil, "默认不用另设的切换键")
+    check(ArchtypeConfig.parse("ToggleKey=Control+space").toggleKey?.name == "Control+space", "读出切换键")
+    check(ArchtypeConfig.parse("ToggleKey=Hyper+F12").toggleKey == nil, "认不出的键保持不用")
 
     let r = translateRig { $0.toggleKey = Shortcut(name: "Control+space") }
     check(r.c.handle(.char(" ", [.control])) && r.c.mode == .chinese, "在「译」里按切换键回中文")
@@ -1577,7 +1577,7 @@ withConfig({ _ in }) { c, _ in
 withConfig({ $0.shiftToggle = .off; $0.toggleKey = Shortcut(name: "Control+space") }) { c, _ in
     // #87 的用法：Shift 没用、关掉，靠另设的键切换。换设置时不该被拉回中文
     check(c.handle(.char(" ", [.control])) && c.mode == .english, "关了 Shift 也能用切换键切到英文")
-    var again = ArchTypeConfig()
+    var again = ArchtypeConfig()
     again.shiftToggle = .off
     again.toggleKey = Shortcut(name: "Control+space")
     c.apply(again)
@@ -1589,10 +1589,10 @@ withConfig({ $0.shiftToggle = .off; $0.toggleKey = Shortcut(name: "Control+space
 
 do {
     // 进出「译」的快捷键（#87），和 Linux 一样
-    check(ArchTypeConfig().translateModeKey == nil, "默认不用互译键")
-    let parsed = ArchTypeConfig.parse("TranslateModeKey=Control+Shift+y")
+    check(ArchtypeConfig().translateModeKey == nil, "默认不用互译键")
+    let parsed = ArchtypeConfig.parse("TranslateModeKey=Control+Shift+y")
     check(parsed.translateModeKey?.name == "Control+Shift+Y", "读出互译键", parsed.translateModeKey?.name ?? "nil")
-    check(!ArchTypeConfig.template().contains("TranslateKey"), "模板里不出现 TranslateKey（会当成 API Key）")
+    check(!ArchtypeConfig.template().contains("TranslateKey"), "模板里不出现 TranslateKey（会当成 API Key）")
 
     let y = KeyInput.char("Y", [.control, .shift])
     let r = translateRig { $0.translateModeKey = Shortcut(name: "Control+Shift+Y") }
@@ -1634,7 +1634,7 @@ do {
 withConfig({ $0.shiftToggle = .off; $0.translateModeKey = Shortcut(name: "Control+Shift+Y") }) { c, _ in
     // 关了 Shift、只设了互译键：英文回不来，换设置时拉回中文（互译键只进出「译」）
     c.switchMode(to: .english)
-    var again = ArchTypeConfig()
+    var again = ArchtypeConfig()
     again.shiftToggle = .off
     again.translateModeKey = Shortcut(name: "Control+Shift+Y")
     c.apply(again)
@@ -1799,7 +1799,7 @@ do {
     // 两个输入框共用一个翻译器：清空自己的原文不取消别人的请求
     let r = translateRig()
     let (other, _) = fresh()
-    var config = ArchTypeConfig()
+    var config = ArchtypeConfig()
     config.translate = true
     other.setTranslator(r.t)
     other.apply(config)
@@ -1836,7 +1836,7 @@ do {
 do {
     // 核心的翻译器：没填服务时没配好；本地模型看模型文件在不在
     let t = Translator()
-    var config = ArchTypeConfig()
+    var config = ArchtypeConfig()
     config.translate = true
     config.translateLocal = false
     t.configure(config, keyFile: "", defaultLocalModel: "")
@@ -1846,13 +1846,13 @@ do {
     t.configure(config, keyFile: "", defaultLocalModel: "")
     check(t.isReady, "填了地址和模型：配好了")
     // 哔哩哔哩：模型空着（用 2B）、没有 Key 也算配好了
-    config.translateBaseUrl = ArchTypeConfig.bilibiliURL
+    config.translateBaseUrl = ArchtypeConfig.bilibiliURL
     config.translateModel = ""
     t.configure(config, keyFile: "", defaultLocalModel: "")
     check(t.isReady && config.translateEngine == .bilibili, "哔哩哔哩：不填模型、没有 Key 也配好了")
-    check(ArchTypeConfig.urlHost("https://user:k@[::1]:8080/v1") == "::1"
-          && ArchTypeConfig.urlHost("index-translate.bilibili.com/v1") == ArchTypeConfig.bilibiliHost
-          && ArchTypeConfig.urlHost("HTTP://Example.com:80?x=1") == "example.com", "网址里的主机名")
+    check(ArchtypeConfig.urlHost("https://user:k@[::1]:8080/v1") == "::1"
+          && ArchtypeConfig.urlHost("index-translate.bilibili.com/v1") == ArchtypeConfig.bilibiliHost
+          && ArchtypeConfig.urlHost("HTTP://Example.com:80?x=1") == "example.com", "网址里的主机名")
     config.translateBaseUrl = "http://127.0.0.1:1/v1"
     config.translateModel = "m"
     config.translateLocal = true
@@ -1972,7 +1972,7 @@ if !haveCurl() {
     signal(SIGPIPE, SIG_IGN)
     let keyPath = "/tmp/archtype-macos-harness-\(getpid()).translate.key"
     TranslateKeyFile.write("sk-test-123", to: keyPath)
-    var config = ArchTypeConfig()
+    var config = ArchtypeConfig()
     config.translate = true
     config.translateLocal = false
     config.translateBaseUrl = server.baseURL
@@ -2101,7 +2101,7 @@ do {
 // MARK: 语音键
 
 do {
-    let d = ArchTypeConfig()
+    let d = ArchtypeConfig()
     check(d.voice && d.voiceKey == "Alt_R" && !d.voiceCopy, "语音默认开、右 Option、不复制")
     let option = VoiceKey(name: "Alt_R")
     check(option?.keyCode == 0x3D && option?.isModifier == true, "Alt_R 是右 Option")
@@ -2118,7 +2118,7 @@ do {
     check(VoiceKey(name: "F8")?.keyCode == 0x64 && VoiceKey(name: "F8")?.isModifier == false, "F8 不是修饰键")
     check(VoiceKey(name: "Menu") == nil && VoiceKey(name: "") == nil && VoiceKey(name: "none") == nil,
           "Mac 上没有的键、留空：不用语音键")
-    let c = ArchTypeConfig.parse("Voice=False\nVoiceKey=F9\nVoiceCopy=True")
+    let c = ArchtypeConfig.parse("Voice=False\nVoiceKey=F9\nVoiceCopy=True")
     check(!c.voice && c.voiceKey == "F9" && c.voiceCopy, "读语音设置")
     check(voiceWave([]) == "▁▁▁▁▁▁" && voiceWave([100, 0]) == "▁▁▁▁█▁"
           && voiceWave([0, 10, 20, 30, 40, 50, 60]).count == 6, "音量画成 6 个竖条（和 Linux 一样）")
@@ -2238,8 +2238,8 @@ do {
     check(AppUpdate.highlights("## 这一版要注意\n\n- 甲\n\n## 安装\n\n乙") == "- 甲", "更新说明：发布任务写的「这一版要注意」那一节")
     check(AppUpdate.assetNames(sums: "\(sha)  ArchType-0.6.0-macos.pkg\n\(sha) *archtype_0.6.0_debian13_amd64.deb\nbad  x\n\(sha)  ../evil\n")
           == ["ArchType-0.6.0-macos.pkg", "archtype_0.6.0_debian13_amd64.deb"], "SHA256SUMS 里的文件名")
-    check(!ArchTypeConfig().betaUpdates && ArchTypeConfig.parse("BetaUpdates=True\n").betaUpdates, "BetaUpdates 默认关、读得出来")
-    check(!ArchTypeConfig().typingStats && ArchTypeConfig.parse("TypingStats=True\n").typingStats, "TypingStats 默认关、读得出来")
+    check(!ArchtypeConfig().betaUpdates && ArchtypeConfig.parse("BetaUpdates=True\n").betaUpdates, "BetaUpdates 默认关、读得出来")
+    check(!ArchtypeConfig().typingStats && ArchtypeConfig.parse("TypingStats=True\n").typingStats, "TypingStats 默认关、读得出来")
     check(AppUpdate.isNewer("0.4.1", than: "0.4.0") && AppUpdate.isNewer("0.10.0", than: "0.9.9")
           && AppUpdate.isNewer("0.4.0.1", than: "0.4.0"), "新版本")
     check(!AppUpdate.isNewer("0.4.0", than: "0.4.0") && !AppUpdate.isNewer("0.3.12", than: "0.4.0"), "一样的、旧的不算新版本")
@@ -2275,13 +2275,13 @@ do {
 // MARK: 切到 ArchType 时（InitialMode）
 
 do {
-    check(ArchTypeConfig().initialMode == .chinese, "切到 ArchType 时默认中文")
-    check(ArchTypeConfig.parse("InitialMode=English\n").initialMode == .english
-          && ArchTypeConfig.parse("InitialMode=Last\n").initialMode == .last, "InitialMode 读得出来")
-    check(ArchTypeConfig.parse("InitialMode=english\n").initialMode == .chinese, "InitialMode 大小写不对用默认")
-    var english = ArchTypeConfig()
+    check(ArchtypeConfig().initialMode == .chinese, "切到 ArchType 时默认中文")
+    check(ArchtypeConfig.parse("InitialMode=English\n").initialMode == .english
+          && ArchtypeConfig.parse("InitialMode=Last\n").initialMode == .last, "InitialMode 读得出来")
+    check(ArchtypeConfig.parse("InitialMode=english\n").initialMode == .chinese, "InitialMode 大小写不对用默认")
+    var english = ArchtypeConfig()
     english.initialMode = .english
-    check(ArchTypeConfig.parse(english.serialized(into: nil)).initialMode == .english, "InitialMode 写进文件再读一样")
+    check(ArchtypeConfig.parse(english.serialized(into: nil)).initialMode == .english, "InitialMode 写进文件再读一样")
 }
 
 withConfig({ $0.initialMode = .english }) { c, _ in
@@ -2319,29 +2319,29 @@ withConfig({ $0.initialMode = .english; $0.shiftToggle = .off; $0.toggleKey = Sh
 // MARK: 设置窗口的主题和强调色（SettingsTheme、SettingsAccent，和 Linux、Windows 一样）
 
 do {
-    let d = ArchTypeConfig()
+    let d = ArchtypeConfig()
     check(d.settingsTheme == .system && d.settingsAccent == "Green" && d.accent.strong == 0x0A8358,
           "设置窗口默认跟随系统、绿色")
-    let parsed = ArchTypeConfig.parse("SettingsTheme=Dark\nSettingsAccent=Blue\n")
+    let parsed = ArchtypeConfig.parse("SettingsTheme=Dark\nSettingsAccent=Blue\n")
     check(parsed.settingsTheme == .dark && parsed.accent.value == "Blue" && parsed.accent.color == 0x3584E4,
           "SettingsTheme、SettingsAccent 读得出来")
-    let wrong = ArchTypeConfig.parse("SettingsTheme=dark\nSettingsAccent=Red\n")
+    let wrong = ArchtypeConfig.parse("SettingsTheme=dark\nSettingsAccent=Red\n")
     check(wrong.settingsTheme == .system && wrong.accent.value == "Green", "认不出的主题、强调色用默认")
-    check(ArchTypeConfig.parse(parsed.serialized(into: nil)) == parsed, "主题、强调色写进文件再读一样")
+    check(ArchtypeConfig.parse(parsed.serialized(into: nil)) == parsed, "主题、强调色写进文件再读一样")
     check(!d.serialized(into: nil).contains("\nSettingsTheme="), "默认的主题不写成生效的一行")
-    check(ArchTypeConfig.SettingsTheme.allCases.map(\.name) == ["跟随系统", "浅色", "深色"], "主题的名字")
+    check(ArchtypeConfig.SettingsTheme.allCases.map(\.name) == ["跟随系统", "浅色", "深色"], "主题的名字")
 }
 
 // MARK: 换到新窗口、新应用时（WindowMode，#254）
 
 do {
-    check(ArchTypeConfig().windowMode == .same, "换窗口默认和上次一样")
-    check(ArchTypeConfig.parse("WindowMode=English\n").windowMode == .english
-          && ArchTypeConfig.parse("WindowMode=Chinese\n").windowMode == .chinese, "WindowMode 读得出来")
-    check(ArchTypeConfig.parse("WindowMode=english\n").windowMode == .same, "WindowMode 大小写不对用默认")
-    var english = ArchTypeConfig()
+    check(ArchtypeConfig().windowMode == .same, "换窗口默认和上次一样")
+    check(ArchtypeConfig.parse("WindowMode=English\n").windowMode == .english
+          && ArchtypeConfig.parse("WindowMode=Chinese\n").windowMode == .chinese, "WindowMode 读得出来")
+    check(ArchtypeConfig.parse("WindowMode=english\n").windowMode == .same, "WindowMode 大小写不对用默认")
+    var english = ArchtypeConfig()
     english.windowMode = .english
-    check(ArchTypeConfig.parse(english.serialized(into: nil)).windowMode == .english, "WindowMode 写进文件再读一样")
+    check(ArchtypeConfig.parse(english.serialized(into: nil)).windowMode == .english, "WindowMode 写进文件再读一样")
 }
 
 do {
@@ -2483,8 +2483,8 @@ func pairType(_ c: Composer, _ client: CaretClient, _ keys: String) {
     }
 }
 
-func withPairing(_ change: (inout ArchTypeConfig) -> Void = { _ in }, _ body: (Composer, CaretClient) -> Void) {
-    var config = ArchTypeConfig()
+func withPairing(_ change: (inout ArchtypeConfig) -> Void = { _ in }, _ body: (Composer, CaretClient) -> Void) {
+    var config = ArchtypeConfig()
     config.autoPairPunct = true
     config.emojiSuggest = false
     change(&config)
@@ -2493,11 +2493,11 @@ func withPairing(_ change: (inout ArchTypeConfig) -> Void = { _ in }, _ body: (C
     let c = Composer(engine: engine, client: client)
     c.apply(config)
     body(c, client)
-    engine.apply(ArchTypeConfig())
+    engine.apply(ArchtypeConfig())
 }
 
 do {
-    check(!ArchTypeConfig().autoPairPunct, "自动配对默认关")
+    check(!ArchtypeConfig().autoPairPunct, "自动配对默认关")
     check(CaretEdit.move(by: -1, inserted: "你好（）", next: nil) == CaretEdit(offset: -2, length: 1, text: "（"),
           "光标左移一格：把「（」原样换一遍")
     check(CaretEdit.move(by: 1, inserted: "", next: 0xFF09) == CaretEdit(offset: 0, length: 1, text: "）"),
@@ -2707,7 +2707,7 @@ if getenv("ARCHTYPE_EXPECT_FULL_CHARS") != nil {
     }
 }
 
-check(!ArchTypeConfig().association, "联想默认关")
+check(!ArchtypeConfig().association, "联想默认关")
 do {
     let (c, client) = fresh()
     type(c, "nihao ")

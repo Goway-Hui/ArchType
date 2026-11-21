@@ -44,7 +44,7 @@ final class VoiceInput {
     private var openedSettingsForMic = false
 
     /// 照设置配语音键；第一次要用时才建核心的语音对象（不碰麦克风、不读模型，按键时才读）。
-    func configure(_ config: ArchTypeConfig, modelDir: String) {
+    func configure(_ config: ArchtypeConfig, modelDir: String) {
         let wanted = config.voice ? VoiceKey(name: config.voiceKey) : nil
         if wanted != key {
             if showing { cancel() }

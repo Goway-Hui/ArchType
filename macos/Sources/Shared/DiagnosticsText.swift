@@ -17,7 +17,7 @@ public enum DiagnosticsText {
             if key == "TranslateBaseUrl" {
                 return key + "=" + maskURL(value)
             }
-            if !ArchTypeConfig.keys.contains(key), looksSecret(key), !value.isEmpty, value != "\"\"" {
+            if !ArchtypeConfig.keys.contains(key), looksSecret(key), !value.isEmpty, value != "\"\"" {
                 return key + "=（已打码）"
             }
             return line

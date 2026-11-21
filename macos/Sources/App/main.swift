@@ -38,9 +38,9 @@ func selfTest() -> Bool {
     }
     print(String(format: "词库载入 %.1f 秒", Date().timeIntervalSince(start)))
     let config = AppState.shared.config
-    print("设置 \(AppState.shared.configPath)：\(config == ArchTypeConfig() ? "默认" : "改过")，输入方案 \(config.inputScheme.rawValue)\(config.shuangpin ? "（\(config.shuangpinScheme)）" : "")")
+    print("设置 \(AppState.shared.configPath)：\(config == ArchtypeConfig() ? "默认" : "改过")，输入方案 \(config.inputScheme.rawValue)\(config.shuangpin ? "（\(config.shuangpinScheme)）" : "")")
     // 下面照默认设置打一句（设置里开了双拼 nihao 就不是你好了）
-    engine.apply(ArchTypeConfig())
+    engine.apply(ArchtypeConfig())
     let client = SelfTestClient()
     let composer = Composer(engine: engine, client: client)
     for c in "nihao" {
@@ -51,7 +51,7 @@ func selfTest() -> Bool {
     print("nihao → 第一个候选「\(first)」，上屏「\(client.committed)」")
     guard client.committed == "你好" else { return false }
     // 安装包里的五笔码表：wqvb 空格上屏「你好」
-    var wubi = ArchTypeConfig()
+    var wubi = ArchtypeConfig()
     wubi.inputScheme = .wubi86
     for problem in engine.apply(wubi, wubi: AppState.shared.resource("wubi86.tsv")) {
         print("FAIL \(problem)")
@@ -136,7 +136,7 @@ func downloadModelCommand(accepted: Bool) -> Bool {
         else { return false }
     }
     let state = AppState.shared
-    let config = ArchTypeConfig.load(path: state.configPath)
+    let config = ArchtypeConfig.load(path: state.configPath)
     let model = config.translateLocalModel.isEmpty
         ? state.localModelPath : (config.translateLocalModel as NSString).expandingTildeInPath
     let plan = LocalModelInstaller.plan(model: model, customServer: config.translateLlamaServer,
@@ -178,7 +178,7 @@ func downloadModelCommand(accepted: Bool) -> Bool {
 /// --remove-voice-model 删掉模型并关掉语音输入。
 func voiceModelCommand(_ args: [String]) -> Bool {
     let state = AppState.shared
-    var values = ArchTypeConfig.parse(readText(state.configPath) ?? "")
+    var values = ArchtypeConfig.parse(readText(state.configPath) ?? "")
     let base = values
     if args[0] == "--remove-voice-model" {
         let freed = VoiceModelInstaller.remove(supportDir: state.supportDir)
