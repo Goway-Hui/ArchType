@@ -1,0 +1,7 @@
+/* 输入法菜单和「系统设置 → 键盘 → 输入法」里显示的名字（键是 Info.plist 里的输入模式 ID） */
+"CFBundleName" = "ArchType";
+"CFBundleDisplayName" = "ArchType";
+"io.github.gloridust.inputmethod.ArchType" = "ArchType 拼音";
+"io.github.gloridust.inputmethod.ArchType.Hans" = "ArchType 拼音";
+
+"NSMicrophoneUsageDescription" = "按住语音键说话，ArchType 在本机把说的话识别成文字。";

@@ -1175,6 +1175,15 @@ impl Config {
         read(&format!("{}/stats.json", Config::data_dir()))
     }
 
+    /// 启动参数里的 --page（macOS 外壳打开设置时带）：general / words / voice。
+    pub fn initial_page() -> String {
+        let args: Vec<String> = std::env::args().collect();
+        args.windows(2)
+            .find(|pair| pair[0] == "--page")
+            .map(|pair| pair[1].clone())
+            .unwrap_or_default()
+    }
+
     /// 设置界面版本：打包时 `nsh package --app-version` 写进同目录 nsh/app.json，界面跟着安装包走；
     /// 开发时（nsh run，没有 app.json）显示 dev。
     pub fn version() -> String {

@@ -1,0 +1,7 @@
+/* 输入法菜单和「系统设置 → 键盘 → 输入法」里显示的名字（键是 Info.plist 里的输入模式 ID） */
+"CFBundleName" = "ArchType";
+"CFBundleDisplayName" = "ArchType";
+"io.github.gloridust.inputmethod.ArchType" = "ArchType";
+"io.github.gloridust.inputmethod.ArchType.Hans" = "ArchType";
+
+"NSMicrophoneUsageDescription" = "Hold the voice key and speak; ArchType turns your speech into text on this Mac.";

@@ -497,7 +497,13 @@ let voicePollStarted = false;
 function App() {
   // 窗口引用要在渲染时取:回调里再调 currentWindow() 会抛 "call it while rendering"。
   const win = currentWindow();
-  const current = signal(0);
+  // macOS 外壳从菜单/语音提示打开设置时带 --page：general / words / voice
+  const startPage = (() => {
+    const names: Record<string, string> = { general: "常规", words: "自定义词", voice: "语音" };
+    const index = pages.indexOf(names[Config.initialPage()] ?? "");
+    return index >= 0 ? index : 0;
+  })();
+  const current = signal(startPage);
 
   const layout = signal(Config.get("CandidateLayout") || "Vertical");
   const pageSize = signal(Number(Config.get("PageSize") || "9"));

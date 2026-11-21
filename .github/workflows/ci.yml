@@ -595,11 +595,81 @@ jobs:
           nix build .#default -L "${override[@]}"
           nix flake check -L "${override[@]}"
 
+  macos-app:
+    # macOS 输入法外壳（macos/）：按键测试、打通用安装包、自检、真装一遍 pkg。
+    # 设置界面是跨平台的 NSH app，随输入法包一起带（菜单「设置」打开）。
+    name: macOS 输入法
+    timeout-minutes: 45
+    needs: [data]
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v5
+      - run: |
+          rustup toolchain install stable --profile minimal && rustup default stable
+          rustup target add aarch64-apple-darwin x86_64-apple-darwin
+      - uses: Swatinem/rust-cache@v2
+      - uses: actions/download-artifact@v5
+        with:
+          name: data
+          path: dist/data
+      - name: nsh（跨平台设置界面）
+        run: |
+          curl -fsSL https://nsh.dev/install.sh | NSH_VERSION=v0.6.0 sh
+          echo "$HOME/.nsh/bin" >> "$GITHUB_PATH"
+      - name: 按键测试和设置契约（小词库 + 真实词库），外壳测试（真实词库）
+        run: |
+          macos/test.sh
+          ARCHTYPE_EXPECT_FULL_CHARS=1 macos/test.sh dist/data/lexicon.tsv dist/data/english.txt
+      - name: 打包（含 NSH 设置 app）
+        run: |
+          if [ "${GITHUB_REF_TYPE}" = tag ]; then export ARCHTYPE_VERSION=${GITHUB_REF_NAME#v}; fi
+          macos/build.sh dist/data dist/macos
+      - name: 检查安装包
+        run: |
+          app=dist/macos/ArchType.app
+          bin=$app/Contents/MacOS/ArchType
+          plutil -lint "$app/Contents/Info.plist"
+          lipo "$bin" -verify_arch arm64 x86_64
+          if otool -L "$bin" | grep -v ':$' | grep -Ev '^\s+(/System/Library/|/usr/lib/)'; then
+            echo "链接了系统以外的库"; exit 1
+          fi
+          codesign --verify --strict "$app"
+          [[ -d "$app/Contents/Resources/ArchType 设置.app" ]] || { echo "包没带设置 app"; exit 1; }
+          unzip -l dist/macos/*.zip
+          if unzip -l dist/macos/*.zip | grep -Ei 'wtlocal|nnlm|gguf|HY-MT|wetype'; then
+            echo "安装包里有不能分发的模型"; exit 1
+          fi
+      - name: 自检（载入安装包里的词库打 nihao）
+        run: ARCHTYPE_DATA_DIR="$RUNNER_TEMP/archtype-data" dist/macos/ArchType.app/Contents/MacOS/ArchType --selftest
+      - name: 自检以后安装包没被改过（词库快照要写在数据目录，不能写进签过名的安装包）
+        run: codesign --verify --strict dist/macos/ArchType.app
+      - name: 装一遍 pkg（只装给当前用户，不用 sudo）
+        run: |
+          pkg=$(ls dist/macos/ArchType-*-macos.pkg)
+          pkgutil --payload-files "$pkg" | grep -qx './ArchType.app/Contents/MacOS/ArchType'
+          if pkgutil --payload-files "$pkg" | grep -Ei 'wtlocal|nnlm|gguf|HY-MT|wetype'; then
+            echo "pkg 里有不能分发的模型"; exit 1
+          fi
+          xattr -w com.apple.quarantine "0083;00000000;Safari;" "$pkg"
+          installer -pkg "$pkg" -target CurrentUserHomeDirectory
+          app="$HOME/Library/Input Methods/ArchType.app"
+          codesign --verify --strict "$app"
+          if xattr -r "$app" | grep -q com.apple.quarantine; then echo "装出来的文件带隔离标记"; exit 1; fi
+          [[ -O "$app/Contents/MacOS/ArchType" ]] || { echo "装出来的文件不归当前用户"; exit 1; }
+          "$app/Contents/MacOS/ArchType" --version
+      - uses: actions/upload-artifact@v5
+        with:
+          name: pkg-macos
+          path: |
+            dist/macos/*.zip
+            dist/macos/*.pkg
+          retention-days: 7
+
   release:
     name: 发布
     timeout-minutes: 20
     if: startsWith(github.ref, 'refs/tags/v')
-    needs: [installer, core, data, data-wanxiang, ranking-eval, addon, arch, fedora, opensuse, nix]
+    needs: [installer, core, data, data-wanxiang, ranking-eval, addon, arch, fedora, opensuse, nix, macos-app]
     runs-on: ubuntu-24.04
     permissions:
       contents: write
@@ -703,6 +773,7 @@ jobs:
           fi
           gh release create "$GITHUB_REF_NAME" \
             dist/*.deb dist/*.rpm dist/*.pkg.tar.zst dist/*.tar.gz dist/SHA256SUMS \
+            dist/*.zip dist/*.pkg \
             dist/settings/*.tar.gz dist/RELEASE-NOTES.md \
             --repo "$GITHUB_REPOSITORY" --verify-tag \
             --title "ArchType $GITHUB_REF_NAME" \
