@@ -445,17 +445,20 @@ main() {
     trap 'rm -rf "${tmp:-}"' EXIT
 
     say "ArchType ${version}（macOS）"
-    fetch_sums "$base" "$tmp/SHA256SUMS" ||
+    local work
+    work=$(mktemp -d)
+    fetch_sums "$base" "$work/SHA256SUMS" ||
       die "下载 $base/SHA256SUMS 失败，请检查版本和网络；发布页：https://github.com/$REPO/releases"
-    expected=$(manifest_hash "$package" "$tmp/SHA256SUMS") ||
+    expected=$(manifest_hash "$package" "$work/SHA256SUMS") ||
       die "ArchType $version 没有 macOS 安装包（${package}）；发布页：https://github.com/$REPO/releases"
     say "下载并校验 $package"
-    fetch "$base/$package" "$tmp/$package"
-    actual=$(shasum -a 256 "$tmp/$package")
+    fetch "$base/$package" "$work/$package"
+    actual=$(shasum -a 256 "$work/$package" 2>/dev/null || sha256sum "$work/$package")
     [[ "${actual%% *}" == "$(printf '%s' "$expected" | tr 'A-F' 'a-f')" ]] || die "$package 校验和对不上，请重新下载"
 
     say "安装到 ~/Library/Input Methods（只装给当前用户）"
-    installer -pkg "$tmp/$package" -target CurrentUserHomeDirectory
+    installer -pkg "$work/$package" -target CurrentUserHomeDirectory
+    rm -rf "$work"
     # 安装包的 postinstall 会登记并打开输入法，失败了也不报错：这里再确认一次，没打开就说实话
     local bin="$HOME/Library/Input Methods/ArchType.app/Contents/MacOS/ArchType"
     if [[ -x "$bin" ]] && "$bin" --enable >/dev/null 2>&1; then
