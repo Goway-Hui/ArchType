@@ -30,7 +30,7 @@ trap 'rm -rf "$work"' EXIT
 # 不依赖按键测试留下的二进制，也不往 checkout 写 root 所有的构建文件。
 mkdir -p "$work/source/dist/data"
 tar --exclude=target --exclude=build --exclude=build-test -cf - \
-  Cargo.toml Cargo.lock core voice voice-daemon cli fcitx5-addon icons themes settings README.md |
+  Cargo.toml Cargo.lock core voice voice-daemon cli fcitx5-addon voice-overlay icons themes settings README.md |
   tar -xf - -C "$work/source"
 cp "$DATA"/{lexicon.tsv,english.txt,words.lm,LICENSE,SOURCE.txt} "$work/source/dist/data/"
 cp "$DATA"/{wubi86.tsv,WUBI-LICENSE,WUBI-SOURCE.txt,WUBI-AUTHORS} "$work/source/dist/data/"

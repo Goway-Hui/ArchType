@@ -1306,6 +1306,7 @@ function App() {
           <View style={{ paddingLeft: 28, paddingRight: 28, paddingTop: 8, paddingBottom: 28, gap: 16 }}>
           {current() === 0 ? (
             <>
+              {/* 常规：输入法、外观、候选框 */}
               <Text style={{ color: ui().muted, fontSize: 12 }}>输入法</Text>
               <Card>
                 <Row title={fcitxStatus()} subtitle={fcitxHint()}>
@@ -1453,6 +1454,7 @@ function App() {
             </>
           ) : current() === 1 ? (
             <>
+              {/* 输入：词库、输入方案、模糊音、切换键、自动配对 */}
               <Text style={{ color: ui().muted, fontSize: 12 }}>词库</Text>
               <Card>
                 <View onPress={() => { if (lexiconKind() !== "rime-ice" && !lexiconBusy()) useLexicon(""); }}>
@@ -1831,6 +1833,7 @@ function App() {
             </>
           ) : current() === 2 ? (
             <>
+              {/* 表情：推荐 emoji、表情面板快捷键 */}
               <Text style={{ color: ui().muted, fontSize: 12 }}>表情</Text>
               <Card>
                 <Row title="打字时推荐 emoji" subtitle="打「开心」「点赞」时，候选里有对应的 emoji">
@@ -1856,6 +1859,7 @@ function App() {
             </>
           ) : current() === 6 ? (
             <>
+              {/* 统计：今日/累计、热力图、类型与模式、最近 30 天 */}
               <Card>
                 <Row title="记录打字统计" subtitle="只在本机按天记计数，不记打的字">
                   <Toggle
@@ -2193,6 +2197,7 @@ function App() {
             </>
           ) : current() === 3 ? (
             <>
+              {/* 语音：开关、语音键、麦克风、模型下载 */}
               <Text style={{ color: ui().muted, fontSize: 12 }}>语音输入</Text>
               <Card>
                 <Row title="语音输入" subtitle={voiceModel() ? "按住语音键说话，松开就上屏" : "先在下面下载语音模型"}>
@@ -2252,6 +2257,7 @@ function App() {
             </>
           ) : current() === 4 ? (
             <>
+              {/* 翻译：引擎、目标语言、服务商、测试连接 */}
               <Text style={{ color: ui().muted, fontSize: 12 }}>互译</Text>
               <Card>
                 <Row title="互译" subtitle="单按 Shift 切到「译」，照常打中文，停一下就翻成外文。回车用译文，Shift+回车用原文，Esc 取消。">
@@ -2506,6 +2512,7 @@ function App() {
             </>
           ) : current() === 5 ? (
             <>
+              {/* 自定义词：添加、删除、导入导出 */}
               <Text style={{ color: ui().muted, fontSize: 12 }}>自定义词</Text>
               <Card>
                 <Row title="词" subtitle="编码会按词自动填好，多音字请检查">
@@ -2573,6 +2580,7 @@ function App() {
             </>
           ) : current() === 7 ? (
             <>
+              {/* 更新：检查更新、下载安装、自动检查与 Beta */}
               <Text style={{ color: ui().muted, fontSize: 12 }}>版本</Text>
               <Card>
                 <Row title={`当前版本 ${Config.version()}`} subtitle={updateSource}>
