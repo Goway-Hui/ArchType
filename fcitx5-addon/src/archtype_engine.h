@@ -215,6 +215,8 @@ FCITX_CONFIGURATION(
         shuangpinScheme{this, "ShuangpinScheme", "双拼方案", ArchtypeShuangpinScheme::Ziranma};
     fcitx::Option<bool> shuangpinShowKeys{this, "ShuangpinShowKeys",
                                           "双拼时编辑区显示打的键（不翻成全拼）", false};
+    fcitx::Option<bool> shuangpinAbbrev{this, "ShuangpinAbbrev",
+                                        "双拼简拼（只打声母，sm 出「什么」）", true};
     fcitx::Option<bool> wubiAutoCommit{this, "WubiAutoCommit", "五笔四码唯一自动上屏", true};
     fcitx::Option<bool> wubiHint{this, "WubiHint", "五笔编码提示（候选后面显示还要打的码）", true};
     fcitx::Option<ArchtypeShiftToggle, fcitx::NoConstrain<ArchtypeShiftToggle>,
@@ -616,6 +618,8 @@ private:
     bool clipboardHistory_ = false;
     /// 双拼时编辑区显示打的键（#122）
     bool shuangpinShowKeys_ = false;
+    /// 双拼的简拼：每个键都是声母时也当简拼（sm -> 什么，#268）
+    bool shuangpinAbbrev_ = true;
     /// 自动补空格（archtype_autospace 的 flags）：1 字母、2 数字，0 关。
     int autoSpaceFlags_ = 0;
     /// 中文标点自动配对（AutoPairPunct）。

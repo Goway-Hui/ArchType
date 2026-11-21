@@ -538,6 +538,16 @@
       "note": "双拼时编辑区显示打的键（uivs），不翻成全拼（shi'zhong）；中英混打时看得出打了什么（#122）"
     },
     {
+      "key": "ShuangpinAbbrev",
+      "type": "bool",
+      "default": true,
+      "platforms": [
+        "fcitx5",
+        "settings"
+      ],
+      "note": "双拼的简拼：每个键都是声母时也当简拼（sm -> 什么；同样的键按双拼也读得通时双拼读出来的排在前面），默认开（#268）"
+    },
+    {
       "key": "WubiAutoCommit",
       "type": "bool",
       "default": true,

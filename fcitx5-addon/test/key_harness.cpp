@@ -1842,6 +1842,25 @@ void runCases(Instance &instance) {
     type(ic.get(), "=");
     check(ic->committed == "7", "双拼按 = 上屏结果：" + ic->committed);
     fresh(ic.get());
+    // #268：双拼的简拼，每个键都是声母（sm，微软双拼里读不通）时当成只打了声母
+    type(ic.get(), "sm");
+    check(!page(ic.get()).empty() && page(ic.get())[0] == "什么",
+          "双拼简拼 sm -> 什么：" + join(page(ic.get())));
+    type(ic.get(), "<sp>");
+    check(ic->committed == "什么", "双拼简拼选「什么」：" + ic->committed);
+    fresh(ic.get());
+    {
+        std::ofstream(configDir + "/archtype.conf")
+            << "Shuangpin=True\nShuangpinScheme=Microsoft\nShuangpinAbbrev=False\n";
+    }
+    addon->reloadConfig();
+    type(ic.get(), "sm");
+    {
+        const auto cands = page(ic.get());
+        check(std::find(cands.begin(), cands.end(), "什么") == cands.end(),
+              "关掉双拼简拼后 sm 没有「什么」：" + join(cands));
+    }
+    fresh(ic.get());
     // #122：设置里打开「双拼时编辑区显示打的键」
     {
         std::ofstream(configDir + "/archtype.conf")
