@@ -7,6 +7,20 @@ import AVFoundation
 import CArchtype
 import Foundation
 
+/// 读文本文件；不在是 nil。不是 UTF-8 也读出来（坏的字节换成 �），免得当成没有文件、整个重写。
+/// 12.3 MB 这样的写法。（原来在删掉的 SettingsModel.swift 里，App 各文件都还在用。）
+func readText(_ path: String) -> String? {
+    guard let data = FileManager.default.contents(atPath: path) else { return nil }
+    return String(decoding: data, as: UTF8.self)
+}
+
+/// 整个换掉（先写临时文件再改名）。文件是个链接（比如链到同步盘）时写链接指向的文件。
+func writeText(_ text: String, to path: String) throws {
+    let url = URL(fileURLWithPath: path).resolvingSymlinksInPath()
+    try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+    try text.write(to: url, atomically: true, encoding: .utf8)
+}
+
 enum Diagnostics {
     /// 在后台线程上调（读文件、跑 log show 要几秒）。inputSource 是 Installer.sourceSummary（TIS 要在主线程上问），
     /// errors 是设置窗口里各处最近的错误。

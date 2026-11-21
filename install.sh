@@ -387,6 +387,11 @@ main() {
   [[ $# -le 1 ]] || die "参数过多（用 --help 查看用法）"
   [[ "$REPO" =~ ^[a-zA-Z0-9_.-]+/[a-zA-Z0-9_.-]+$ ]] || die "ARCHTYPE_REPO 必须是 owner/repo"
   setup_mirror "$plan"
+  # macOS：不选发行版（fcitx5 的流程全是 Linux 的），pkg 下载安装走 macos_install
+  if [[ "${ARCHTYPE_SYSTEM:-$(uname -s)}" == Darwin ]]; then
+    macos_install "$plan"
+    return
+  fi
   select_platform
   if ((plan)); then
     local requested=${ARCHTYPE_VERSION:-<版本>}
@@ -418,58 +423,12 @@ main() {
   trap 'rm -rf "${tmp:-}"' EXIT
   chmod 755 "$tmp"   # apt 用 _apt 用户读本地包
 
-  # macOS：下载 pkg、校验，用系统的 installer 只装给当前用户（不要密码）。
-  # curl 下载的文件没有隔离标记，不用到「隐私与安全性」里放行。
-  macos_install() { # <只打印计划：0 / 1>
-    local machine=${ARCHTYPE_ARCH:-$(uname -m)}
-    case "$machine" in
-      arm64|aarch64|x86_64) ;;
-      *) source_install "macOS 版只有 Apple 芯片（arm64）和 Intel（x86_64）两种" ;;
-    esac
-    if [[ "$1" == 1 ]]; then
-      local requested=${ARCHTYPE_VERSION:-<版本>}
-      printf '系统：macOS %s\n仓库：%s\n包文件：ArchType-%s-macos.pkg\n' "$machine" "$REPO" "${requested#v}"
-      [[ -z "$MIRROR" ]] || printf 'GitHub 代理：%s\n' "$MIRROR"
-      return
-    fi
-    [[ $EUID -ne 0 ]] || die "请直接用普通用户运行，不要加 sudo（ArchType 只装给当前用户）"
-    command -v curl >/dev/null || die "需要 curl"
-    local tag version package base expected actual
-    tag=${ARCHTYPE_VERSION:-$(latest_tag)}
-    [[ "$tag" == v* ]] || tag="v$tag"
-    version=${tag#v}
-    [[ "$version" =~ ^[a-zA-Z0-9][a-zA-Z0-9._+~^-]*$ ]] || die "无效的版本号：$version"
-    base=${ARCHTYPE_BASE_URL:-"https://github.com/$REPO/releases/download/$tag"}
-    package="ArchType-$version-macos.pkg"
-    tmp=$(mktemp -d)
-    trap 'rm -rf "${tmp:-}"' EXIT
-
-    say "ArchType ${version}（macOS）"
-    local work
-    work=$(mktemp -d)
-    fetch_sums "$base" "$work/SHA256SUMS" ||
-      die "下载 $base/SHA256SUMS 失败，请检查版本和网络；发布页：https://github.com/$REPO/releases"
-    expected=$(manifest_hash "$package" "$work/SHA256SUMS") ||
-      die "ArchType $version 没有 macOS 安装包（${package}）；发布页：https://github.com/$REPO/releases"
-    say "下载并校验 $package"
-    fetch "$base/$package" "$work/$package"
-    actual=$(shasum -a 256 "$work/$package" 2>/dev/null || sha256sum "$work/$package")
-    [[ "${actual%% *}" == "$(printf '%s' "$expected" | tr 'A-F' 'a-f')" ]] || die "$package 校验和对不上，请重新下载"
-
-    say "安装到 ~/Library/Input Methods（只装给当前用户）"
-    installer -pkg "$work/$package" -target CurrentUserHomeDirectory
-    rm -rf "$work"
-    # 安装包的 postinstall 会登记并打开输入法，失败了也不报错：这里再确认一次，没打开就说实话
-    local bin="$HOME/Library/Input Methods/ArchType.app/Contents/MacOS/ArchType"
-    if [[ -x "$bin" ]] && "$bin" --enable >/dev/null 2>&1; then
-      say "装好了。菜单栏的输入法里选 ArchType 就能用。"
-    else
-      warn "装好了，但没能自动把 ArchType 加进输入法。"
-      echo "已为你打开「系统设置 → 键盘」：输入法 → 编辑 → +，在「简体中文」里添加 ArchType；列表里没有就注销重新登录一次。"
-      open "x-apple.systempreferences:com.apple.Keyboard-Settings.extension" 2>/dev/null || true
-    fi
-  }
-
+  say "ArchType ${version}（$ID → ${distro}）"
+  fetch_sums "$base" "$tmp/SHA256SUMS" ||
+    die "下载 $base/SHA256SUMS 失败，请检查版本和网络；发布页：https://github.com/$REPO/releases"
+  manifest_hash "$package" "$tmp/SHA256SUMS" >/dev/null ||
+    source_install "ArchType $version 没有 $distro 的有效安装包（${package}）"
+  files=("$package")
   # 0.3.3 及以前的 deb 词库是单独的包；其他格式不安装 deb 数据包。
   local hash filename data=
   if [[ "$manager" == apt-get ]]; then
