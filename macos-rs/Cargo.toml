@@ -1,0 +1,15 @@
+[package]
+name = "archtype-macos"
+version = "0.1.0"
+edition = "2021"
+publish = false
+description = "ArchType 的 macOS 输入法外壳（Rust POC）：IMKServer + IMKInputController"
+
+# 独立 workspace：只在 macOS 上编，不跟根 workspace 的 Linux 构建设置混
+[workspace]
+
+[dependencies]
+objc2 = "0.6"
+objc2-foundation = "0.3"
+objc2-app-kit = "0.3"
+objc2-input-method-kit = "0.3"
