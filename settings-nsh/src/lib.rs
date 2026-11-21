@@ -1161,9 +1161,22 @@ impl Config {
         read(&format!("{}/stats.json", Config::data_dir()))
     }
 
-    /// 设置界面版本。
+    /// 设置界面版本：打包时 `nsh package --app-version` 写进同目录 nsh/app.json，界面跟着安装包走；
+    /// 开发时（nsh run，没有 app.json）显示 dev。
     pub fn version() -> String {
-        "0.6.3".to_string()
+        if let Ok(exe) = std::env::current_exe() {
+            if let Some(dir) = exe.parent() {
+                if let Ok(text) = std::fs::read_to_string(dir.join("nsh/app.json")) {
+                    if let Some(start) = text.find("\"version\":\"") {
+                        let rest = &text[start + "\"version\":\"".len()..];
+                        if let Some(end) = rest.find('"') {
+                            return rest[..end].to_string();
+                        }
+                    }
+                }
+            }
+        }
+        "dev".to_string()
     }
 
     /// 试一次翻译服务；返回 {"ok":true,"text":"…"} 或 {"ok":false,"error":"…"}。
@@ -1459,7 +1472,30 @@ impl Config {
 
     /// 下载后请用户重启输入法（安装完调）。
     pub fn update_finish_restart() -> bool {
-        Config::restart_fcitx()
+        let ok = Config::restart_fcitx();
+        if ok {
+            Config::restart_settings();
+        }
+        ok
+    }
+
+    /// 重启设置界面自己：安装完更新、fcitx5 重启以后，让界面也换成新版本（版本号、界面代码都是新的）。
+    /// 起一个 shell 等这个进程退出后再 exec（避开单实例锁），然后主动退出。
+    pub fn restart_settings() -> bool {
+        let Ok(exe) = std::env::current_exe() else {
+            return false;
+        };
+        let args: Vec<std::ffi::OsString> = std::env::args_os().skip(1).collect();
+        let mut cmd = std::process::Command::new("sh");
+        cmd.arg("-c")
+            .arg("sleep 0.8; exec \"$@\"")
+            .arg("sh")
+            .arg(&exe)
+            .args(&args);
+        if cmd.spawn().is_ok() {
+            std::process::exit(0);
+        }
+        false
     }
 
     /// 导出自定义词到 ~/Downloads（没有就放家目录）。返回写入的路径，失败返回空串。
