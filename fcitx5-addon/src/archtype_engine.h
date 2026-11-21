@@ -155,6 +155,20 @@ struct ArchtypeInitialModeAnnotation {
     }
 };
 
+/// 换到新窗口、新应用时用什么模式（#254）：Same 保持当前，Chinese / English 定一次。
+enum class ArchtypeWindowMode { Same, Chinese, English };
+FCITX_CONFIG_ENUM_NAME(ArchtypeWindowMode, "Same", "Chinese", "English");
+
+struct ArchtypeWindowModeAnnotation {
+    bool skipDescription() const { return false; }
+    bool skipSave() const { return false; }
+    void dumpDescription(fcitx::RawConfig &config) const {
+        config.setValueByPath("EnumI18n/0", "和上次一样");
+        config.setValueByPath("EnumI18n/1", "中文");
+        config.setValueByPath("EnumI18n/2", "英文");
+    }
+};
+
 /// 互译语言（代码和核心的 translate::LANGUAGES 一致）。
 enum class ArchtypeTranslateTarget { en, ja, ko, fr, de, es, ru, pt, it, vi, th, id, ar };
 FCITX_CONFIG_ENUM_NAME(ArchtypeTranslateTarget, "en", "ja", "ko", "fr", "de", "es", "ru", "pt",
@@ -225,6 +239,9 @@ FCITX_CONFIGURATION(
     fcitx::Option<ArchtypeInitialMode, fcitx::NoConstrain<ArchtypeInitialMode>,
                   fcitx::DefaultMarshaller<ArchtypeInitialMode>, ArchtypeInitialModeAnnotation>
         initialMode{this, "InitialMode", "切到 ArchType 时", ArchtypeInitialMode::Chinese};
+    fcitx::Option<ArchtypeWindowMode, fcitx::NoConstrain<ArchtypeWindowMode>,
+                  fcitx::DefaultMarshaller<ArchtypeWindowMode>, ArchtypeWindowModeAnnotation>
+        windowMode{this, "WindowMode", "默认中/英文", ArchtypeWindowMode::Same};
     fcitx::Option<bool> traditional{this, "Traditional", "输出繁体字", false};
     fcitx::Option<ArchtypePunctStyle, fcitx::NoConstrain<ArchtypePunctStyle>,
                   fcitx::DefaultMarshaller<ArchtypePunctStyle>, ArchtypePunctStyleAnnotation>
@@ -481,6 +498,8 @@ private:
     void syncMode(fcitx::InputContext *ic, ArchtypeState *state);
     /// 按「切到 ArchType 时」（InitialMode）定中 / 英：从别的输入法切回来、启动后第一次用时调。
     void applyInitialMode(fcitx::InputContext *ic, ArchtypeState *state);
+    /// 按「默认中/英文」（WindowMode）定中 / 英：换到新窗口、新应用时调（#254）。
+    void applyWindowMode(fcitx::InputContext *ic, ArchtypeState *state);
     /// 切到指定模式。离开「译」上屏攒着的原文，切到英文上屏打到一半的；
     /// notify：弹出「中 / 英 / 译」提示（外部命令切的不弹，免得 vim 每按一次 Esc 闪一下）。
     void switchMode(fcitx::InputContext *ic, ArchtypeState *state, bool ascii, bool translate,
@@ -635,6 +654,8 @@ private:
     /// 双击 Shift 不切换（#253）；环境变量 ARCHTYPE_SHIFT_DOUBLE_TAP=0 时单按立刻切
     bool shiftDoubleTap_ = true;
     ArchtypeInitialMode initialMode_ = ArchtypeInitialMode::Chinese;
+    /// 换到新窗口、新应用时的默认模式（#254）；Same 不动，跟以前一样。
+    ArchtypeWindowMode windowMode_ = ArchtypeWindowMode::Same;
     /// 启动后还没切到过 ArchType：第一次切过来（包括 ArchType 是默认输入法时第一次获得焦点）按 InitialMode 定模式
     bool initialModeApplied_ = false;
     ArchtypePunctStyle punctStyle_ = ArchtypePunctStyle::Fullwidth;

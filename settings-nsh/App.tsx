@@ -869,6 +869,12 @@ const initialModeItems = [
   { value: "Last", title: "和上次切走时一样" },
 ];
 
+const windowModeItems = [
+  { value: "Same", title: "和上次一样" },
+  { value: "Chinese", title: "中文" },
+  { value: "English", title: "英文" },
+];
+
 const selectKeyItems = [
   { value: "Off", title: "不用" },
   { value: "Semicolon", title: "分号选第 2 个" },
@@ -1345,6 +1351,7 @@ function App() {
   const wubiAutoCommit = signal(boolOf(Config.get("WubiAutoCommit"), true));
   const wubiHint = signal(boolOf(Config.get("WubiHint"), true));
   const initialMode = signal(Config.get("InitialMode") || "Chinese");
+  const windowMode = signal(Config.get("WindowMode") || "Same");
   const toggleKey = signal(Config.get("ToggleKey"));
   const translateModeKey = signal(Config.get("TranslateModeKey"));
   const traditional = signal(boolOf(Config.get("Traditional"), false));
@@ -2269,6 +2276,16 @@ function App() {
                     onChange={(value) => {
                       initialMode.set(value);
                       save("InitialMode", value);
+                    }}
+                  />
+                </Row>
+                <Row title="默认中/英文" subtitle="换到新窗口、新应用时定一次；在窗口里用 Shift 切了只算这一次">
+                  <SelectBox
+                    items={windowModeItems}
+                    value={windowMode()}
+                    onChange={(value) => {
+                      windowMode.set(value);
+                      save("WindowMode", value);
                     }}
                   />
                 </Row>

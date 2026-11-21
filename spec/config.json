@@ -599,6 +599,21 @@
       "note": "从别的输入法切到 ArchType、开机后第一次用时是中文、英文，还是和上次切走时一样（Last）；换窗口不算。关了 Shift 切换、也没另设切换键（ToggleKey）时总是中文（只设了 TranslateModeKey 不算，它只进出「译」）。macOS 每个应用一份模式：切走 ArchType（停用后系统当前的输入源不是 ArchType，密码框里的不算）记一笔，之后每个应用第一次用到 ArchType 时按它定一次；换应用、换窗口不算"
     },
     {
+      "key": "WindowMode",
+      "type": "enum",
+      "default": "Same",
+      "values": [
+        "Same",
+        "Chinese",
+        "English"
+      ],
+      "platforms": [
+        "fcitx5",
+        "settings"
+      ],
+      "note": "换到新窗口、新应用时的中 / 英（#254）：Same 保持当前模式（和以前一样），Chinese / English 每次换到别的窗口、应用获得焦点时定成它。从别的输入法切回来的那一下按 InitialMode。切不回中文时总是中文。设置里在「输入 → 默认状态 → 默认中/英文」"
+    },
+    {
       "key": "Traditional",
       "type": "bool",
       "default": false,

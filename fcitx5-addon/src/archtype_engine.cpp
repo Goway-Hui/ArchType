@@ -1154,6 +1154,7 @@ void ArchtypeEngine::applyConfig() {
         translateMode_ = false;
     }
     initialMode_ = *config_.initialMode;
+    windowMode_ = *config_.windowMode;
     punctStyle_ = *config_.punctStyle;
     if (const char *env = std::getenv("ARCHTYPE_PUNCT_STYLE"); env && *env) {
         const std::string name = env;
@@ -2373,6 +2374,11 @@ void ArchtypeEngine::activate(const fcitx::InputMethodEntry & /*entry*/,
         initialModeApplied_ = true;
         applyInitialMode(ic, state);
     }
+    // 换窗口、换应用获得焦点：设了「默认中/英文」就定一次（#254；默认和上次一样，不动）。
+    // 切换输入法的事件优先，别让两边抢着定。
+    if (!switchedBack && event.type() == fcitx::EventType::InputContextFocusIn) {
+        applyWindowMode(ic, state);
+    }
     // 最近用过的 emoji 在核心里（所有输入框共用），存在 ~/.local/share/archtype/emoji-recent.txt
     archtype_recent_emoji_path(recentEmojiPath().c_str());
     sampleClipboard(ic);
@@ -2547,6 +2553,18 @@ void ArchtypeEngine::applyInitialMode(fcitx::InputContext *ic, ArchtypeState *st
     }
     // 切不回中文时不进英文
     const bool english = initialMode_ == ArchtypeInitialMode::English && canToggleMode();
+    if (english == asciiMode_ && !translateMode_) {
+        return;
+    }
+    switchMode(ic, state, english, false, false);
+}
+
+void ArchtypeEngine::applyWindowMode(fcitx::InputContext *ic, ArchtypeState *state) {
+    if (windowMode_ == ArchtypeWindowMode::Same) {
+        return;
+    }
+    // 和 applyInitialMode 一样：切不回中文时不进英文；「译」里换窗口也回到默认的中 / 英
+    const bool english = windowMode_ == ArchtypeWindowMode::English && canToggleMode();
     if (english == asciiMode_ && !translateMode_) {
         return;
     }
