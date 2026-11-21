@@ -39,7 +39,7 @@ jobs:
     timeout-minutes: 20
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - run: for script in install.sh scripts/*.sh; do bash -n "$script"; done
       - run: bash scripts/test-install.sh
       # 设置契约：spec/ 自检 + 设置界面对照（fcitx5 插件在「插件」任务的 addon-test.sh 里对照）
@@ -55,7 +55,7 @@ jobs:
         arch: [amd64, arm64]
     runs-on: ${{ matrix.arch == 'arm64' && 'ubuntu-24.04-arm' || 'ubuntu-24.04' }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - name: 系统依赖
         run: |
           sudo apt-get update
@@ -64,6 +64,7 @@ jobs:
           sudo apt-get install -y --no-install-recommends build-essential pkg-config clang \
             libgtk-4-dev libadwaita-1-dev libgstreamer1.0-dev \
             libgstreamer-plugins-base1.0-dev libwebkitgtk-6.0-dev \
+            libgtk4-layer-shell-dev \
             libjavascriptcoregtk-6.0-dev libsoup-3.0-dev ca-certificates curl
       - name: Rust
         run: |
@@ -113,7 +114,7 @@ jobs:
           echo "VERSION=$version" >> "$GITHUB_ENV"
       - name: 打包
         run: scripts/package-settings-nsh.sh "$VERSION" dist/pkg
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v5
         with:
           name: settings-nsh-${{ matrix.arch }}
           path: dist/pkg/archtype-settings-nsh-*.tar.gz
@@ -123,7 +124,7 @@ jobs:
     timeout-minutes: 20
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - name: 系统依赖
         run: |
           sudo apt-get update
@@ -145,7 +146,7 @@ jobs:
     timeout-minutes: 40
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - run: scripts/make-data.sh "" dist/data
       # 五笔 86 码表（rime-wubi，LGPL-3.0，钉死的提交）和许可证、作者、来源，和词库放在同一个目录
       - run: scripts/make-wubi.sh "" dist/data
@@ -159,12 +160,12 @@ jobs:
             echo "::warning title=Nix 词库版本落后::这次构建的词库是 $built，nix/package.nix 还固定在 $pinned。发版时会自动开 PR 更新。"
           fi
       - run: scripts/package-deb.sh data dist/data dist/pkg
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v5
         with:
           name: data
           path: dist/data
           retention-days: 7
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v5
         with:
           name: pkg-data
           path: dist/pkg
@@ -175,14 +176,14 @@ jobs:
     timeout-minutes: 30
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - run: scripts/make-wanxiang.sh "" dist/wanxiang dist/pkg
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v5
         with:
           name: data-wanxiang
           path: dist/wanxiang
           retention-days: 7
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v5
         with:
           name: pkg-data-wanxiang
           path: dist/pkg
@@ -197,10 +198,10 @@ jobs:
     needs: data
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - run: rustup toolchain install stable --profile minimal && rustup default stable
       - uses: Swatinem/rust-cache@v2
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v5
         with:
           name: data
           path: dist/data
@@ -260,9 +261,10 @@ jobs:
           apt-get install -y --no-install-recommends \
             build-essential pkg-config cmake extra-cmake-modules \
             libfcitx5core-dev libfcitx5config-dev libfcitx5utils-dev libasound2-dev \
+            libgtk4-layer-shell-dev \
             fcitx5 fcitx5-modules \
             ca-certificates curl git dpkg-dev file python3
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - name: Rust
         run: |
           curl -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal
@@ -270,13 +272,13 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           key: ${{ matrix.distro }}-${{ matrix.arch }}
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v5
         with:
           name: data
           path: dist/data
       - name: 按键测试（私有 fcitx5 实例 + 真实词库和语言模型）
         run: ARCHTYPE_LM="$PWD/dist/data/words.lm" scripts/addon-test.sh "$PWD/dist/data/lexicon.tsv" "$PWD/dist/data/english.txt"
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v5
         if: matrix.distro == 'ubuntu26.04'
         with:
           name: data-wanxiang
@@ -294,7 +296,7 @@ jobs:
           fi
           echo "VERSION=$version" >> "$GITHUB_ENV"
       - name: NSH 设置界面
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v5
         with:
           name: settings-nsh-${{ matrix.arch }}
           path: dist/nsh
@@ -334,7 +336,7 @@ jobs:
           grep -qx 'Icon=archtype' /usr/share/fcitx5/inputmethod/archtype.conf
           # 插件清单要求编译时 fcitx5 的「主.次.0」，fcitx5 小版本落后一点的系统也能加载
           grep -qx "0=core:$(pkg-config --modversion Fcitx5Core | cut -d. -f1,2).0" /usr/share/fcitx5/addon/archtype.conf
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v5
         with:
           name: pkg-${{ matrix.distro }}-${{ matrix.arch }}
           path: dist/pkg
@@ -356,10 +358,10 @@ jobs:
         run: |
           pacman -Syu --noconfirm --needed base-devel cmake extra-cmake-modules \
             fcitx5 fcitx5-gtk fcitx5-qt alsa-lib rust pkgconf python git ca-certificates util-linux \
-            gtk4 webkitgtk-6.0 gstreamer gst-plugins-base curl
+            gtk4 gtk4-layer-shell webkitgtk-6.0 gstreamer gst-plugins-base curl
           useradd --create-home builder
-      - uses: actions/checkout@v4
-      - uses: actions/download-artifact@v4
+      - uses: actions/checkout@v5
+      - uses: actions/download-artifact@v5
         with:
           name: data
           path: dist/data
@@ -375,7 +377,7 @@ jobs:
           fi
           echo "VERSION=$version" >> "$GITHUB_ENV"
       - name: NSH 设置界面
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v5
         with:
           name: settings-nsh-amd64
           path: dist/nsh
@@ -419,7 +421,7 @@ jobs:
           test -f /usr/share/icons/hicolor/scalable/apps/archtype.svg
           test -f /usr/share/icons/hicolor/22x22/apps/archtype.png
           grep -qx 'Icon=archtype' /usr/share/fcitx5/inputmethod/archtype.conf
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v5
         with:
           name: pkg-archlinux
           path: dist/pkg/*.pkg.tar.zst
@@ -446,11 +448,11 @@ jobs:
         run: |
           dnf install -y --setopt=install_weak_deps=False \
             rust cargo cmake extra-cmake-modules gcc-c++ pkgconf-pkg-config \
-            fcitx5 fcitx5-devel alsa-lib-devel rpm-build \
+            fcitx5 fcitx5-devel alsa-lib-devel rpm-build gtk4-layer-shell-devel \
             python3 gtk4 webkitgtk6.0 gstreamer1 gstreamer1-plugins-base \
             git ca-certificates findutils file which curl
-      - uses: actions/checkout@v4
-      - uses: actions/download-artifact@v4
+      - uses: actions/checkout@v5
+      - uses: actions/download-artifact@v5
         with:
           name: data
           path: dist/data
@@ -466,7 +468,7 @@ jobs:
           fi
           echo "VERSION=$version" >> "$GITHUB_ENV"
       - name: NSH 设置界面
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v5
         with:
           name: settings-nsh-${{ matrix.arch == 'aarch64' && 'arm64' || 'amd64' }}
           path: dist/nsh
@@ -516,7 +518,7 @@ jobs:
           test -f /usr/share/icons/hicolor/scalable/apps/archtype.svg
           test -f /usr/share/icons/hicolor/22x22/apps/archtype.png
           grep -qx 'Icon=archtype' /usr/share/fcitx5/inputmethod/archtype.conf
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v5
         with:
           name: pkg-fedora${{ matrix.version }}-${{ matrix.arch }}
           path: dist/pkg/*.rpm
@@ -540,8 +542,8 @@ jobs:
             rust cargo gcc-c++ make cmake extra-cmake-modules pkgconf-pkg-config \
             fcitx5 fcitx5-devel alsa-devel python3 python3-gobject python3-gobject-Gdk \
             typelib-1_0-Gtk-4_0 typelib-1_0-Adw-1 git ca-certificates file findutils
-      - uses: actions/checkout@v4
-      - uses: actions/download-artifact@v4
+      - uses: actions/checkout@v5
+      - uses: actions/download-artifact@v5
         with:
           name: data
           path: dist/data
@@ -580,7 +582,7 @@ jobs:
           - { nixpkgs: nixos-unstable, system: aarch64-linux }
           - { nixpkgs: nixos-26.05, system: x86_64-linux }
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: cachix/install-nix-action@v31
       # 构建插件（词库按 flake 里固定的哈希从发布页下载），再跑 checks：
       # 自检工具用装好的词库打出「你好」、设置界面自测
@@ -606,7 +608,7 @@ jobs:
       issues: write
       pull-requests: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           fetch-depth: 0
       - name: 版本号与 tag 一致
@@ -629,12 +631,12 @@ jobs:
             echo "PRERELEASE=1" >> "$GITHUB_ENV"
             echo "::notice title=预发布::$GITHUB_REF_NAME 不在 main 上，发成 pre-release"
           fi
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v5
         with:
           pattern: pkg-*
           path: dist
           merge-multiple: true
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v5
         with:
           pattern: settings-nsh-*
           path: dist/settings

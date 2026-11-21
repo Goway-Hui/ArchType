@@ -118,9 +118,11 @@ BuildRequires:  extra-cmake-modules
 BuildRequires:  gcc-c++
 BuildRequires:  fcitx5-devel
 BuildRequires:  alsa-lib-devel
+BuildRequires:  gtk4-layer-shell-devel
 Requires:       fcitx5
 # 设置界面（NSH：GTK 4 + WebKitGTK 6.0 + GStreamer）：缺了的话应用菜单里点「ArchType 设置」没反应
 Requires:       gtk4
+Requires:       gtk4-layer-shell
 Requires:       webkitgtk6.0
 Requires:       gstreamer1
 Requires:       gstreamer1-plugins-base
@@ -144,6 +146,9 @@ cmake -S fcitx5-addon -B build -DCMAKE_BUILD_TYPE=Release \
   -DCMAKE_INSTALL_PREFIX=%{_prefix} -DCMAKE_INSTALL_LIBDIR=%{_lib} \
   -DARCHTYPE_VERSION=%{version}
 cmake --build build -j%{?_smp_build_ncpus}%{!?_smp_build_ncpus:2}
+cmake -S voice-overlay -B build-voice -DCMAKE_BUILD_TYPE=Release \
+  -DCMAKE_INSTALL_PREFIX=%{_prefix}
+cmake --build build-voice -j%{?_smp_build_ncpus}%{!?_smp_build_ncpus:2}
 
 %install
 DESTDIR=%{buildroot} cmake --install build
@@ -151,6 +156,8 @@ rm -rf %{buildroot}%{_includedir}
 for bin in archtype-check archtype-show; do
   install -Dm755 target/release/$bin %{buildroot}%{_bindir}/$bin
 done
+# 语音浮条（Wayland layer-shell）：非 GNOME 桌面（niri、sway 等）的「正在听…」浮条
+install -Dm755 build-voice/archtype-voice-overlay %{buildroot}%{_bindir}/archtype-voice-overlay
 install -m644 dist/data/lexicon.tsv dist/data/english.txt dist/data/words.lm dist/data/wubi86.tsv \
   %{buildroot}%{_datadir}/archtype/
 # 数据清单：各数据文件的名字、版本、来源（docs/DATA.md「数据版本标记」）
@@ -197,6 +204,7 @@ sed -i 's|^Exec=.*|Exec=archtype-settings|' %{buildroot}%{_datadir}/applications
 %endif
 %{_bindir}/archtype-check
 %{_bindir}/archtype-show
+%{_bindir}/archtype-voice-overlay
 %{_libdir}/fcitx5/libarchtype.so
 %{_datadir}/fcitx5/addon/archtype.conf
 %{_datadir}/fcitx5/inputmethod/archtype.conf

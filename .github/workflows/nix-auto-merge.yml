@@ -1,0 +1,24 @@
+name: Nix 跟版自动合并
+
+# 发版 job 用 .github/scripts/nix-data-pr.sh 开 bot/nix-follow-<版本> 的 PR 改 nix/package.nix 里的词库地址。
+# 这类 PR 由 token 创建，GitHub 不会替它跑 CI；内容只有三行（dataVersion/url/hash），直接合掉，
+# 发版收尾不用每次手动点。别的 PR 不受影响。
+on:
+  pull_request:
+    types: [opened]
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  merge:
+    if: startsWith(github.head_ref, 'bot/nix-follow-')
+    runs-on: ubuntu-latest
+    steps:
+      - name: 合并 Nix 跟版 PR
+        env:
+          GH_TOKEN: ${{ secrets.RELEASE_BRANCH_TOKEN || github.token }}
+        run: |
+          gh pr merge --squash --delete-branch "${{ github.event.pull_request.number }}" \
+            --repo "${{ github.repository }}"

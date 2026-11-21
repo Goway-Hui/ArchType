@@ -66,6 +66,7 @@ stdenv.mkDerivation {
       ../voice-daemon
       ../cli
       ../fcitx5-addon
+      ../voice-overlay
       ../icons
       ../themes
       ../settings
@@ -91,6 +92,7 @@ stdenv.mkDerivation {
     fcitx5
     alsa-lib
     gtk4
+    gtk4-layer-shell
     webkitgtk_6_0
     gst_all_1.gstreamer
     gst_all_1.gst-plugins-base
@@ -118,6 +120,10 @@ stdenv.mkDerivation {
 
   postInstall = ''
     rm -rf "$out/include"
+    # 语音浮条（Wayland layer-shell）：非 GNOME 桌面（niri、sway 等）的「正在听…」浮条
+    cmake -S ../voice-overlay -B build-voice -DCMAKE_BUILD_TYPE=Release
+    cmake --build build-voice -j"''${NIX_BUILD_CORES:-2}"
+    install -Dm755 build-voice/archtype-voice-overlay "$out/bin/archtype-voice-overlay"
     for bin in archtype-check archtype-show; do
       install -Dm755 "../target/release/$bin" "$out/bin/$bin"
     done

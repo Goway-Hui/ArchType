@@ -362,7 +362,9 @@ vim.api.nvim_create_autocmd("InsertEnter", { callback = function() vim.fn.system
 - **GNOME** 上光标下面会弹出一条语音浮条：蓝色话筒（外圈跟着音量呼吸）、「正在听… 离线」和一排跟着你音量跳动的竖条，
   光标右边也会裂成几根跳动的蓝色竖条；松开后显示「识别完成」再淡出。浮条是 ArchType 的 GNOME 扩展画的
   （和蓝色主题是同一个扩展，见[主题](#主题)），**装好或升级后要注销重新登录一次**才会出现。
-  其他桌面（或关掉了蓝色主题）在候选框里显示 🎙 和用字符画的波形。
+- **niri / sway 等其他 Wayland 桌面**：装包后运行 `archtype-voice-overlay`（GTK 4 + layer-shell）会画同样的浮条。
+  开机自启：niri 在 `config.kdl` 里加 `spawn-at-startup "archtype-voice-overlay"`，sway 在配置里加
+  `exec archtype-voice-overlay`。不跑浮条时（或关掉了蓝色主题）在候选框里显示 🎙 和用字符画的波形。
 
 识别用的是微信输入法的离线语音模型，在你的电脑上算，录音不上传。模型不随 ArchType 分发，
 **要先在 [ArchType 设置](#设置)的「语音」页点「下载」**：从腾讯的服务器下载约 100MB（能取消，断了再点接着下），

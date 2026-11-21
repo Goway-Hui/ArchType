@@ -170,12 +170,17 @@ engine)
   cmake -S fcitx5-addon -B "$work/build" -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/usr \
     -DARCHTYPE_VERSION="$version" >/dev/null
   cmake --build "$work/build" -j"$(nproc)"
+  cmake -S voice-overlay -B "$work/build-voice" -DCMAKE_BUILD_TYPE=Release \
+    -DCMAKE_INSTALL_PREFIX=/usr >/dev/null
+  cmake --build "$work/build-voice" -j"$(nproc)"
   DESTDIR="$stage" cmake --install "$work/build" >/dev/null
   rm -rf "$stage/usr/include"          # 头文件只给开发用
   install_nsh_settings "$stage"
   for bin in archtype-check archtype-show; do
     install -Dm755 "target/release/$bin" "$stage/usr/bin/$bin"
   done
+  # 语音浮条（Wayland layer-shell）：非 GNOME 桌面（niri、sway 等）的「正在听…」浮条
+  install -Dm755 "$work/build-voice/archtype-voice-overlay" "$stage/usr/bin/archtype-voice-overlay"
   # 只处理 ELF（/usr/bin 里还有 Python 写的设置界面 archtype-config）
   is_elf() { [[ "$(head -c4 "$1" | od -An -c | tr -d ' ')" == '177ELF' ]]; }
   mapfile -t elfs < <(find "$stage/usr" -type f \( -name '*.so' -o -path '*/bin/*' \) |
@@ -234,7 +239,7 @@ EOF
   shlibs=$(cd "$work" && dpkg-shlibdeps -O "${elfs[@]}" 2>/dev/null | sed -n 's/^shlibs:Depends=//p')
   # 设置界面（NSH：GTK 4 + WebKitGTK 6.0 + GStreamer）是硬依赖：缺了的话应用菜单里点
   # 「ArchType 设置」没反应。命令行 archtype-config 是静态的 Rust 程序，只要 fcitx5。
-  depends="${shlibs:+$shlibs, }fcitx5, libgtk-4-1, libwebkitgtk-6.0-4, libgstreamer1.0-0, libgstreamer-plugins-base1.0-0"
+  depends="${shlibs:+$shlibs, }fcitx5, libgtk-4-1, libgtk4-layer-shell0, libwebkitgtk-6.0-4, libgstreamer1.0-0, libgstreamer-plugins-base1.0-0"
 
   # emoji 要彩色 emoji 字体才画得出来（桌面版系统一般都装了）；互译用 curl 发请求
   RECOMMENDS="fonts-noto-color-emoji, curl" \
