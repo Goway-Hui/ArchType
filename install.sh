@@ -387,29 +387,6 @@ main() {
   [[ $# -le 1 ]] || die "参数过多（用 --help 查看用法）"
   [[ "$REPO" =~ ^[a-zA-Z0-9_.-]+/[a-zA-Z0-9_.-]+$ ]] || die "ARCHTYPE_REPO 必须是 owner/repo"
   setup_mirror "$plan"
-  # macOS：不选发行版（fcitx5 的流程全是 Linux 的），pkg 下载安装走 macos_install
-  if [[ "${ARCHTYPE_SYSTEM:-$(uname -s)}" == Darwin ]]; then
-    macos_install "$plan"
-    return
-  fi
-  select_platform
-  if ((plan)); then
-    local requested=${ARCHTYPE_VERSION:-<版本>}
-    printf '系统：%s %s\n包基线：%s\n包管理器：%s\n仓库：%s\n包文件：%s\n' \
-      "$ID" "$VERSION_ID" "$distro" "$manager" "$REPO" \
-      "$(package_filename "${requested#v}")"
-    return
-  fi
-  if [[ $EUID -eq 0 ]]; then
-    [[ -n "${SUDO_USER:-}" ]] && die "请直接用普通用户运行，不要加 sudo（需要时脚本会自己调 sudo）"
-    SUDO=()
-  else
-    command -v sudo >/dev/null || die "需要 sudo 来安装软件包"
-    SUDO=(sudo)
-  fi
-  command -v "$manager" >/dev/null || die "找不到当前发行版的包管理器 $manager"
-  command -v curl >/dev/null || command -v wget >/dev/null || die "需要 curl 或 wget，请先用发行版的包管理器安装"
-  command -v sha256sum >/dev/null || die "需要 sha256sum（coreutils）校验安装包"
 
   # macOS：下载 pkg、校验，用系统的 installer 只装给当前用户（不要密码）。
   # curl 下载的文件没有隔离标记，不用到「隐私与安全性」里放行。
@@ -458,6 +435,30 @@ main() {
       open "x-apple.systempreferences:com.apple.Keyboard-Settings.extension" 2>/dev/null || true
     fi
   }
+
+  # macOS：不选发行版（fcitx5 的流程全是 Linux 的），pkg 下载安装走 macos_install
+  if [[ "${ARCHTYPE_SYSTEM:-$(uname -s)}" == Darwin ]]; then
+    macos_install "$plan"
+    return
+  fi
+  select_platform
+  if ((plan)); then
+    local requested=${ARCHTYPE_VERSION:-<版本>}
+    printf '系统：%s %s\n包基线：%s\n包管理器：%s\n仓库：%s\n包文件：%s\n' \
+      "$ID" "$VERSION_ID" "$distro" "$manager" "$REPO" \
+      "$(package_filename "${requested#v}")"
+    return
+  fi
+  if [[ $EUID -eq 0 ]]; then
+    [[ -n "${SUDO_USER:-}" ]] && die "请直接用普通用户运行，不要加 sudo（需要时脚本会自己调 sudo）"
+    SUDO=()
+  else
+    command -v sudo >/dev/null || die "需要 sudo 来安装软件包"
+    SUDO=(sudo)
+  fi
+  command -v "$manager" >/dev/null || die "找不到当前发行版的包管理器 $manager"
+  command -v curl >/dev/null || command -v wget >/dev/null || die "需要 curl 或 wget，请先用发行版的包管理器安装"
+  command -v sha256sum >/dev/null || die "需要 sha256sum（coreutils）校验安装包"
 
   local tag version package base
   tag=${ARCHTYPE_VERSION:-$(latest_tag)}
