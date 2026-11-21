@@ -652,12 +652,16 @@ public:
         raw.next_char = nextChar;
         return archtype_session_key(session_, &raw);
     }
-    void clear() {
-        archtype_session_reset(session_, 0);
+    /// 清掉编辑区。返回 true：单按 Shift 还在等双击（#253），这一下照切了，外壳的全局模式要跟上。
+    bool clear() {
+        const ArchtypeFrame *reset = archtype_session_reset(session_, 0);
+        bool modeChanged = reset && reset->mode_changed;
         // 按下了 Shift 还没松开，输入框就被重置、失去焦点（Shift+点鼠标选字、按着 Shift 换窗口）：和按住
         // Shift 时按了别的键一样报给会话，再松开就不算单按 Shift、不切中英文
-        sessionKey(FcitxKey_VoidSymbol, 0, ARCHTYPE_KEY_ACTION_OBSERVE);
+        const ArchtypeFrame *observed = sessionKey(FcitxKey_VoidSymbol, 0, ARCHTYPE_KEY_ACTION_OBSERVE);
+        modeChanged = modeChanged || (observed && observed->mode_changed);
         forgetCandidates();
+        return modeChanged;
     }
 
     /// 只丢掉外壳抄的候选和候选框状态，会话的编辑区不动。
@@ -1136,6 +1140,13 @@ void ArchtypeEngine::applyConfig() {
                        : name == "off" || name == "0" ? ArchtypeShiftToggle::Off
                                                       : ArchtypeShiftToggle::Both;
     }
+    // 双击 Shift 不切换（#253，JetBrains 的双击 Shift）：单按先等 0.35 秒再切。设成 0 立刻切
+    // （按键测试里大多数用例按这个测，见 key_harness）
+    shiftDoubleTap_ = true;
+    if (const char *env = std::getenv("ARCHTYPE_SHIFT_DOUBLE_TAP"); env && *env) {
+        const std::string value = env;
+        shiftDoubleTap_ = !(value == "0" || value == "off");
+    }
     toggleKey_ = *config_.toggleKey;
     translateModeKey_ = *config_.translateModeKey;
     if (!canToggleMode()) { // 切不回中文了，回到中文
@@ -1524,6 +1535,8 @@ void ArchtypeEngine::syncSession(ArchtypeState *state) {
     config.wubi_hint = *config_.wubiHint ? 1 : 0;
     config.association = association_ ? 1 : 0;
     config.auto_pair_punct = autoPairPunct_ ? 1 : 0;
+    // 等双击的单按在定时器（tickTranslate）、别的键的 OBSERVE（handleShiftKey）、重置（reset）里切，三处都跟上
+    config.shift_double_tap = shiftDoubleTap_ ? 1 : 0;
     archtype_session_configure(state->session_, &config);
 }
 
@@ -2427,7 +2440,11 @@ void ArchtypeEngine::reset(const fcitx::InputMethodEntry & /*entry*/,
     // 原文和拼音一样只在输入法里：应用重置输入框（点了别处、失去焦点）就丢掉，
     // 会话记的上文也作废（回来时光标可能在别处）。编辑区标了 DontCommit，工具包不会自己上屏。
     auto *state = ic->propertyFor(&factory_);
-    state->clear();
+    if (state->clear()) {
+        // 单按 Shift 还在等双击时输入框重置了（点了别处、换了窗口）：那一下照切，全局模式跟上（不弹提示）
+        const int mode = archtype_session_mode(state->session_);
+        switchMode(ic, state, mode == ARCHTYPE_MODE_ENGLISH, mode == ARCHTYPE_MODE_TRANSLATE, false);
+    }
     clearTranslation(state);
     ic->inputPanel().reset();
     ic->updatePreedit();
@@ -2477,6 +2494,10 @@ bool ArchtypeEngine::handleShiftKey(fcitx::InputContext *ic, ArchtypeState *stat
     raw.time_ms = static_cast<uint64_t>(fcitx::now(CLOCK_MONOTONIC) / 1000);
     const bool wasExpanded = state->expanded_;
     const ArchtypeFrame *frame = archtype_session_key(state->session_, &raw);
+    if (isShift && frame && frame->wake_after_ms > 0) {
+        // 单按 Shift 等双击（#253）：到时间没有第二下就在 tickTranslate 里切
+        scheduleTick(ic, frame->wake_after_ms);
+    }
     if (!frame || !frame->mode_changed) {
         if (isShift) {
             // Shift 只走这一条路（再交给会话一次会把按下的时刻、键码冲掉）。展开面板里按下 Shift：
@@ -2490,6 +2511,10 @@ bool ArchtypeEngine::handleShiftKey(fcitx::InputContext *ic, ArchtypeState *stat
         return false;
     }
     followSessionMode(ic, state, frame);
+    if (!isShift) {
+        // 等双击的单按被这个键打断（#253）：上面先切了，这个键照切了以后的模式接着处理
+        return false;
+    }
     // 这一下是松开 Shift（切了模式）：不接受，照常交给应用。外壳只在输入法没接受的时候才把键
     // 转给应用（Wayland 上经 KWin 的虚拟键盘），吞掉松开的 Shift，应用会以为它还按着：之后
     // shift+单击开新窗口、滚轮变横向、快捷键错乱（#225）。按下那一下本来就没接受（见上），
@@ -2962,6 +2987,12 @@ uint32_t ArchtypeEngine::tickTranslate() {
     const ArchtypeFrame *frame = archtype_session_tick(state->session_, nowMs());
     if (!frame) {
         return 0;
+    }
+    if (frame->mode_changed) {
+        // 单按 Shift 等双击等到了时间（#253）：现在切，弹「中 / 英」提示（打到一半切英文时字母在 frame 里）
+        const uint32_t wake = frame->wake_after_ms;
+        followSessionMode(ic, state, frame);
+        return wake;
     }
     if (frame->commit) {
         // 按过回车，译好了：上屏译文（正在打的拼音留着，不清编辑区）

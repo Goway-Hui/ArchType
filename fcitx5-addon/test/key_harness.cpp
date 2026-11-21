@@ -1799,6 +1799,78 @@ void runCases(Instance &instance) {
         check(instance.inputMethodLabel(ic.get()) == "中", "#225：再单按一下回到中文");
     }
     fresh(ic.get());
+    {
+        // #253：JetBrains 的双击 Shift（到处搜索）不该切中英文。开着双击判断（插件默认，别的用例为了
+        // 连按不用等，用 ARCHTYPE_SHIFT_DOUBLE_TAP=0 关着）：单按先等 0.35 秒，这么久以内又单按一下两下都不算。
+        // 这里事件循环不走、定时器不来：靠接着按的键让等着的那一下先切（定时器那条路在互译用例里测）
+        ::unsetenv("ARCHTYPE_SHIFT_DOUBLE_TAP");
+        addon->reloadConfig();
+        const auto label = [&]() { return instance.inputMethodLabel(ic.get()); };
+        const auto settle = []() { std::this_thread::sleep_for(std::chrono::milliseconds(400)); };
+        // 双击：两下的按下、松开都不接受（交给应用，JetBrains 才看得到双击），模式不变
+        const bool first = tapShift(FcitxKey_Shift_R);
+        const bool second = tapShift(FcitxKey_Shift_R);
+        check(first && second && label() == "中", "#253：双击 Shift 四个事件都交给应用，不切：" + label());
+        settle();
+        type(ic.get(), "nihao<sp>");
+        check(ic->committed == "你好" && label() == "中", "#253：双击以后还是中文：" + ic->committed);
+        fresh(ic.get());
+        // 左 Shift 也一样（Shift_L 不是 fcitx5 默认的临时切换键时）
+        KeyEvent leftPress(ic.get(), Key(FcitxKey_Shift_L), false);
+        const bool leftTaken = ic->keyEvent(leftPress);
+        KeyEvent leftRelease(ic.get(), Key(FcitxKey_Shift_L, KeyState::Shift), true);
+        const bool leftReleaseTaken = ic->keyEvent(leftRelease);
+        check(!leftTaken && !leftReleaseTaken, "#253：等双击时左 Shift 的按下、松开也交给应用");
+        check(tapShift(FcitxKey_Shift_L) && label() == "中", "#253：左 Shift 双击也不切");
+        settle();
+        fresh(ic.get());
+        // 单按：先不切；接着打字时先切，这个字母照英文交给应用（和以前单按立刻切一样）
+        check(tapShift(FcitxKey_Shift_R) && label() == "中", "#253：单按先不切（等双击）");
+        type(ic.get(), "a");
+        check(ic->passed == "a" && ic->committed.empty() && preedit(ic.get()).empty() && label() == "英",
+              "#253：单按以后接着打字：先切英文，a 交给应用：" + ic->passed + " " + label());
+        fresh(ic.get());
+        // 慢的第二下（过了间隔才按下）：第一下照切，第二下自己再等
+        tapShift(FcitxKey_Shift_R);
+        settle();
+        KeyEvent slowPress(ic.get(), Key(FcitxKey_Shift_R), false);
+        check(!ic->keyEvent(slowPress) && label() == "中", "#253：过了间隔才按第二下：第一下照切（回中文）");
+        KeyEvent slowRelease(ic.get(), Key(FcitxKey_Shift_R, KeyState::Shift), true);
+        check(!ic->keyEvent(slowRelease) && label() == "中", "#253：第二下松开也交给应用，先不切");
+        // 等着的时候输入框重置（点了别处、换窗口）：那一下照切
+        ic->focusOut();
+        ic->focusIn();
+        check(label() == "英", "#253：等双击时输入框重置，照切英文：" + label());
+        type(ic.get(), "b");
+        check(ic->passed == "b" && label() == "英", "#253：重置后是英文：" + ic->passed);
+        fresh(ic.get());
+        tapShift(FcitxKey_Shift_R);
+        type(ic.get(), "ni");
+        check(label() == "中" && preedit(ic.get()) == "ni", "#253：单按回中文，接着打拼音：" + preedit(ic.get()));
+        // 打到一半双击：拼音留着，什么也不上屏
+        tapShift(FcitxKey_Shift_R);
+        tapShift(FcitxKey_Shift_R);
+        settle();
+        check(ic->committed.empty() && preedit(ic.get()) == "ni" && label() == "中",
+              "#253：打到一半双击 Shift：拼音留着，不上屏：" + ic->committed + "|" + preedit(ic.get()));
+        type(ic.get(), "hao<sp>");
+        check(ic->committed == "你好", "#253：接着打完照常上屏：" + ic->committed);
+        // 打到一半单按：等的时候拼音还在，接着按键时字母原样上屏、切英文
+        fresh(ic.get());
+        type(ic.get(), "nih");
+        tapShift(FcitxKey_Shift_R);
+        check(ic->committed.empty() && preedit(ic.get()) == "ni'h" && label() == "中", "#253：打到一半单按：先不上屏：" + ic->committed + "|" + preedit(ic.get()) + "|" + label());
+        type(ic.get(), "a");
+        check(ic->committed == "nih" && ic->passed == "a" && label() == "英",
+              "#253：接着按键：字母原样上屏，切英文，a 交给应用：" + ic->committed + "|" + ic->passed);
+        fresh(ic.get());
+        tapShift(FcitxKey_Shift_R);
+        ::setenv("ARCHTYPE_SHIFT_DOUBLE_TAP", "0", 1);
+        addon->reloadConfig();
+        type(ic.get(), "nihao<sp>");
+        check(ic->committed == "你好" && label() == "中", "#253：测完回到中文：" + ic->committed);
+        fresh(ic.get());
+    }
 
     // fcitx5 全局翻页热键（#27）：设成 , . 后打字途中按它们翻页，不上屏标点
     {
@@ -2910,6 +2982,41 @@ void runTranslateCase(Instance &instance, std::function<void()> done) {
                      type(ic, "nihao<sp>");
                  },
                  expectCommit("你好")});
+    // #253：单按 Shift 等双击，没有第二下、也没再按键时，到时间在插件的定时器里切（事件循环走着才测得到）
+    auto label = [c](HarnessInputContext *ic) { return c->instance.inputMethodLabel(ic); };
+    auto waitedFrom = std::make_shared<uint64_t>(0);
+    auto tappedLabel = std::make_shared<std::string>();
+    s.push_back({"#253：单按 Shift 先不切，0.35 秒后定时器里切英文",
+                 [addon, reset, label, tappedLabel](HarnessInputContext *ic) {
+                     ::unsetenv("ARCHTYPE_SHIFT_DOUBLE_TAP");
+                     addon->reloadConfig();
+                     reset(ic);
+                     tapKey(ic, FcitxKey_Shift_R);
+                     *tappedLabel = label(ic);
+                 },
+                 [label, tappedLabel](HarnessInputContext *ic) {
+                     return *tappedLabel == "中" && label(ic) == "英";
+                 }});
+    s.push_back({"#253：双击 Shift 过了间隔也不切",
+                 [waitedFrom](HarnessInputContext *ic) {
+                     tapKey(ic, FcitxKey_Shift_R);
+                     tapKey(ic, FcitxKey_Shift_R);
+                     *waitedFrom = now(CLOCK_MONOTONIC);
+                 },
+                 [label, waitedFrom](HarnessInputContext *ic) {
+                     return now(CLOCK_MONOTONIC) - *waitedFrom > 700000 && label(ic) == "英";
+                 }});
+    s.push_back({"#253：再单按一下，定时器里切回中文",
+                 [](HarnessInputContext *ic) { tapKey(ic, FcitxKey_Shift_R); },
+                 [label](HarnessInputContext *ic) { return label(ic) == "中"; }});
+    s.push_back({"#253：测完关掉双击判断（别的用例连按不等）",
+                 [addon, reset](HarnessInputContext *ic) {
+                     ::setenv("ARCHTYPE_SHIFT_DOUBLE_TAP", "0", 1);
+                     addon->reloadConfig();
+                     reset(ic);
+                     type(ic, "nihao<sp>");
+                 },
+                 expectCommit("你好")});
 
     c->timer = instance.eventLoop().addTimeEvent(
         CLOCK_MONOTONIC, now(CLOCK_MONOTONIC) + 50000, 1000, [c, done](EventSourceTime *source, uint64_t) {
@@ -3590,6 +3697,9 @@ int main(int argc, char **argv) {
     char arg1[] = "--disable=all";
     char arg2[] = "--enable=archtype,testim,clipboard";
     char *args[] = {arg0, arg1, arg2};
+    // 双击 Shift 不切换（#253）要等 0.35 秒才切：大多数用例连按 Shift、按完马上看模式，关着测；
+    // runCases 和互译用例里各有一段开着测
+    ::setenv("ARCHTYPE_SHIFT_DOUBLE_TAP", "0", 1);
     Instance instance(3, args);
     FakeClipboardFactory clipboardFactory;
     StaticAddonRegistry registry{{"clipboard", &clipboardFactory}};

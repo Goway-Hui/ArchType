@@ -632,6 +632,8 @@ private:
     /// 配置文件里的双拼方案名（传给核心）。
     std::string shuangpinScheme_ = "Ziranma";
     ArchtypeShiftToggle shiftToggle_ = ArchtypeShiftToggle::Both;
+    /// 双击 Shift 不切换（#253）；环境变量 ARCHTYPE_SHIFT_DOUBLE_TAP=0 时单按立刻切
+    bool shiftDoubleTap_ = true;
     ArchtypeInitialMode initialMode_ = ArchtypeInitialMode::Chinese;
     /// 启动后还没切到过 ArchType：第一次切过来（包括 ArchType 是默认输入法时第一次获得焦点）按 InitialMode 定模式
     bool initialModeApplied_ = false;
