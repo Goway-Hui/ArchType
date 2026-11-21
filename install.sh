@@ -18,9 +18,13 @@
 #   ARCHTYPE_NO_IM_CONFIG=1   不改输入法框架
 #   ARCHTYPE_NO_RESTART=1     不重启 fcitx5（之后自己重启或注销再登录，再到设置里添加 ArchType）
 #   ARCHTYPE_YES=1            不问，直接按默认做
+#   ARCHTYPE_GITHUB_MIRROR=https://<代理>/
+#                            连不上 GitHub 时，从 GitHub 下载的地址前面都加上这个前缀，走你自己选的第三方代理
+#                            （「代理地址 + 完整 GitHub 地址」那种）；SHA256SUMS 先试直连，安装包照样校验
 set -euo pipefail
 
 REPO=${ARCHTYPE_REPO:-Goway-Hui/ArchType}
+MIRROR=${ARCHTYPE_GITHUB_MIRROR:-}
 
 say() { printf '\033[1;32m==>\033[0m %s\n' "$*"; }
 warn() { printf '\033[1;33m注意：\033[0m%s\n' "$*" >&2; }
@@ -38,7 +42,24 @@ confirm() {
   [[ -z "$answer" || "$answer" =~ ^[Yy是] ]]
 }
 
-fetch() { # <地址> <保存到>
+# GitHub 的地址：github.com、raw.githubusercontent.com、codeload.github.com、发布文件的 *.githubusercontent.com
+is_github() { [[ "$1" =~ ^https://([a-z0-9-]+\.)?(github\.com|githubusercontent\.com)/ ]]; }
+# 设了 ARCHTYPE_GITHUB_MIRROR 时 GitHub 的地址加上代理前缀，别的地址（ARCHTYPE_BASE_URL 等）不动
+mirrored() {
+  if [[ -n "$MIRROR" ]] && is_github "$1"; then printf '%s%s\n' "$MIRROR" "$1"; else printf '%s\n' "$1"; fi
+}
+
+# 连不上 GitHub（连接被重置、超时、域名解析不了）又没设代理时，说一次怎么换条路
+github_hint() { # <curl / wget 的退出码>
+  [[ -z "$MIRROR" && -z "${hinted:-}" ]] || return 0
+  case "$1" in 4|5|6|7|28|35|52|56) ;; *) return 0 ;; esac
+  hinted=1
+  warn "连不上 GitHub（下载出错，代码 ${1}）。可以选一个你信得过的 GitHub 下载代理再装，脚本本身从 jsDelivr 下载："
+  printf '    curl -fsSL https://cdn.jsdelivr.net/gh/%s@main/install.sh | ARCHTYPE_GITHUB_MIRROR=https://<代理地址>/ bash\n' "$REPO" >&2
+  printf '    代理是第三方服务，安装包仍按 SHA256SUMS 校验。见 https://github.com/%s/blob/main/docs/INSTALL.md 的「连不上 GitHub」\n' "$REPO" >&2
+}
+
+download() { # <地址> <保存到>
   if command -v curl >/dev/null; then
     curl -fL --retry 3 --progress-bar -o "$2" "$1"
   else
@@ -46,17 +67,71 @@ fetch() { # <地址> <保存到>
   fi
 }
 
+fetch() { # <地址> <保存到>：GitHub 的地址在设了代理时走代理
+  local code=0
+  download "$(mirrored "$1")" "$2" || code=$?
+  if ((code)) && is_github "$1"; then github_hint "$code"; fi
+  return "$code"
+}
+
+# SHA256SUMS：设了代理也先直连 GitHub 下（安装包按它校验），直连不通再走代理
+fetch_sums() { # <资产目录> <保存到>
+  local url="$1/SHA256SUMS" code=0
+  if [[ -n "$MIRROR" ]] && is_github "$url"; then
+    if command -v curl >/dev/null; then
+      curl -fsSL --connect-timeout 10 --max-time 60 -o "$2" "$url" 2>/dev/null && code=0 || code=$?
+    else
+      wget -q -T 20 -t 1 -O "$2" "$url" 2>/dev/null && code=0 || code=$?
+    fi
+    if ((code == 0)); then
+      say "SHA256SUMS 直接从 GitHub 下载，其余文件走代理、按它校验"
+      return 0
+    fi
+    warn "直连 GitHub 下载 SHA256SUMS 失败，改从代理下载：校验值也来自代理，只能发现下载损坏，发现不了代理改包"
+    code=0
+  fi
+  download "$(mirrored "$url")" "$2" 2>/dev/null || code=$?
+  if ((code)) && [[ -z "$MIRROR" ]] && is_github "$url"; then github_hint "$code"; fi
+  return "$code"
+}
+
 latest_tag() {
-  local url
+  local page="https://github.com/$REPO/releases/latest" url="" tag="" code=0
   if command -v curl >/dev/null; then
-    url=$(curl -fsSLI -o /dev/null -w '%{url_effective}' "https://github.com/$REPO/releases/latest")
+    url=$(curl -fsSLI -o /dev/null -w '%{url_effective}' "$(mirrored "$page")") || code=$?
   else
-    url=$(wget -q --max-redirect=5 -S --spider "https://github.com/$REPO/releases/latest" 2>&1 |
-          sed -n 's/^ *[Ll]ocation: *//p' | tail -1)
+    url=$(wget -q --max-redirect=5 -S --spider "$(mirrored "$page")" 2>&1 |
+          sed -n 's/^ *[Ll]ocation: *//p' | tail -1) || code=4
   fi
   url=${url%$'\r'}
-  [[ "$url" == */tag/* ]] || die "查不到最新版本（GitHub 连不上？）。可以到 https://github.com/$REPO/releases 手动下载"
-  echo "${url##*/tag/}"
+  if [[ "$url" == */tag/* ]]; then
+    tag=${url##*/tag/}
+  elif [[ -n "$MIRROR" ]]; then
+    # 有的代理自己跟着跳转、直接返回发布页：从页面里的 /<仓库>/releases/tag/<版本> 链接取版本
+    local -a get=(wget -qO-)
+    command -v curl >/dev/null && get=(curl -fsSL)
+    tag=$("${get[@]}" "$(mirrored "$page")" 2>/dev/null |
+          grep -o "/${REPO//./\\.}/releases/tag/[a-zA-Z0-9._+~^-]*" | head -1) || true
+    tag=${tag##*/tag/}
+  fi
+  if [[ -z "$tag" ]]; then
+    ((code)) && github_hint "$code"
+    die "查不到最新版本（GitHub 连不上？）。可以到 https://github.com/$REPO/releases 手动下载"
+  fi
+  echo "$tag"
+}
+
+# ARCHTYPE_GITHUB_MIRROR：只接受 http(s) 地址，补上结尾的 /；设了就提醒一句下载走第三方代理
+setup_mirror() { # <只打印计划：0 / 1>
+  [[ -n "$MIRROR" ]] || return 0
+  [[ "$MIRROR" =~ ^https?://[a-zA-Z0-9._~:/?#@!\&+,\;=%-]+$ ]] ||
+    die "ARCHTYPE_GITHUB_MIRROR 必须是 https:// 或 http:// 开头的代理地址前缀，例如 https://<代理地址>/"
+  [[ "$MIRROR" == */ ]] || MIRROR="$MIRROR/"
+  if [[ "$1" == 1 ]]; then
+    printf 'GitHub 代理：%s\n' "$MIRROR"
+  else
+    warn "从 GitHub 下载的文件都经第三方代理 ${MIRROR}（ARCHTYPE_GITHUB_MIRROR）转发：代理能看到、也能改你下载的内容，安装包仍按 SHA256SUMS 校验"
+  fi
 }
 
 usage() {
@@ -73,7 +148,8 @@ Manjaro 请在本机用 scripts/package-arch.sh 构建；NixOS 使用 flake。
 Fedora Atomic 桌面使用 rpm-ostree。其他发行版见 docs/INSTALL.md 的源码构建。
 
 环境变量：ARCHTYPE_VERSION、ARCHTYPE_REPO、ARCHTYPE_YES、ARCHTYPE_NO_IM_CONFIG、
-          ARCHTYPE_NO_RESTART。
+          ARCHTYPE_NO_RESTART、ARCHTYPE_GITHUB_MIRROR（连不上 GitHub 时用的代理前缀，
+          见 docs/INSTALL.md「连不上 GitHub」）。
 测试夹具：ARCHTYPE_SYSTEM 代替 uname -s（固定 Linux），
           ARCHTYPE_OS_RELEASE 指定 os-release 文件，ARCHTYPE_ARCH 指定机器架构，
           ARCHTYPE_BASE_URL 指定资产目录（可用 file:///...）。
@@ -310,6 +386,7 @@ main() {
   esac
   [[ $# -le 1 ]] || die "参数过多（用 --help 查看用法）"
   [[ "$REPO" =~ ^[a-zA-Z0-9_.-]+/[a-zA-Z0-9_.-]+$ ]] || die "ARCHTYPE_REPO 必须是 owner/repo"
+  setup_mirror "$plan"
   select_platform
   if ((plan)); then
     local requested=${ARCHTYPE_VERSION:-<版本>}
@@ -342,7 +419,7 @@ main() {
   chmod 755 "$tmp"   # apt 用 _apt 用户读本地包
 
   say "ArchType ${version}（$ID → ${distro}）"
-  fetch "$base/SHA256SUMS" "$tmp/SHA256SUMS" 2>/dev/null ||
+  fetch_sums "$base" "$tmp/SHA256SUMS" ||
     die "下载 $base/SHA256SUMS 失败，请检查版本和网络；发布页：https://github.com/$REPO/releases"
   manifest_hash "$package" "$tmp/SHA256SUMS" >/dev/null ||
     source_install "ArchType $version 没有 $distro 的有效安装包（${package}）"
