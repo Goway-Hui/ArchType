@@ -61,3 +61,6 @@ nlrgpt2_nnlm.bin
 # 仓库根上的本地 CMake 构建目录（fcitx5-addon/ 下的那两个已在上面忽略）
 /build/
 /build-test/
+
+# 语音浮条（GTK4）编译产物
+voice-overlay/archtype-voice-overlay
