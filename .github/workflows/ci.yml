@@ -691,6 +691,9 @@ jobs:
 
           EOF
           extra=()
+          # 「这一版要注意」单独传一份（RELEASE-NOTES.md）：各端检查更新从这里取更新说明，不用问 GitHub 接口
+          awk '/^## 这一版要注意/{on=1} on && /^## / && !/^## 这一版要注意/{exit} on' notes.md > dist/RELEASE-NOTES.md
+          grep -q '^## 这一版要注意' dist/RELEASE-NOTES.md
           if [ -n "$PRERELEASE" ]; then
             extra=(--prerelease --latest=false)
             { printf '> **预发布，测试用。** 检查更新和一键安装不会装它；要装就在一键命令前加 `ARCHTYPE_VERSION=%s`：\n>\n' "$GITHUB_REF_NAME"
@@ -700,7 +703,7 @@ jobs:
           fi
           gh release create "$GITHUB_REF_NAME" \
             dist/*.deb dist/*.rpm dist/*.pkg.tar.zst dist/*.tar.gz dist/SHA256SUMS \
-            dist/settings/*.tar.gz \
+            dist/settings/*.tar.gz dist/RELEASE-NOTES.md \
             --repo "$GITHUB_REPOSITORY" --verify-tag \
             --title "ArchType $GITHUB_REF_NAME" \
             --notes-file notes.md --generate-notes "${extra[@]}"
