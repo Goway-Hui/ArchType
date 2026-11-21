@@ -292,6 +292,27 @@ void runCases(Instance &instance) {
     type(ic.get(), "Hello<sp>");
     check(ic->committed == "Hello", "大写保留 Hello，实际 " + ic->committed);
 
+    // CapsLock 开着：字母直接交给应用（应用按大写上屏），不和拼音组词、不弹候选框
+    {
+        Key capsKey(FcitxKey_h, KeyState::CapsLock);
+        check(capsKey.states().test(KeyState::CapsLock), "Key 构造带 CapsLock");
+        {
+            KeyEvent caps(ic.get(), capsKey, false);
+            check(caps.rawKey().states().test(KeyState::CapsLock), "KeyEvent 的 rawKey 保住 CapsLock");
+        }
+        fresh(ic.get());
+        check(!send(ic.get(), capsKey), "CapsLock 时字母交给应用");
+        // fcitx 不接受的键由前端直接给应用；CapsLock 的键不算 simple，harness 不记 passed，这里确认没上屏、没候选
+        check(ic->committed.empty() && page(ic.get()).empty(),
+              "CapsLock 时字母不上屏、不出候选框：" + ic->committed + "|" + join(page(ic.get())));
+        // 打到一半开 CapsLock 按字母：先把拼音原样上屏，再把字母交给应用
+        fresh(ic.get());
+        type(ic.get(), "ni");
+        check(!send(ic.get(), Key(FcitxKey_h, KeyState::CapsLock)), "打了一半按 CapsLock 字母：交给应用");
+        check(ic->committed == "ni", "打了一半按 CapsLock 字母：先把拼音原样上屏：" + ic->committed);
+        fresh(ic.get());
+    }
+
     // 打全了的拼音正好是一个词：它排第一，不被高频补全（重点）、单字（看）换掉
     fresh(ic.get());
     type(ic.get(), "zhongdi<sp>");

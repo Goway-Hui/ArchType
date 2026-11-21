@@ -2298,6 +2298,20 @@ void ArchtypeEngine::keyEvent(const fcitx::InputMethodEntry & /*entry*/,
         return;
     }
 
+    // CapsLock 开着：字母键让应用自己上屏大写（Hello、iPhone、ABC），不和拼音组词、不弹候选框。
+    // 正在打拼音时先把编辑区原样上屏（和切英文一样），再交给应用；带 Ctrl/Alt/Super 的组合键照常往下走。
+    // 看 rawKey：KeyEvent 的 key() 是规范化过的（CapsLock 被拿掉），rawKey 才是按下时的样子。
+    if (event.rawKey().states().test(fcitx::KeyState::CapsLock) &&
+        !key.states().testAny(fcitx::KeyStates{fcitx::KeyState::Ctrl, fcitx::KeyState::Alt,
+                                               fcitx::KeyState::Super}) &&
+        ((sym >= FcitxKey_a && sym <= FcitxKey_z) || (sym >= FcitxKey_A && sym <= FcitxKey_Z))) {
+        if (state->composing()) {
+            coreReady();
+            applySessionFrame(ic, state, archtype_session_reset(state->session_, 1));
+        }
+        return;
+    }
+
     // 带 Ctrl/Alt/Super 的组合键先问会话：打字途中 Ctrl+Delete、Ctrl+退格忘掉光标处学错的词；
     // 别的交给应用或 fcitx 的其他处理器（没在打字时会话借这一下知道应用里的字可能变了）
     if (key.states().testAny(fcitx::KeyStates{fcitx::KeyState::Ctrl, fcitx::KeyState::Alt,
