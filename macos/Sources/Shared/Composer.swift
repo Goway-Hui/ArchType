@@ -437,6 +437,15 @@ public final class Composer {
         }
         // 先报给会话：按住 Shift 时按了别的键，这一下就不算单按（下面有的键不交给会话）
         observe(key)
+        // Caps Lock 开着：字母直接交给应用（API、HTTP），不进编辑区（#271、#264，和 Linux、Windows 一样）。
+        // 打到一半时先把编辑区原样上屏，再交给应用。
+        if key.modifiers.contains(.caps), key.isLetter,
+           key.modifiers.isDisjoint(with: [.control, .option, .command]) {
+            if isComposing {
+                commitComposition()
+            }
+            return false
+        }
         // 表情面板快捷键中英文都管；工具栏、表情面板开着时按键都归它们（和 Linux 一样）
         if let emojiKey = config.emojiKey, emojiKey.matches(key) {
             toggleEmojiPanel()

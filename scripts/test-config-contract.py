@@ -30,7 +30,7 @@ SPEC_DIR = ROOT / "spec"
 # 旧的 Python 设置界面已经删除（命令行在 cli/，图形界面在 settings-nsh）；
 # 路径保留只是为了在还留着它的旧 checkout / 分支上仍能对照
 SETTINGS = ROOT / "settings" / "archtype-config"
-ENDS = ("fcitx5", "settings")
+ENDS = ("fcitx5", "settings", "macos")
 TYPES = ("bool", "int", "enum", "string", "key")
 # fcitx5 配置说明里的类型名
 FCITX_TYPES = {"Boolean": "bool", "Integer": "int", "Enum": "enum", "String": "string", "Key": "key"}

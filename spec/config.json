@@ -17,7 +17,8 @@
     "outOfRange": {
       "$comment": "数字超出 min–max 时读出来是什么。三端一样：夹到边上（PageSize=2 读成 3，=12 读成 9）。",
       "fcitx5": "clamp",
-      "settings": "clamp"
+      "settings": "clamp",
+      "macos": "clamp"
     },
     "notes": [
       "开关只认 True / False（区分大小写），别的写法（true、1、yes）读出来是默认值。",
@@ -142,7 +143,8 @@
       ],
       "platforms": [
         "fcitx5",
-        "settings"
+        "settings",
+        "macos"
       ],
       "note": "候选排列：横排、竖排"
     },
@@ -156,7 +158,8 @@
       ],
       "platforms": [
         "fcitx5",
-        "settings"
+        "settings",
+        "macos"
       ],
       "note": "打字途中方向键做什么（#129）。Candidates：都用来挑候选，跟着候选排列（横排左右键选词、上键上一页、下键展开；竖排上下键选词、左右键翻页）。Caret：上下键选词，左右键在拼音里移动光标，字母插在光标处、退格删光标前一个，Home、End、Delete 也管光标；方向键不翻页，「译」里没有光标"
     },
@@ -168,7 +171,8 @@
       "max": 9,
       "platforms": [
         "fcitx5",
-        "settings"
+        "settings",
+        "macos"
       ],
       "note": "每页候选个数"
     },
@@ -178,7 +182,8 @@
       "default": true,
       "platforms": [
         "fcitx5",
-        "settings"
+        "settings",
+        "macos"
       ],
       "note": "翻页键 - ="
     },
@@ -188,7 +193,8 @@
       "default": false,
       "platforms": [
         "fcitx5",
-        "settings"
+        "settings",
+        "macos"
       ],
       "note": "翻页键 [ ]"
     },
@@ -198,7 +204,8 @@
       "default": false,
       "platforms": [
         "fcitx5",
-        "settings"
+        "settings",
+        "macos"
       ],
       "note": "翻页键 , ."
     },
@@ -208,7 +215,8 @@
       "default": false,
       "platforms": [
         "fcitx5",
-        "settings"
+        "settings",
+        "macos"
       ],
       "note": "翻页键 Shift+Tab Tab"
     },
@@ -218,7 +226,8 @@
       "default": false,
       "platforms": [
         "fcitx5",
-        "settings"
+        "settings",
+        "macos"
       ],
       "note": "模糊音总开关，打开后下面各组分别生效"
     },
@@ -229,7 +238,8 @@
       "group": "fuzzy",
       "platforms": [
         "fcitx5",
-        "settings"
+        "settings",
+        "macos"
       ],
       "note": "z = zh"
     },
@@ -240,7 +250,8 @@
       "group": "fuzzy",
       "platforms": [
         "fcitx5",
-        "settings"
+        "settings",
+        "macos"
       ],
       "note": "c = ch"
     },
@@ -251,7 +262,8 @@
       "group": "fuzzy",
       "platforms": [
         "fcitx5",
-        "settings"
+        "settings",
+        "macos"
       ],
       "note": "s = sh"
     },
@@ -262,7 +274,8 @@
       "group": "fuzzy",
       "platforms": [
         "fcitx5",
-        "settings"
+        "settings",
+        "macos"
       ],
       "note": "n = l"
     },
@@ -273,7 +286,8 @@
       "group": "fuzzy",
       "platforms": [
         "fcitx5",
-        "settings"
+        "settings",
+        "macos"
       ],
       "note": "f = h"
     },
@@ -284,7 +298,8 @@
       "group": "fuzzy",
       "platforms": [
         "fcitx5",
-        "settings"
+        "settings",
+        "macos"
       ],
       "note": "r = l"
     },
@@ -295,7 +310,8 @@
       "group": "fuzzy",
       "platforms": [
         "fcitx5",
-        "settings"
+        "settings",
+        "macos"
       ],
       "note": "an = ang"
     },
@@ -306,7 +322,8 @@
       "group": "fuzzy",
       "platforms": [
         "fcitx5",
-        "settings"
+        "settings",
+        "macos"
       ],
       "note": "en = eng"
     },
@@ -317,7 +334,8 @@
       "group": "fuzzy",
       "platforms": [
         "fcitx5",
-        "settings"
+        "settings",
+        "macos"
       ],
       "note": "in = ing"
     },
@@ -328,7 +346,8 @@
       "group": "fuzzy",
       "platforms": [
         "fcitx5",
-        "settings"
+        "settings",
+        "macos"
       ],
       "note": "ian = iang"
     },
@@ -339,7 +358,8 @@
       "group": "fuzzy",
       "platforms": [
         "fcitx5",
-        "settings"
+        "settings",
+        "macos"
       ],
       "note": "uan = uang"
     },
@@ -350,7 +370,8 @@
       "group": "fuzzy",
       "platforms": [
         "fcitx5",
-        "settings"
+        "settings",
+        "macos"
       ],
       "note": "un = ong"
     },
@@ -361,7 +382,8 @@
       "group": "fuzzy",
       "platforms": [
         "fcitx5",
-        "settings"
+        "settings",
+        "macos"
       ],
       "note": "an = ai"
     },
@@ -372,7 +394,8 @@
       "group": "fuzzy",
       "platforms": [
         "fcitx5",
-        "settings"
+        "settings",
+        "macos"
       ],
       "note": "huang = wang"
     },
@@ -383,7 +406,8 @@
       "group": "fuzzy",
       "platforms": [
         "fcitx5",
-        "settings"
+        "settings",
+        "macos"
       ],
       "note": "un = iong"
     },
@@ -394,7 +418,8 @@
       "group": "fuzzy",
       "platforms": [
         "fcitx5",
-        "settings"
+        "settings",
+        "macos"
       ],
       "note": "eng = ong"
     },
@@ -404,7 +429,8 @@
       "default": true,
       "platforms": [
         "fcitx5",
-        "settings"
+        "settings",
+        "macos"
       ],
       "note": "按错键自动纠正"
     },
@@ -414,7 +440,8 @@
       "default": false,
       "platforms": [
         "fcitx5",
-        "settings"
+        "settings",
+        "macos"
       ],
       "note": "候选末尾列出扩展 B 区以后的生僻字（常见字体显示不了，默认关）"
     },
@@ -438,7 +465,8 @@
       ],
       "platforms": [
         "fcitx5",
-        "settings"
+        "settings",
+        "macos"
       ],
       "note": "输入方案：全拼、双拼、五笔 86。五笔要数据目录里有 wubi86.tsv，没有时设置里五笔灰掉，插件照全拼打并提示。name 三端都对照（fcitx5 的 EnumI18n、设置界面的 INPUT_SCHEMES、macOS 的 ArchtypeConfig.InputScheme.name）",
       "whenMissing": {
@@ -523,7 +551,8 @@
       ],
       "platforms": [
         "fcitx5",
-        "settings"
+        "settings",
+        "macos"
       ],
       "note": "双拼方案。name 是方案的名字，fcitx5（EnumI18n）和设置界面（SHUANGPIN_SCHEMES）都对照；macOS 的名字列表在 App/SettingsView.swift，测试编不到，只对照存盘名"
     },
@@ -533,7 +562,8 @@
       "default": false,
       "platforms": [
         "fcitx5",
-        "settings"
+        "settings",
+        "macos"
       ],
       "note": "双拼时编辑区显示打的键（uivs），不翻成全拼（shi'zhong）；中英混打时看得出打了什么（#122）"
     },
@@ -543,7 +573,8 @@
       "default": true,
       "platforms": [
         "fcitx5",
-        "settings"
+        "settings",
+        "macos"
       ],
       "note": "双拼的简拼：每个键都是声母时也当简拼（sm -> 什么；同样的键按双拼也读得通时双拼读出来的排在前面），默认开（#268）"
     },
@@ -553,7 +584,8 @@
       "default": true,
       "platforms": [
         "fcitx5",
-        "settings"
+        "settings",
+        "macos"
       ],
       "note": "五笔：打满四码、只有一个字词时直接上屏（只在五笔时显示）"
     },
@@ -563,7 +595,8 @@
       "default": true,
       "platforms": [
         "fcitx5",
-        "settings"
+        "settings",
+        "macos"
       ],
       "note": "五笔：候选后面显示还要打的码（只在五笔时显示）"
     },
@@ -579,7 +612,8 @@
       ],
       "platforms": [
         "fcitx5",
-        "settings"
+        "settings",
+        "macos"
       ],
       "note": "单按哪个 Shift 切中英文"
     },
@@ -594,7 +628,8 @@
       ],
       "platforms": [
         "fcitx5",
-        "settings"
+        "settings",
+        "macos"
       ],
       "note": "从别的输入法切到 ArchType、开机后第一次用时是中文、英文，还是和上次切走时一样（Last）；换窗口不算。关了 Shift 切换、也没另设切换键（ToggleKey）时总是中文（只设了 TranslateModeKey 不算，它只进出「译」）。macOS 每个应用一份模式：切走 ArchType（停用后系统当前的输入源不是 ArchType，密码框里的不算）记一笔，之后每个应用第一次用到 ArchType 时按它定一次；换应用、换窗口不算"
     },
@@ -609,7 +644,8 @@
       ],
       "platforms": [
         "fcitx5",
-        "settings"
+        "settings",
+        "macos"
       ],
       "note": "换到新窗口、新应用时的中 / 英（#254）：Same 保持当前模式（和以前一样），Chinese / English 每次换到别的窗口、应用获得焦点时定成它。从别的输入法切回来的那一下按 InitialMode。切不回中文时总是中文。设置里在「输入 → 默认状态 → 默认中/英文」"
     },
@@ -619,7 +655,8 @@
       "default": false,
       "platforms": [
         "fcitx5",
-        "settings"
+        "settings",
+        "macos"
       ],
       "note": "输出繁体字"
     },
@@ -633,7 +670,8 @@
       ],
       "platforms": [
         "fcitx5",
-        "settings"
+        "settings",
+        "macos"
       ],
       "note": "标点：中文标点、英文标点"
     },
@@ -648,7 +686,8 @@
       ],
       "platforms": [
         "fcitx5",
-        "settings"
+        "settings",
+        "macos"
       ],
       "note": "分号选第 2 个、引号选第 3 个"
     },
@@ -658,7 +697,8 @@
       "default": true,
       "platforms": [
         "fcitx5",
-        "settings"
+        "settings",
+        "macos"
       ],
       "note": "以词定字：[ ] 上屏候选的第一个、最后一个字"
     },
@@ -668,7 +708,8 @@
       "default": false,
       "platforms": [
         "fcitx5",
-        "settings"
+        "settings",
+        "macos"
       ],
       "note": "联想：选词、整句上屏以后给出一页常跟在后面的词（词级模型 + 学到的搭配）。按 Tab 进联想行再用空格、回车、数字选，Esc 退出；没进联想行时打字、数字、标点、空格、回车照常（数字不选联想）。五笔、「译」、密码框不出"
     },
@@ -678,7 +719,8 @@
       "default": true,
       "platforms": [
         "fcitx5",
-        "settings"
+        "settings",
+        "macos"
       ],
       "note": "打 riqi、shijian、xingqi 时给出当前日期时间"
     },
@@ -688,7 +730,8 @@
       "default": true,
       "platforms": [
         "fcitx5",
-        "settings"
+        "settings",
+        "macos"
       ],
       "note": "v 开头算算式（双拼、五笔时是大写 V）"
     },
@@ -698,7 +741,8 @@
       "default": true,
       "platforms": [
         "fcitx5",
-        "settings"
+        "settings",
+        "macos"
       ],
       "note": "v + 空格打开工具栏（双拼、五笔时不开）"
     },
@@ -708,7 +752,8 @@
       "default": false,
       "platforms": [
         "fcitx5",
-        "settings"
+        "settings",
+        "macos"
       ],
       "note": "记录剪贴板历史（只在内存里）。默认关：分不出密码管理器复制的密码"
     },
@@ -718,7 +763,8 @@
       "default": false,
       "platforms": [
         "fcitx5",
-        "settings"
+        "settings",
+        "macos"
       ],
       "note": "汉字和英文、数字之间自动加空格（总开关）"
     },
@@ -728,7 +774,8 @@
       "default": true,
       "platforms": [
         "fcitx5",
-        "settings"
+        "settings",
+        "macos"
       ],
       "note": "汉字和英文字母之间"
     },
@@ -738,7 +785,8 @@
       "default": true,
       "platforms": [
         "fcitx5",
-        "settings"
+        "settings",
+        "macos"
       ],
       "note": "汉字和数字之间"
     },
@@ -748,7 +796,8 @@
       "default": false,
       "platforms": [
         "fcitx5",
-        "settings"
+        "settings",
+        "macos"
       ],
       "note": "中文标点自动配对：中文标点下打 ( [ < { \" ' 上屏成对的（）【】《》「」“”‘’，光标放到中间；在里面打完再按右半边跳过补好的那个（数字后面也跳），里面空着时退格两个一起删。默认关（会改打出来的标点）。macOS 靠应用按位置换字来挪光标、删右半边：应用说不清光标在哪、读不到光标旁边的字（比如终端）时这一下不配对，照常一个一个上屏"
     },
@@ -758,7 +807,8 @@
       "default": true,
       "platforms": [
         "fcitx5",
-        "settings"
+        "settings",
+        "macos"
       ],
       "note": "语音输入"
     },
@@ -774,11 +824,19 @@
           "F8",
           "F9",
           "F10"
+        ],
+        "macos": [
+          "Alt_R",
+          "Control_R",
+          "F8",
+          "F9",
+          "F10"
         ]
       },
       "platforms": [
         "fcitx5",
-        "settings"
+        "settings",
+        "macos"
       ],
       "note": "语音键（fcitx5 键名）。presets 是设置界面里能选的键；macOS 上 Alt_R 是右 Option，Mac 键盘没有菜单键"
     },
@@ -788,7 +846,8 @@
       "default": false,
       "platforms": [
         "fcitx5",
-        "settings"
+        "settings",
+        "macos"
       ],
       "note": "语音识别的结果同时复制到剪贴板"
     },
@@ -808,7 +867,8 @@
       "default": true,
       "platforms": [
         "fcitx5",
-        "settings"
+        "settings",
+        "macos"
       ],
       "note": "打字时推荐 emoji"
     },
@@ -828,7 +888,8 @@
       },
       "platforms": [
         "fcitx5",
-        "settings"
+        "settings",
+        "macos"
       ],
       "note": "打开表情面板的快捷键（fcitx5 键名），留空不用快捷键。macOS 设置窗口的选项列表在 App/SettingsView.swift，测试编不到，没对照"
     },
@@ -840,12 +901,17 @@
         "settings": [
           "",
           "Control+Shift+space"
+        ],
+        "macos": [
+          "",
+          "Control+Shift+space"
         ]
       },
       "why": "预设只放两端默认都没人占的键：Ctrl+空格是 fcitx5 切换启用/禁用输入法的键、macOS 选上一个输入法的键（它们本身就在 ArchType 和英文键盘之间切），系统先拿走，ArchType 收不到，所以不当预设；文件里写了照样认",
       "platforms": [
         "fcitx5",
-        "settings"
+        "settings",
+        "macos"
       ],
       "note": "另设一个切换中 / 英文的快捷键（fcitx5 键名），留空不用；单按 Shift 照常（#143）。在「译」里按回到中文。和 TranslateModeKey 设成同一个键时算 TranslateModeKey"
     },
@@ -857,11 +923,16 @@
         "settings": [
           "",
           "Control+Shift+Y"
+        ],
+        "macos": [
+          "",
+          "Control+Shift+Y"
         ]
       },
       "platforms": [
         "fcitx5",
-        "settings"
+        "settings",
+        "macos"
       ],
       "note": "进出「译」的快捷键（fcitx5 键名），留空不用（#87）：按它进「译」（打到一半的拼音带进去），在「译」里再按回到进来前的模式。设了以后单按 Shift 只在中 ↔ 英之间切；互译没打开、翻译没配好、密码框里这个键交给应用。键名不叫 TranslateKey：macOS 的设置文件模板里不许出现这个词（会当成 API Key）"
     },
@@ -871,7 +942,8 @@
       "default": true,
       "platforms": [
         "fcitx5",
-        "settings"
+        "settings",
+        "macos"
       ],
       "note": "自动检查更新。Linux 切到 ArchType 时最多一小时查一次，有新版发桌面通知；macOS 输入法进程每天最多查一次，有新版时输入法菜单里多一项，设置窗口打开时也查"
     },
@@ -880,7 +952,8 @@
       "type": "bool",
       "default": false,
       "platforms": [
-        "settings"
+        "settings",
+        "macos"
       ],
       "note": "Beta 计划：检查更新也算 GitHub 上的预发布版（pre-release，v 开头的 tag），新功能先到、可能不稳定。关着时只认最新正式版（releases/latest）。关掉以后已经装上的预发布版不会退回，等正式版追上来再提示"
     },
@@ -890,7 +963,8 @@
       "default": false,
       "platforms": [
         "fcitx5",
-        "settings"
+        "settings",
+        "macos"
       ],
       "note": "打字统计（设置的「统计」页）。默认关：关着时什么都不记、不建 stats.json。打开以后只在本机按天记聚合计数（字数、各类字符数、活跃时长、每个键按了几次、输入模式和双拼方案的字数、候选位置），不记打的内容、拼音、按键顺序和时刻，密码框里的不算。清空：设置里「清除统计」（stats.clear 里的整数加一、删掉 stats.json），见 docs/CONFIG.md「打字统计」"
     },
@@ -900,7 +974,8 @@
       "default": false,
       "platforms": [
         "fcitx5",
-        "settings"
+        "settings",
+        "macos"
       ],
       "note": "互译（单按 Shift 或 TranslateModeKey 切到「译」）"
     },
@@ -977,7 +1052,8 @@
       ],
       "platforms": [
         "fcitx5",
-        "settings"
+        "settings",
+        "macos"
       ],
       "note": "互译语言，代码和核心的 translate::LANGUAGES 一样。name 三端都对照（fcitx5 的 EnumI18n、设置界面的 TRANSLATE_LANGUAGES、macOS 的 ArchtypeConfig.translateLanguages）；english 只有设置界面有"
     },
@@ -987,7 +1063,8 @@
       "default": "",
       "platforms": [
         "fcitx5",
-        "settings"
+        "settings",
+        "macos"
       ],
       "note": "翻译服务地址（OpenAI 格式）。常见服务见 translateProviders"
     },
@@ -997,7 +1074,8 @@
       "default": "",
       "platforms": [
         "fcitx5",
-        "settings"
+        "settings",
+        "macos"
       ],
       "note": "翻译用的模型"
     },
@@ -1007,7 +1085,8 @@
       "default": false,
       "platforms": [
         "fcitx5",
-        "settings"
+        "settings",
+        "macos"
       ],
       "note": "译文用正式语气（默认聊天口吻）"
     },
@@ -1017,7 +1096,8 @@
       "default": true,
       "platforms": [
         "fcitx5",
-        "settings"
+        "settings",
+        "macos"
       ],
       "note": "用本地模型（HY-MT）翻译，默认是本地模型",
       "whenMissing": {
@@ -1085,7 +1165,8 @@
       "default": "",
       "platforms": [
         "fcitx5",
-        "settings"
+        "settings",
+        "macos"
       ],
       "note": "本地模型文件，留空用数据目录下 models/HY-MT1.5-1.8B-Q4_K_M.gguf"
     },
@@ -1095,7 +1176,8 @@
       "default": "",
       "platforms": [
         "fcitx5",
-        "settings"
+        "settings",
+        "macos"
       ],
       "note": "llama-server 的路径，留空自己找"
     },
@@ -1107,7 +1189,8 @@
       "max": 240,
       "platforms": [
         "fcitx5",
-        "settings"
+        "settings",
+        "macos"
       ],
       "note": "本地模型闲置几分钟后释放内存，0 不释放"
     },
@@ -1117,9 +1200,90 @@
       "default": "",
       "platforms": [
         "fcitx5",
-        "settings"
+        "settings",
+        "macos"
       ],
       "note": "词库文件，留空用自带的雾凇词库；文件不在也用自带的。切到万象时写成数据目录下的 dicts/wanxiang/lexicon.tsv（见 spec/lexicon-pack.json）"
+    },
+    {
+      "key": "CandidateFontSize",
+      "type": "int",
+      "default": 17,
+      "min": 10,
+      "max": 40,
+      "platforms": [
+        "macos"
+      ],
+      "note": "候选字号（磅）。只有 macOS、Windows 有（候选框是自己画的）：Linux 上字号跟着 fcitx5 主题"
+    },
+    {
+      "key": "SettingsTheme",
+      "type": "enum",
+      "default": "System",
+      "values": [
+        {
+          "value": "System",
+          "name": "跟随系统"
+        },
+        {
+          "value": "Light",
+          "name": "浅色"
+        },
+        {
+          "value": "Dark",
+          "name": "深色"
+        }
+      ],
+      "platforms": [
+        "macos"
+      ],
+      "note": "设置窗口的主题（「常规 → 设置窗口 → 主题」），只管设置窗口，不管候选框，输入法不读。System 跟着系统的浅色 / 深色；Light、Dark 固定一种（系统的深色认不出来、或者 KDE 写的 GTK 颜色和窗口对不上时用，#255）。name 三端都对照（设置界面的 SETTINGS_THEMES、macOS 的 ArchtypeConfig.SettingsTheme、Windows 设置窗口的 valueName）"
+    },
+    {
+      "key": "SettingsAccent",
+      "type": "enum",
+      "default": "Green",
+      "values": [
+        {
+          "value": "Green",
+          "name": "绿色",
+          "color": "#0EAF76",
+          "strong": "#0A8358",
+          "light": "#1AB37D"
+        },
+        {
+          "value": "Blue",
+          "name": "蓝色",
+          "color": "#3584E4",
+          "strong": "#2D70C2",
+          "light": "#68A3EB"
+        },
+        {
+          "value": "Purple",
+          "name": "紫色",
+          "color": "#9141AC",
+          "strong": "#9141AC",
+          "light": "#BD8DCD"
+        },
+        {
+          "value": "Orange",
+          "name": "橙色",
+          "color": "#E66100",
+          "strong": "#B84E00",
+          "light": "#EC8840"
+        },
+        {
+          "value": "Pink",
+          "name": "粉色",
+          "color": "#D56199",
+          "strong": "#AA4E7A",
+          "light": "#DD81AD"
+        }
+      ],
+      "platforms": [
+        "macos"
+      ],
+      "note": "设置窗口的强调色（「常规 → 设置窗口 → 强调色」），只管设置窗口，输入法不读。Green 是 WowType 绿。每种三个颜色，三端都用这张表、不自己算：color 是色板本身（侧栏的底色、悬停、统计的柱子和热力图）；strong 是上面放白字的底（选中的导航、主按钮、开关），和白色的对比度至少 4.7:1；light 是深色背景上当字用的颜色，和深色卡片 #353539 的对比度至少 4.5:1；浅色背景上当字用 strong。scripts/test-config-contract.py 核对对比度，设置界面（SETTINGS_ACCENTS）、macOS（ArchtypeConfig.accentPresets）、Windows（look::accents）对照这张表"
     }
   ],
   "fcitx5External": {
