@@ -876,7 +876,9 @@
       "key": "EmojiKey",
       "type": "key",
       "default": "Super+period",
-      "platformDefault": {},
+      "platformDefault": {
+        "macos": "Control+period"
+      },
       "why": "macOS 上 Command 组合键多半被应用的菜单先拿走、到不了输入法，所以 macOS 把 Super 当 Control：Linux 的 Super+period 拷过去就是 Control+period，和 macOS 的默认值一样",
       "presets": {
         "settings": [
