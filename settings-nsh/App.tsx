@@ -713,6 +713,16 @@ const voiceKeyItems = [
   { value: "F10", title: "F10" },
 ];
 
+// 录音设备（arecord -L 里的 ALSA PCM 名）：界面打开时列一次
+const micDeviceChoices: string[] = (() => {
+  try {
+    const value: unknown = JSON.parse(Config.voiceDevices() || "[]");
+    return Array.isArray(value) ? value.filter((name): name is string => typeof name === "string") : [];
+  } catch {
+    return [];
+  }
+})();
+
 const candidateShadeItems = [
   { value: "system", title: "跟随系统" },
   { value: "light", title: "浅色" },
@@ -1186,6 +1196,7 @@ function App() {
   const voiceOn = signal(boolOf(Config.get("Voice"), true));
   const voiceKey = signal(Config.get("VoiceKey") || "Alt_R");
   const voiceCopy = signal(boolOf(Config.get("VoiceCopy"), false));
+  const micDevice = signal(Config.get("MicDevice") || "");
   const voiceModel = signal(Config.voiceModel());
   const translateOn = signal(boolOf(Config.get("Translate"), false));
   const translateLocal = signal(boolOf(Config.get("TranslateLocal"), true));
@@ -2270,6 +2281,18 @@ function App() {
                     }}
                   />
                 </Row>
+                {shiftConflictVisible() ? (
+                  <Row title="Shift 只给 ArchType 用" subtitle={shiftConflictText()}>
+                    <Toggle
+                      checked={shiftFreeOnState()}
+                      onChange={(on) => setShiftFree(on)}
+                    />
+                  </Row>
+                ) : null}
+              </Card>
+
+              <Text style={{ color: ui().muted, fontSize: 12 }}>默认状态</Text>
+              <Card>
                 <Row title="切到 ArchType 时" subtitle="从别的输入法切过来、开机后第一次用时；换窗口不变">
                   <SelectBox
                     items={initialModeItems}
@@ -2290,14 +2313,16 @@ function App() {
                     }}
                   />
                 </Row>
-                {shiftConflictVisible() ? (
-                  <Row title="Shift 只给 ArchType 用" subtitle={shiftConflictText()}>
-                    <Toggle
-                      checked={shiftFreeOnState()}
-                      onChange={(on) => setShiftFree(on)}
-                    />
-                  </Row>
-                ) : null}
+                <Row title="标点样式" subtitle="数字后面的符号总是半角的，比如 3.14。">
+                  <SelectBox
+                    items={punctStyleItems}
+                    value={punctStyle()}
+                    onChange={(value) => {
+                      punctStyle.set(value);
+                      save("PunctuationStyle", value);
+                    }}
+                  />
+                </Row>
               </Card>
 
               <Text style={{ color: ui().muted, fontSize: 12 }}>拼音</Text>
@@ -2348,16 +2373,6 @@ function App() {
                     onChange={(on) => {
                       rareChars.set(on);
                       save("RareExtChars", on ? "True" : "False");
-                    }}
-                  />
-                </Row>
-                <Row title="标点样式" subtitle="数字后面的符号总是半角的，比如 3.14。">
-                  <SelectBox
-                    items={punctStyleItems}
-                    value={punctStyle()}
-                    onChange={(value) => {
-                      punctStyle.set(value);
-                      save("PunctuationStyle", value);
                     }}
                   />
                 </Row>
@@ -2855,6 +2870,19 @@ function App() {
                     onChange={(value) => {
                       voiceKey.set(value);
                       save("VoiceKey", value);
+                    }}
+                  />
+                </Row>
+                <Row title="麦克风" subtitle="录音用的输入设备；默认用系统默认设备">
+                  <SelectBox
+                    items={[
+                      { value: "", title: "系统默认" },
+                      ...micDeviceChoices.map((name) => ({ value: name, title: name })),
+                    ]}
+                    value={micDevice()}
+                    onChange={(value) => {
+                      micDevice.set(value);
+                      save("MicDevice", value);
                     }}
                   />
                 </Row>

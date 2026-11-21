@@ -1140,6 +1140,19 @@ impl Config {
         read(&format!("{}/custom.tsv", Config::data_dir()))
     }
 
+    /// 录音设备（ALSA PCM 名，cpal 用的就是 `arecord -L` 里这些）：JSON 字符串数组。
+    pub fn voice_devices() -> String {
+        let Ok(output) = std::process::Command::new("arecord").arg("-L").output() else {
+            return "[]".to_string();
+        };
+        let names: Vec<String> = String::from_utf8_lossy(&output.stdout)
+            .lines()
+            .filter(|line| !line.is_empty() && !line.starts_with(|c: char| c.is_whitespace()))
+            .map(|line| line.trim().to_string())
+            .collect();
+        serde_json::to_string(&names).unwrap_or_else(|_| "[]".to_string())
+    }
+
     /// 语音模型目录状态：词表和 .xnet 都在返回目录，否则空串。
     pub fn voice_model() -> String {
         let dir = format!("{}/wtlocal", Config::data_dir());

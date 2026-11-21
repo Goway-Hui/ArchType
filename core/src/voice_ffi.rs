@@ -196,6 +196,8 @@ enum Msg {
 pub struct ArchtypeVoice {
     dir: PathBuf,
     wav: Option<PathBuf>,
+    /// 指定麦克风（cpal 的 ALSA 设备名）；空 = 系统默认
+    device: Arc<Mutex<Option<String>>>,
     model: Arc<ModelSlot>,
     shared: Arc<Mutex<Shared>>,
     trigger: VoiceTrigger,
@@ -209,6 +211,7 @@ impl ArchtypeVoice {
         Self {
             dir,
             wav: std::env::var_os("ARCHTYPE_VOICE_WAV").map(PathBuf::from),
+            device: Arc::new(Mutex::new(None)),
             model: Arc::new(ModelSlot {
                 state: Mutex::new(ModelState::None),
                 changed: Condvar::new(),
@@ -269,6 +272,7 @@ impl ArchtypeVoice {
             session: self.session,
             dir: self.dir.clone(),
             wav: self.wav.clone(),
+            device: self.device.clone(),
             model: self.model.clone(),
             shared: self.shared.clone(),
             tx: tx.clone(),
@@ -339,6 +343,7 @@ struct Worker {
     session: u64,
     dir: PathBuf,
     wav: Option<PathBuf>,
+    device: Arc<Mutex<Option<String>>>,
     model: Arc<ModelSlot>,
     shared: Arc<Mutex<Shared>>,
     tx: Sender<Msg>,
@@ -374,7 +379,8 @@ impl Worker {
             return Ok(Source::Wav);
         }
         let tx = self.tx.clone();
-        let capture = archtype_voice::capture::start(None, move |pcm| {
+        let device = self.device.lock().unwrap().clone();
+        let capture = archtype_voice::capture::start(device.as_deref(), move |pcm| {
             let _ = tx.send(Msg::Pcm(pcm));
         })?;
         Ok(Source::Mic(capture))
@@ -541,6 +547,24 @@ pub unsafe extern "C" fn archtype_voice_free(voice: *mut ArchtypeVoice) {
     if !voice.is_null() {
         let mut voice = unsafe { Box::from_raw(voice) };
         voice.cancel();
+    }
+}
+
+/// 指定麦克风（cpal 的 ALSA 设备名，`arecord -L` 里的名字）；NULL/空串 = 系统默认。
+/// 下一次开麦生效，正在听的不受影响。
+#[no_mangle]
+pub unsafe extern "C" fn archtype_voice_set_device(voice: *mut ArchtypeVoice, name: *const c_char) {
+    if let Some(voice) = unsafe { voice.as_mut() } {
+        let device = if name.is_null() {
+            None
+        } else {
+            unsafe { CStr::from_ptr(name) }
+                .to_str()
+                .ok()
+                .filter(|s| !s.is_empty())
+                .map(str::to_string)
+        };
+        *voice.device.lock().unwrap() = device;
     }
 }
 

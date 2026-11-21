@@ -793,6 +793,16 @@
       "note": "语音识别的结果同时复制到剪贴板"
     },
     {
+      "key": "MicDevice",
+      "type": "string",
+      "default": "",
+      "platforms": [
+        "fcitx5",
+        "settings"
+      ],
+      "note": "录音用的输入设备（cpal 的 ALSA 设备名，arecord -L 里的名字）；空 = 系统默认。下一次按语音键生效"
+    },
+    {
       "key": "EmojiSuggest",
       "type": "bool",
       "default": true,

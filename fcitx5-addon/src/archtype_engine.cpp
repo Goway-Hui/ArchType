@@ -1183,11 +1183,16 @@ void ArchtypeEngine::applyConfig() {
     }
     voiceKey_ = key;
     voiceCopy_ = envOr("ARCHTYPE_VOICE_COPY", *config_.voiceCopy);
+    micDevice_ = *config_.micDevice;
     if (voiceKey_.sym() != FcitxKey_None && !voice_) {
         // 只建句柄：不开麦克风、不读模型，第一次按热键时才读。模型从来不在这里下载，
         // 没下载时按热键只提示去「ArchType 设置 → 语音」里下载
         const char *dir = std::getenv("ARCHTYPE_VOICE_MODEL_DIR");
         voice_ = archtype_voice_new(dir);
+    }
+    // 麦克风：空 = 系统默认；改设置后下一次说话生效
+    if (voice_) {
+        archtype_voice_set_device(voice_, micDevice_.empty() ? nullptr : micDevice_.c_str());
     }
     // 互译：环境变量 ARCHTYPE_TRANSLATE_URL / _MODEL / _TARGET / _KEY_FILE 覆盖（测试用）
     translateEnabled_ = envOr("ARCHTYPE_TRANSLATE", *config_.translate);

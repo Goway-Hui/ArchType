@@ -16,6 +16,8 @@ pub unsafe extern "C" fn archtype_voice_new(_model_dir: *const c_char) -> *mut A
 #[no_mangle]
 pub unsafe extern "C" fn archtype_voice_free(_voice: *mut ArchtypeVoice) {}
 #[no_mangle]
+pub unsafe extern "C" fn archtype_voice_set_device(_voice: *mut ArchtypeVoice, _name: *const c_char) {}
+#[no_mangle]
 pub unsafe extern "C" fn archtype_voice_key_down(_voice: *mut ArchtypeVoice) {}
 #[no_mangle]
 pub unsafe extern "C" fn archtype_voice_key_up(_voice: *mut ArchtypeVoice) {}

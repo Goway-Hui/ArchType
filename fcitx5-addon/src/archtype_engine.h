@@ -275,6 +275,7 @@ FCITX_CONFIGURATION(
         fcitx::KeyConstrain({fcitx::KeyConstrainFlag::AllowModifierOnly,
                              fcitx::KeyConstrainFlag::AllowModifierLess})};
     fcitx::Option<bool> voiceCopy{this, "VoiceCopy", "语音识别的结果同时复制到剪贴板", false};
+    fcitx::Option<std::string> micDevice{this, "MicDevice", "麦克风（留空用系统默认）", ""};
     fcitx::Option<bool> emojiSuggest{this, "EmojiSuggest", "打字时推荐 emoji", true};
     fcitx::Option<fcitx::Key, fcitx::KeyConstrain> emojiKey{
         this, "EmojiKey", "打开表情面板的快捷键", fcitx::Key("Super+period"),
@@ -687,6 +688,8 @@ private:
     ArchtypeVoice *voice_ = nullptr;
     /// 语音结果同时复制到剪贴板（默认关）。
     bool voiceCopy_ = false;
+    /// 麦克风（cpal 的 ALSA 设备名）；空 = 系统默认
+    std::string micDevice_;
     /// 语音热键，默认右 Alt；FcitxKey_None 表示关掉语音。
     fcitx::Key voiceKey_;
     /// 热键按下还没松开（松开那一下也要吃掉，免得应用把单按 Alt 当成打开菜单）。

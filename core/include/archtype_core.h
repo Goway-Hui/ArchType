@@ -16,7 +16,7 @@
  * 删函数或改参数含义时升主版本。外壳启动时用 archtype_abi_version() 比对主版本。
  * 规则见 docs/ABI.md。 */
 #define ARCHTYPE_ABI_VERSION_MAJOR 1
-#define ARCHTYPE_ABI_VERSION_MINOR 14
+#define ARCHTYPE_ABI_VERSION_MINOR 15
 
 #ifdef __cplusplus
 extern "C" {
@@ -283,6 +283,9 @@ enum {
  * 核心不带 voice 特性编译时返回 NULL（其余函数接受 NULL，什么也不做）。 */
 ArchtypeVoice *archtype_voice_new(const char *model_dir);
 void archtype_voice_free(ArchtypeVoice *voice);
+/* 1.15 起：指定麦克风（cpal 的 ALSA 设备名，`arecord -L` 里的名字）；NULL/空串 = 系统默认。
+ * 下一次开麦生效，正在听的不受影响。 */
+void archtype_voice_set_device(ArchtypeVoice *voice, const char *name);
 void archtype_voice_key_down(ArchtypeVoice *voice);
 void archtype_voice_key_up(ArchtypeVoice *voice);
 /* 丢掉这次说的话（Esc、切走输入框）。 */
