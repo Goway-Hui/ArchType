@@ -657,11 +657,15 @@ jobs:
           cat > notes.md <<EOF
           ## 这一版要注意
 
-          - 命令行工具 \`archtype-config\` 换成 Rust 实现（原来那套 Python 脚本删掉了）：\`--setup\`、\`--add-to-group\`、\`--install-lexicon\`、\`--export-log\`、\`--startup\` 等用法不变，不再依赖 PyGObject。
-          - 图形设置界面统一是 NSH 写的「ArchType 设置」（\`archtype-settings\`）；不带参数的 \`archtype-config\` 会直接打开它。
-          - **NixOS 用户终于有图形设置界面**：Nix 包里带上了它（解到 \`lib/archtype/settings\`），桌面入口指向 \`archtype-settings\`。
-          - 安装包的依赖跟着换：不再要 python3-gi / PyGObject，改为 GTK 4、WebKitGTK 6.0、GStreamer。装不上时先用包管理器升级系统再重试。
-          - 设置界面里改完设置立即生效（互译开关、翻译引擎、模型等），不用重启输入法。
+          - **双拼简拼（默认开）**：只打声母也出词，\`sm\` → 什么；同样的键按双拼也读得通时，双拼读出来的排在前面。设置「输入 → 双拼简拼」可以关。
+          - **逐键提速**：万象、雾凇这些大词库下乱按长串，p99 从 21 ms 降到 8 ms 左右，日常整句约快一倍，候选一个不变。
+          - **最近常选的字可以当首选**：选过很多次的单字，打得比第一个候选多一倍以上时排到第一。
+          - **排序不变量**：纠错、模糊音、简拼、补全只往后加候选，不会把照着打的拼音和第一个音节的单字挤掉。
+          - **换窗口时的默认中/英文**（#254）：设置「输入 → 默认中/英文」可选和上次一样 / 中文 / 英文；换到新窗口、新应用时按它定一次，在窗口里用 Shift 切了只算这一次。
+          - **双击 Shift 不切换中英文**（#253）：JetBrains 的双击 Shift（到处搜索）不再被输入法杀掉；单按 Shift 仍照旧切换（0.35 秒内按两下不算）。
+          - **数字后面的标点**：顿号、问号、圆括号是中文标点（\`1、\`、\`（1）\`），小数点、千分位、时间这些仍是半角（\`3.14\`、\`3,000\`、\`20:22\`）。
+          - **连不上 GitHub 也能装**：一键安装支持 \`ARCHTYPE_GITHUB_MIRROR=https://<代理>/\` 走自己选的下载代理，连不上时提示从 jsDelivr 取脚本；安装包照样按 SHA256SUMS 校验。
+          - 源码里新增 Wayland 语音浮条（\`voice-overlay/\`，GTK 4 + layer-shell）：非 GNOME 桌面（niri、sway 等）也能看到蓝话筒 + 声波浮条，需自行构建运行。
 
           ## 安装（Ubuntu / Debian、deepin、Arch Linux、Fedora、NixOS）
 
