@@ -578,7 +578,8 @@ fn update_download(url: &str, path: &str, total_hint: u64) -> Result<(), String>
             Ok(None) => {
                 let done = fs::metadata(&part).map(|meta| meta.len()).unwrap_or(0);
                 if let Ok(mut progress) = UPDATE_PROGRESS.lock() {
-                    *progress = (done, total.max(done));
+                    // total 未知（发布信息里没有 size）时保留 0：界面显示已下载多少，不编一个 100%
+                    *progress = (done, total);
                 }
                 std::thread::sleep(std::time::Duration::from_millis(120));
             }

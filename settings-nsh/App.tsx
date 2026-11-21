@@ -1702,7 +1702,8 @@ function App() {
         const percent = Math.min(100, Math.round((done / total) * 100));
         return `正在下载… ${percent}%（${(done / 1048576).toFixed(1)} / ${(total / 1048576).toFixed(1)} MB）`;
       }
-      return "正在下载…";
+      // 发布信息里没有文件大小时只说下载了多少，不显示假的百分比
+      return done > 0 ? `正在下载… ${(done / 1048576).toFixed(1)} MB` : "正在下载…";
     }
     if (state === "verifying") return "正在校验下载的文件…";
     if (state === "installing") return "等待授权，正在安装…";
