@@ -1771,7 +1771,7 @@ fn tap_shift(session: &mut Session, at: u64) -> (Frame, Frame) {
 
 #[test]
 fn shift_double_tap_single_tap_toggles_after_window() {
-    use wowtype_core::session::{Mode, SHIFT_DOUBLE_TAP_MS};
+    use archtype_core::session::{Mode, SHIFT_DOUBLE_TAP_MS};
     let mut session = double_tap_session();
     let (press, release) = tap_shift(&mut session, 1000);
     assert!(!press.handled && !press.mode_changed);
@@ -1795,7 +1795,7 @@ fn shift_double_tap_single_tap_toggles_after_window() {
 
 #[test]
 fn shift_double_tap_next_key_toggles_first() {
-    use wowtype_core::session::{KeyAction, Mode};
+    use archtype_core::session::{KeyAction, Mode};
     // 单按以后紧接着打字：这个键照切了以后的模式处理（和以前单按立刻切一样）
     let mut session = double_tap_session();
     tap_shift(&mut session, 1000);
@@ -1829,7 +1829,7 @@ fn shift_double_tap_next_key_toggles_first() {
 
 #[test]
 fn shift_double_tap_cancels_toggle() {
-    use wowtype_core::session::{Mode, SHIFT_DOUBLE_TAP_MS};
+    use archtype_core::session::{Mode, SHIFT_DOUBLE_TAP_MS};
     let mut session = double_tap_session();
     let mut frames = Vec::new();
     let (a, b) = tap_shift(&mut session, 1000);
@@ -1869,7 +1869,7 @@ fn shift_double_tap_cancels_toggle() {
 
 #[test]
 fn shift_double_tap_slow_second_tap_toggles_again() {
-    use wowtype_core::session::{Mode, SHIFT_DOUBLE_TAP_MS};
+    use archtype_core::session::{Mode, SHIFT_DOUBLE_TAP_MS};
     // 外壳的定时器按时到了：第一下在 tick 里切，过了间隔的第二下再切回来
     let mut session = double_tap_session();
     tap_shift(&mut session, 1000);
@@ -1900,7 +1900,7 @@ fn shift_double_tap_slow_second_tap_toggles_again() {
 
 #[test]
 fn shift_double_tap_edge_cases() {
-    use wowtype_core::session::Mode;
+    use archtype_core::session::Mode;
     // 外面定了模式：等着的那一下不再切
     let mut session = double_tap_session();
     tap_shift(&mut session, 1000);
