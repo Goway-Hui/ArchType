@@ -64,7 +64,6 @@ jobs:
           sudo apt-get install -y --no-install-recommends build-essential pkg-config clang \
             libgtk-4-dev libadwaita-1-dev libgstreamer1.0-dev \
             libgstreamer-plugins-base1.0-dev libwebkitgtk-6.0-dev \
-            libgtk4-layer-shell-dev \
             libjavascriptcoregtk-6.0-dev libsoup-3.0-dev ca-certificates curl
       - name: Rust
         run: |
@@ -261,7 +260,6 @@ jobs:
           apt-get install -y --no-install-recommends \
             build-essential pkg-config cmake extra-cmake-modules \
             libfcitx5core-dev libfcitx5config-dev libfcitx5utils-dev libasound2-dev \
-            libgtk4-layer-shell-dev \
             fcitx5 fcitx5-modules \
             ca-certificates curl git dpkg-dev file python3
       - uses: actions/checkout@v5

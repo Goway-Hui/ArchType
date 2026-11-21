@@ -13,6 +13,7 @@
   autoPatchelfHook,
   wrapGAppsHook4,
   gtk4,
+  gtk4-layer-shell,
   webkitgtk_6_0,
   gst_all_1,
   libsoup_3,
