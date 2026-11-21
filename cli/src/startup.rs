@@ -70,11 +70,36 @@ fn check_update() {
     let _ = config::state_set("update_notified", &tag);
 }
 
+/// 后台自动更新正在用的万象词库：最多一小时查一次，有新包就换上（失败不打扰用户）。
+fn auto_update_lexicon() {
+    if config::get("CheckUpdate") == "False" {
+        return;
+    }
+    let last = config::state_get("lexicon_checked")
+        .parse::<u64>()
+        .unwrap_or(0);
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|duration| duration.as_secs())
+        .unwrap_or(0);
+    if now.saturating_sub(last) < 3600 {
+        return;
+    }
+    let _ = config::state_set("lexicon_checked", &now.to_string());
+    if let Ok(true) = crate::lexicon::auto_update() {
+        notify(
+            "万象词库已更新",
+            "正在用的词库换成了新版本，重新切到 ArchType（或重启输入法）后用上新词。",
+        );
+    }
+}
+
 /// `--startup`：默认主题 + 重启提醒 + 检查更新。
 pub fn tasks() -> i32 {
     init_default_theme();
     restart_reminder();
     check_update();
+    auto_update_lexicon();
     0
 }
 

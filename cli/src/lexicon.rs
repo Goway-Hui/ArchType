@@ -116,6 +116,32 @@ pub fn install_wanxiang() -> Result<String, String> {
     Ok(version)
 }
 
+/// 当前用的是不是万象词库（看 archtype.conf 的 Lexicon 指向）。
+pub fn using_wanxiang() -> bool {
+    config::get("Lexicon") == wanxiang_lexicon()
+}
+
+/// 后台自动更新正在用的万象词库：发布页上有比本地 VERSION 新的包就换上。没在用万象时什么都不做。
+pub fn auto_update() -> Result<bool, String> {
+    if !using_wanxiang() {
+        return Ok(false);
+    }
+    let installed = installed_version();
+    if installed.is_empty() {
+        return Ok(false);
+    }
+    let release = release()?;
+    let (name, _url) = latest_asset(&release)?;
+    let Some(latest) = pack_version(&name) else {
+        return Ok(false);
+    };
+    if version_key(&latest) <= version_key(&installed) {
+        return Ok(false);
+    }
+    install_wanxiang()?;
+    Ok(true)
+}
+
 /// 列出 tar 成员（解包前校验用）。
 fn tar_members(tarball: &str) -> Result<Vec<String>, String> {
     let output = Command::new("tar")
