@@ -38,15 +38,15 @@ let
   # 图形设置界面（NSH）：直接用发版时 CI 打好的包。版本单独记（和 dataVersion 一样）：
   # 包要发版之后才存在，跟着 ${version} 走的话一 bump 版本、发版那轮 Nix 任务就会去下
   # 还没上传的资产。发版后由 nix-data-pr.sh 的自动 PR 更新这三行。
-  settingsVersion = "0.7.5";
+  settingsVersion = "0.7.6";
   settingsAssets = {
     x86_64-linux = {
       url = "https://github.com/Goway-Hui/ArchType/releases/download/v${settingsVersion}/archtype-settings-nsh-${settingsVersion}-linux-x86_64.tar.gz";
-      hash = "sha256-NMyPCo8kFzGsi0eCGAO0FqGOo1t3iWQU7Kx7dEqqN8Y=";
+      hash = "sha256-ejghjVDbj7XfPDwsDpYKrYZhkFAX7vaZSwLFB4Ghy40=";
     };
     aarch64-linux = {
       url = "https://github.com/Goway-Hui/ArchType/releases/download/v${settingsVersion}/archtype-settings-nsh-${settingsVersion}-linux-aarch64.tar.gz";
-      hash = "sha256-bD3EivZtJgDeg1kmRqg3L2art5gJegFaGworLKeX28E=";
+      hash = "sha256-/fxoUMYDqXm5L4MMOMIzH6XXZ7H09qHmxj9ehiAthYo=";
     };
   };
   settingsPackage = fetchurl settingsAssets.${stdenv.hostPlatform.system};
