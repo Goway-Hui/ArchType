@@ -616,7 +616,9 @@ jobs:
         run: |
           curl -fsSL https://nsh.dev/install.sh | NSH_VERSION=v0.6.0 sh
           echo "$HOME/.nsh/bin" >> "$GITHUB_PATH"
-      - name: Rust 外壳测试（按键、设置、引擎、会话）
+      - name: 共用外壳逻辑测试（按键、设置、引擎、会话）
+        run: cargo test -p archtype-shell
+      - name: macOS 外壳编译与测试
         run: cargo test --manifest-path macos-rs/Cargo.toml
       - name: 打包（含 NSH 设置 app）
         run: |

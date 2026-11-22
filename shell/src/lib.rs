@@ -14,6 +14,7 @@ pub mod config;
 pub mod engine;
 pub mod input;
 pub mod keys;
+pub mod runtime;
 pub mod stats;
 pub mod translate;
 pub mod update;
