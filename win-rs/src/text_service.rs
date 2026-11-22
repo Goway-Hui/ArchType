@@ -19,9 +19,9 @@ use windows::Win32::UI::Input::KeyboardAndMouse::{
 };
 use windows::Win32::UI::TextServices::{
     ITfContext, ITfEditSession, ITfEditSession_Impl, ITfInsertAtSelection, ITfKeyEventSink,
-    ITfKeyEventSink_Impl, ITfKeystrokeMgr, ITfTextInputProcessor, ITfTextInputProcessorEx,
+    ITfKeyEventSink_Impl, ITfKeystrokeMgr, ITfTextInputProcessorEx,
     ITfTextInputProcessorEx_Impl, ITfTextInputProcessor_Impl, ITfThreadMgr,
-    TF_CONTEXT_EDIT_CONTEXT_FLAGS, TF_ES_READWRITE, TF_ES_SYNC, TF_IAS_NOQUERY, TS_TEXTCHANGE,
+    TF_CONTEXT_EDIT_CONTEXT_FLAGS, TF_ES_READWRITE, TF_ES_SYNC, TF_IAS_NOQUERY,
 };
 
 /// 进程级：配置、引擎、翻译器、统计（DLL 在每个宿主进程里各一份，和 fcitx5 插件一样）。
@@ -243,16 +243,7 @@ impl ITfEditSession_Impl for InsertText_Impl {
         unsafe {
             let this = &self.this;
             let insert: ITfInsertAtSelection = this.context.cast()?;
-            let mut start = 0i32;
-            let mut end = 0i32;
-            let mut change: TS_TEXTCHANGE = std::mem::zeroed();
-            insert.InsertTextAtSelection(
-                TF_IAS_NOQUERY.0,
-                &this.text,
-                &mut start,
-                &mut end,
-                &mut change,
-            )?;
+            insert.InsertTextAtSelection(ec, TF_IAS_NOQUERY, &this.text)?;
         }
         Ok(())
     }
