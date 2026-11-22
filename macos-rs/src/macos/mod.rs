@@ -9,7 +9,7 @@ mod installer;
 mod panel;
 
 use objc2::{AnyThread, MainThreadMarker};
-use objc2_app_kit::{NSApplication, NSWorkspace};
+use objc2_app_kit::{NSApplication, NSApplicationActivationPolicy, NSWorkspace};
 use objc2_foundation::{NSString, NSURL};
 use objc2_input_method_kit::IMKServer;
 
@@ -50,6 +50,21 @@ fn exit_with(ok: bool) -> ! {
     std::process::exit(if ok { 0 } else { 1 });
 }
 
+/// 被 kill（安装新版、注销）时先存学习数据：信号处理器只立个标志，主线程的定时器看到再存。
+fn install_signal_handlers() {
+    const SIGTERM: i32 = 15;
+    extern "C" fn on_terminate(_signal: i32) {
+        app::request_terminate();
+    }
+    unsafe {
+        signal(SIGTERM, on_terminate as usize);
+    }
+}
+
+unsafe extern "C" {
+    fn signal(signum: i32, handler: usize) -> usize;
+}
+
 fn usage() {
     println!(
         "用法：ArchType [--register | --enable | --select | --disable | --selftest | --settings [页面] |\n\
@@ -79,6 +94,8 @@ fn run_input_method() {
     }
 
     let application = NSApplication::sharedApplication(mtm);
+    let _ = application.setActivationPolicy(NSApplicationActivationPolicy::Accessory);
+    install_signal_handlers();
     application.run();
     std::mem::forget(server);
 }

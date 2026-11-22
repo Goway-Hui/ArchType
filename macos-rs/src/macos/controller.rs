@@ -102,6 +102,10 @@ define_class!(
         /// 语音状态轮询：定时器每 50 毫秒调一次（录音中看音量、松开后等识别结果）。
         #[unsafe(method(pollVoice:))]
         fn poll_voice(&self, _timer: Option<&NSTimer>) {
+            if app::terminate_requested() {
+                app::shutdown();
+                std::process::exit(0);
+            }
             let state = {
                 let voice = self.ivars().voice.borrow();
                 match voice.as_ref() {

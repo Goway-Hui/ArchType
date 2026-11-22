@@ -1,8 +1,9 @@
 //! 进程里只有一份的东西：设置、路径、引擎（后台载入）、数据目录。
 
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{LazyLock, Mutex, OnceLock};
-use std::time::SystemTime;
+use std::time::{Duration, SystemTime};
 
 use objc2_foundation::{ns_string, NSBundle, NSString};
 
@@ -25,6 +26,30 @@ pub struct Shared {
 }
 
 static SHARED: LazyLock<Shared> = LazyLock::new(Shared::new);
+
+/// 收到 SIGTERM（安装新版、注销、kill）：主线程看到后存学习数据再退。
+static TERMINATE: AtomicBool = AtomicBool::new(false);
+
+pub fn request_terminate() {
+    TERMINATE.store(true, Ordering::SeqCst);
+}
+
+pub fn terminate_requested() -> bool {
+    TERMINATE.load(Ordering::SeqCst)
+}
+
+/// 退出前把学习数据交出去（系统可能随时杀掉输入法进程）。
+pub fn shutdown() {
+    let shared = &SHARED;
+    if let Some(engine) = shared.engine() {
+        let engine = engine.get();
+        let _ = engine.save_user_dict_async(shared.layout.user_dict_path());
+        let _ = engine.save_history_async(shared.layout.history_path());
+        let _ = engine.save_wait(Some(Duration::from_secs(3)));
+    }
+    shared.stats().flush();
+    shared.stats().wait(3000);
+}
 
 /// 安装包里的数据目录：`ArchType.app/Contents/Resources`。
 pub fn resource_dir() -> PathBuf {
