@@ -155,15 +155,32 @@ fn set_value(
 }
 
 fn dll_path() -> Result<String, String> {
-    unsafe {
+    let module_path = unsafe {
         let module = GetModuleHandleW(PCWSTR::null()).map_err(|err| err.to_string())?;
         let mut buf = [0u16; 1024];
         let len = GetModuleFileNameW(module, &mut buf) as usize;
         if len == 0 || len >= buf.len() {
             return Err("取不到 DLL 路径".into());
         }
-        Ok(String::from_utf16_lossy(&buf[..len]))
+        String::from_utf16_lossy(&buf[..len])
+    };
+    // regsvr32 / DLL 自己调 DllRegisterServer 时就是 DLL；从 archtype.exe 调用时换成同目录的 DLL
+    let path = std::path::Path::new(&module_path);
+    let name = path
+        .file_name()
+        .and_then(|name| name.to_str())
+        .unwrap_or_default()
+        .to_ascii_lowercase();
+    if name == "archtype.exe" {
+        if let Some(dir) = path.parent() {
+            let dll = dir.join("archtype_tsf.dll");
+            if dll.is_file() {
+                return Ok(dll.to_string_lossy().to_string());
+            }
+        }
+        return Err(format!("找不到同目录的 archtype_tsf.dll（{module_path}）"));
     }
+    Ok(module_path)
 }
 
 #[allow(dead_code)]

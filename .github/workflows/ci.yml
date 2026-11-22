@@ -699,6 +699,8 @@ jobs:
       - name: 注册与卸载（runner 是管理员）
         shell: pwsh
         run: |
+          # reg query 失败是预期结果，别让 PowerShell 7.4 把它当错误退出
+          $PSNativeCommandUseErrorActionPreference = $false
           $exe = '.\win-rs\target\release\archtype.exe'
           $clsid = 'HKCR\CLSID\{6F2D3C1A-7B4E-4C2D-9E31-2A5B8F0C7D11}'
           $tip = 'HKLM\SOFTWARE\Microsoft\CTF\TIP\{6F2D3C1A-7B4E-4C2D-9E31-2A5B8F0C7D11}'
