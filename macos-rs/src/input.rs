@@ -187,6 +187,14 @@ impl Input {
         }
     }
 
+    /// 这次上屏的候选是不是 emoji（是的话返回 emoji 本身，外壳记进最近用过的）。
+    pub fn last_choice_emoji(&self) -> Option<String> {
+        self.session
+            .last_choice()
+            .filter(|candidate| !candidate.emoji.is_empty())
+            .map(|candidate| candidate.emoji.clone())
+    }
+
     /// 上屏的是第几个候选（1 起）；原样上屏输入、标点、emoji 时是 0。
     pub fn last_choice_index(&self) -> usize {
         self.session.last_choice_index()

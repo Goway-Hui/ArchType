@@ -6,13 +6,17 @@ use objc2::rc::Retained;
 use objc2::runtime::{AnyObject, Bool};
 use objc2::{define_class, msg_send, sel, DefinedClass, MainThreadMarker};
 use objc2_app_kit::{
-    NSAlert, NSEvent, NSEventMask, NSEventModifierFlags, NSEventType, NSMenu, NSMenuItem,
+    NSAlert, NSAlertFirstButtonReturn, NSEvent, NSEventMask, NSEventModifierFlags, NSEventType,
+    NSMenu, NSMenuItem, NSPasteboard, NSPasteboardTypeString,
 };
 use objc2_foundation::{
     NSNotFound, NSObjectProtocol, NSPoint, NSRange, NSRect, NSSize, NSString, NSTimer,
 };
 use objc2_input_method_kit::IMKInputController;
 
+use archtype_core::session::Mode;
+
+use crate::config::{InitialMode, WindowMode};
 use crate::input::{make_key, Input};
 use crate::keys::{keysym, virtual_key, VoiceKey};
 use crate::macos::app::{self};
@@ -175,6 +179,7 @@ define_class!(
                     self.apply_modes_on_activate(client);
                 }
             }
+            self.sample_clipboard();
         }
 
         #[unsafe(method(deactivateServer:))]
@@ -210,6 +215,16 @@ define_class!(
             };
             unsafe { settings.setTarget(Some(self.as_any())) };
             menu.addItem(&settings);
+            let check = unsafe {
+                NSMenuItem::initWithTitle_action_keyEquivalent(
+                    mtm.alloc(),
+                    &NSString::from_str("检查更新…"),
+                    Some(sel!(checkUpdate:)),
+                    &NSString::from_str(""),
+                )
+            };
+            unsafe { check.setTarget(Some(self.as_any())) };
+            menu.addItem(&check);
             let about = unsafe {
                 NSMenuItem::initWithTitle_action_keyEquivalent(
                     mtm.alloc(),
@@ -259,6 +274,41 @@ define_class!(
             open_settings_app(&self.ivars());
         }
 
+        /// 菜单「检查更新…」：问发布页有没有新版，有就下载 pkg 装上（只装给当前用户）。
+        #[unsafe(method(checkUpdate:))]
+        fn check_update(&self, _sender: Option<&AnyObject>) {
+            let current = app::version();
+            let Some(latest) = crate::update::latest_version() else {
+                show_message("检查更新", "连不上发布页，过一会儿再试。");
+                return;
+            };
+            if !crate::update::is_newer(&latest, &current) {
+                show_message("检查更新", &format!("已经是最新版（{current}）。"));
+                return;
+            }
+            let Some(mtm) = MainThreadMarker::new() else {
+                return;
+            };
+            let alert = NSAlert::new(mtm);
+            alert.setMessageText(&NSString::from_str(&format!("ArchType {latest} 可以更新")));
+            alert.setInformativeText(&NSString::from_str(
+                "下载并安装新版（只装给当前用户，不需要管理员密码）。",
+            ));
+            alert.addButtonWithTitle(&NSString::from_str("下载并安装"));
+            alert.addButtonWithTitle(&NSString::from_str("取消"));
+            if alert.runModal() != NSAlertFirstButtonReturn {
+                return;
+            }
+            let layout = app::start().layout.clone();
+            let base = format!(
+                "https://github.com/Goway-Hui/ArchType/releases/download/v{latest}"
+            );
+            match crate::update::download_and_install(&latest, &base, &layout) {
+                Ok(()) => show_message("检查更新", "装好了。下次切到 ArchType 就是新版。"),
+                Err(error) => show_message("检查更新", &format!("没装好：{error}")),
+            }
+        }
+
         #[unsafe(method(showAbout:))]
         fn show_about(&self, _sender: Option<&AnyObject>) {
             show_about_panel();
@@ -267,6 +317,25 @@ define_class!(
 );
 
 impl Controller {
+    /// 切换输入框时看一眼剪贴板（设置里开了「记录剪贴板历史」才记，只在内存里）。
+    fn sample_clipboard(&self) {
+        if !app::start().config().clipboard_history {
+            return;
+        }
+        static LAST_CHANGE: std::sync::atomic::AtomicIsize =
+            std::sync::atomic::AtomicIsize::new(-1);
+        let pasteboard = NSPasteboard::generalPasteboard();
+        let change = pasteboard.changeCount();
+        if change == LAST_CHANGE.swap(change, std::sync::atomic::Ordering::SeqCst) {
+            return;
+        }
+        // SAFETY: 系统的 NSString 类型常量。
+        let kind = unsafe { NSPasteboardTypeString };
+        if let Some(text) = pasteboard.stringForType(kind) {
+            archtype_core::clipboard::remember(&text.to_string());
+        }
+    }
+
     /// 语音提示：在光标下面画一行（正在听 + 波形、识别中）。
     fn show_voice_hint(&self, text: &str) {
         let Some(client) = self.current_client() else {
@@ -530,6 +599,9 @@ impl Controller {
                 return Bool::NO;
             };
             let frame = input.key(&key);
+            if let Some(emoji) = input.last_choice_emoji() {
+                archtype_core::recent_emoji::remember(&emoji);
+            }
             if let Some(text) = &frame.commit {
                 app::start().stats().record_commit(
                     text,
@@ -767,6 +839,16 @@ fn open_settings_app(_ivars: &Ivars) {
         return;
     };
     let _ = std::process::Command::new(exe).arg("--settings").spawn();
+}
+
+fn show_message(title: &str, text: &str) {
+    let Some(mtm) = MainThreadMarker::new() else {
+        return;
+    };
+    let alert = NSAlert::new(mtm);
+    alert.setMessageText(&NSString::from_str(title));
+    alert.setInformativeText(&NSString::from_str(text));
+    alert.runModal();
 }
 
 fn show_about_panel() {

@@ -196,7 +196,8 @@ pub fn request_mode(request: &str) -> Option<String> {
     unsafe {
         center.removeObserver_name_object(observer, None::<&NSNotificationName>, None);
     }
-    client.ivars().answer.borrow().clone()
+    let answer = client.ivars().answer.borrow().clone();
+    answer
 }
 
 /// `--mode` 的实现：打印模式，退出码按是否有输入框。

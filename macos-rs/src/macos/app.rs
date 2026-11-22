@@ -84,6 +84,13 @@ impl Shared {
             config.typing_stats,
         )
         .expect("建统计记录器");
+        // 最近用过的 emoji（工具栏「表情」页按最近排序）落盘
+        archtype_core::recent_emoji::set_path(
+            &layout
+                .support_dir
+                .join("emoji-recent.txt")
+                .to_string_lossy(),
+        );
         Self {
             layout,
             config: Mutex::new(config),
