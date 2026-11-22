@@ -806,6 +806,42 @@ impl Config {
         })
     }
 
+    /// 把 archtype.conf 里的一项改成 value（别的行、注释、顺序都不动；没有就加在最后）。
+    ///
+    /// 和设置界面的 `set_key` 一样：只动这一行，不改文件里其它内容。
+    pub fn set_key_in_file(path: &std::path::Path, key: &str, value: &str) -> bool {
+        let text = match std::fs::read_to_string(path) {
+            Ok(text) => text,
+            Err(_) => String::new(),
+        };
+        let mut out = String::new();
+        let mut done = false;
+        for line in text.lines() {
+            let trimmed = line.trim();
+            let is_key = !trimmed.starts_with('#')
+                && !trimmed.starts_with(';')
+                && !trimmed.starts_with('[')
+                && trimmed
+                    .split_once('=')
+                    .map(|(k, _)| k.trim() == key)
+                    .unwrap_or(false);
+            if is_key && !done {
+                out.push_str(&format!("{key}={value}\n"));
+                done = true;
+            } else {
+                out.push_str(line);
+                out.push('\n');
+            }
+        }
+        if !done {
+            out.push_str(&format!("{key}={value}\n"));
+        }
+        if let Some(dir) = path.parent() {
+            let _ = std::fs::create_dir_all(dir);
+        }
+        std::fs::write(path, out).is_ok()
+    }
+
     /// 模糊音分组的位掩码（和核心的 fuzzy 分组一致）。
     pub fn fuzzy_groups(&self) -> u32 {
         let mut mask = 0;
@@ -1057,6 +1093,28 @@ mod tests {
                 assert!(Shortcut::parse(name).is_some(), "预设 {name} 解析不了");
             }
         }
+    }
+
+    #[test]
+    fn set_key_in_file_keeps_other_lines() {
+        let dir = std::env::temp_dir().join(format!(
+            "archtype-macos-config-{}",
+            std::process::id()
+        ));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("archtype.conf");
+        std::fs::write(&path, "# 注释\nPageSize=9\n[Other]\nPageSize=3\n").unwrap();
+        assert!(Config::set_key_in_file(&path, "PageSize", "5"));
+        let text = std::fs::read_to_string(&path).unwrap();
+        assert!(text.contains("# 注释"));
+        assert!(text.contains("PageSize=5"));
+        // 分组里的同名键不动
+        assert!(text.contains("[Other]\nPageSize=3"));
+        assert!(Config::set_key_in_file(&path, "Lexicon", "/tmp/x.tsv"));
+        let text = std::fs::read_to_string(&path).unwrap();
+        assert!(text.contains("Lexicon=/tmp/x.tsv"));
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]

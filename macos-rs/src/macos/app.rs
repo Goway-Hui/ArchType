@@ -79,6 +79,11 @@ impl Shared {
         translator
             .get()
             .configure(translate_config(&config, &layout));
+        let stats = Stats::new(
+            &crate::stats::stats_path(&layout.support_dir),
+            config.typing_stats,
+        )
+        .expect("建统计记录器");
         Self {
             layout,
             config: Mutex::new(config),
