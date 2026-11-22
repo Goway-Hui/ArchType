@@ -10,8 +10,8 @@
 
 use objc2::msg_send;
 use objc2::rc::Retained;
-use objc2::runtime::AnyObject;
-use objc2::{define_class, MainThreadMarker};
+use objc2::runtime::{AnyObject, Bool};
+use objc2::{define_class, AnyThread, MainThreadMarker};
 use objc2_app_kit::{NSApplication, NSEvent, NSMenu};
 use objc2_foundation::{NSNotFound, NSObjectProtocol, NSRange, NSString};
 
@@ -28,26 +28,26 @@ define_class!(
     impl ArchTypeController {
         /// POC：普通字符直接交给应用上屏；功能键/组合键原样放行。
         #[unsafe(method(handleEvent:client:))]
-        fn handle_event(&self, event: Option<&NSEvent>, client: Option<&AnyObject>) -> bool {
+        fn handle_event(&self, event: Option<&NSEvent>, client: Option<&AnyObject>) -> Bool {
             let (Some(event), Some(client)) = (event, client) else {
-                return false;
+                return Bool::NO;
             };
             let Some(chars) = (unsafe { event.characters() }) else {
-                return false;
+                return Bool::NO;
             };
             let len = unsafe { chars.length() };
             if len == 0 {
-                return false;
+                return Bool::NO;
             }
             unsafe {
                 let _: () = msg_send![client, insertText: &*chars,
-                                       replacementRange: NSRange::new(NSNotFound, 0)];
+                                       replacementRange: NSRange::new(NSNotFound as usize, 0)];
             }
-            true
+            Bool::YES
         }
 
         /// 输入法菜单：先交系统默认（设置界面由 NSH app 提供，后续在这里挂「设置…」）。
-        #[unsafe(method(menu))]
+        #[unsafe(method_id(menu))]
         fn menu(&self) -> Option<Retained<NSMenu>> {
             None
         }
