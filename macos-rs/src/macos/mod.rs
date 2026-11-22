@@ -5,6 +5,7 @@
 
 mod app;
 mod controller;
+mod external;
 mod installer;
 mod panel;
 
@@ -26,6 +27,9 @@ pub fn run() {
             std::process::exit(if ok { 0 } else { 1 });
         }
         Some("--settings") => open_settings(args.get(1).map(String::as_str)),
+        Some("--mode") => exit_with(external::mode_command(
+            args.get(1).map(String::as_str).unwrap_or(""),
+        )),
         Some("--register") => exit_with(installer::register()),
         Some("--enable") => exit_with(installer::enable()),
         Some("--select") => exit_with(installer::select()),
@@ -105,6 +109,7 @@ fn usage() {
     println!(
         "用法：ArchType [--register | --enable | --select | --disable | --selftest | --settings [页面] |\n\
          \t\t\t--install-lexicon [wanxiang|文件.tar.gz] | --use-lexicon rime-ice|wanxiang |\n\
+         \t\t\t--mode [zh | en | translate | toggle] |\n\
          \t\t\t--uninstall | --version | --help]\n\
          \n\
          不带参数时是输入法进程（系统按 Info.plist 把它拉起来）。\n\
@@ -120,6 +125,8 @@ fn run_input_method() {
 
     let name = NSString::from_str(&app::connection_name());
     let bundle = NSString::from_str(&app::bundle_id());
+    // 外部命令（ArchType --mode）切中英文
+    external::start_listener();
     let server = unsafe {
         IMKServer::initWithName_bundleIdentifier(IMKServer::alloc(), Some(&name), Some(&bundle))
     };

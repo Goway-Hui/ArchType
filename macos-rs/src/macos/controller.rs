@@ -140,6 +140,7 @@ define_class!(
         #[unsafe(method(activateServer:))]
         fn activate(&self, client: Option<&AnyObject>) {
             *self.ivars().last_marked.borrow_mut() = (String::new(), 0);
+            super::external::set_active(self.as_any());
             if let Some(client) = client {
                 self.prepare(client);
             }
@@ -147,6 +148,7 @@ define_class!(
 
         #[unsafe(method(deactivateServer:))]
         fn deactivate(&self, client: Option<&AnyObject>) {
+            super::external::clear_active(self.as_any());
             self.flush(client);
             self.hide_panel();
             app::start().stats().flush();
@@ -188,6 +190,36 @@ define_class!(
             unsafe { about.setTarget(Some(self.as_any())) };
             menu.addItem(&about);
             Some(menu)
+            })()
+        }
+
+        /// `ArchType --mode`：切最近用过的输入框，返回切完的模式（zh/en/translate）。
+        #[unsafe(method_id(externalMode:))]
+        fn external_mode(&self, request: Option<&NSString>) -> Option<Retained<NSString>> {
+            (|| -> Option<Retained<NSString>> {
+                let request = request.map(|value| value.to_string())?;
+                let mode_name = {
+                    let mut input = self.ivars().input.borrow_mut();
+                    let input = input.as_mut()?;
+                    let target = match request.as_str() {
+                        "zh" => Some(Mode::Chinese),
+                        "en" => Some(Mode::English),
+                        "translate" => Some(Mode::Translate),
+                        "toggle" => Some(match input.mode() {
+                            Mode::Chinese => Mode::English,
+                            Mode::English | Mode::Translate => Mode::Chinese,
+                        }),
+                        _ => None,
+                    };
+                    if let Some(target) = target {
+                        let frame = input.set_mode(target);
+                        if let Some(client) = self.current_client() {
+                            self.apply_frame(&frame, &client);
+                        }
+                    }
+                    mode_name(input.mode())
+                };
+                Some(NSString::from_str(mode_name))
             })()
         }
 
@@ -575,6 +607,15 @@ fn utf16_offset(text: &str, byte_offset: usize) -> usize {
         boundary -= 1;
     }
     text[..boundary].encode_utf16().count()
+}
+
+/// 外部命令回给命令行的模式名（和 Linux 的 SetMode 一样）。
+fn mode_name(mode: Mode) -> &'static str {
+    match mode {
+        Mode::Chinese => "zh",
+        Mode::English => "en",
+        Mode::Translate => "translate",
+    }
 }
 
 /// 往输入框里上屏一段文字。
