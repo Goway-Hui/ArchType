@@ -5,6 +5,7 @@
 
 mod app;
 mod controller;
+mod installer;
 mod panel;
 
 use objc2::{AnyThread, MainThreadMarker};
@@ -25,6 +26,16 @@ pub fn run() {
             std::process::exit(if ok { 0 } else { 1 });
         }
         Some("--settings") => open_settings(args.get(1).map(String::as_str)),
+        Some("--register") => exit_with(installer::register()),
+        Some("--enable") => exit_with(installer::enable()),
+        Some("--select") => exit_with(installer::select()),
+        Some("--disable") => exit_with(installer::disable()),
+        Some("--uninstall") => {
+            let layout = &app::start().layout;
+            let (ok, message) = installer::uninstall(&layout.support_dir);
+            println!("{message}");
+            std::process::exit(if ok { 0 } else { 1 });
+        }
         Some("--help") | Some("-h") => usage(),
         Some(other) => {
             eprintln!("不认识的参数：{other}");
@@ -35,11 +46,17 @@ pub fn run() {
     }
 }
 
+fn exit_with(ok: bool) -> ! {
+    std::process::exit(if ok { 0 } else { 1 });
+}
+
 fn usage() {
     println!(
-        "用法：ArchType [--version | --selftest | --settings [页面] | --help]\n\
+        "用法：ArchType [--register | --enable | --select | --disable | --selftest | --settings [页面] |\n\
+         \t\t\t--uninstall | --version | --help]\n\
          \n\
-         不带参数时是 fcitx5 那样的输入法进程（系统按 Info.plist 把它拉起来）。\n\
+         不带参数时是输入法进程（系统按 Info.plist 把它拉起来）。\n\
+         --register / --enable / --select / --disable 由安装包的 postinstall 调用。\n\
          设置界面是「ArchType 设置.app」（随安装包带的跨平台 app）。"
     );
 }

@@ -555,7 +555,7 @@ fn insert_text(client: &AnyObject, text: &str) {
 
 /// 系统现在是不是安全输入（密码框、终端的安全键盘输入）：统计和学习都不记。
 fn secure_input() -> bool {
-    #[link(name = "Carbon")]
+    #[link(name = "Carbon", kind = "framework")]
     unsafe extern "C" {
         fn IsSecureEventInputEnabled() -> u8;
     }
