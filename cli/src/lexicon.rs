@@ -1,7 +1,7 @@
 //! 词库：下载万象词库并切换、或切回安装包自带的雾凇。
 
 use crate::config;
-use crate::net;
+use archtype_net as net;
 use std::process::Command;
 
 const RELEASE_API: &str = "https://api.github.com/repos/Goway-Hui/ArchType/releases/latest";

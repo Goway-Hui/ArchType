@@ -1,0 +1,10 @@
+[package]
+name = "archtype-net"
+version.workspace = true
+edition = "2021"
+description = "下载、校验和和 GitHub 发布页解析（curl + SHA256SUMS）"
+license.workspace = true
+publish = false
+
+[dependencies]
+sha2 = "0.10"

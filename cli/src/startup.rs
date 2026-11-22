@@ -2,7 +2,7 @@
 
 use crate::config;
 use crate::fcitx;
-use crate::net;
+use archtype_net as net;
 use std::process::Command;
 
 /// 首次使用时给 classicui 写 ArchType 的主题（浅色/深色各一套）。原来设过的就不动。

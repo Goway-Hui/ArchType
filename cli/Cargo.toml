@@ -12,5 +12,6 @@ name = "archtype-config"
 path = "src/main.rs"
 
 [dependencies]
+archtype-net = { path = "../net" }
 serde_json = "1"
 sha2 = "0.10"

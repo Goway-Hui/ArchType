@@ -43,6 +43,7 @@ checksum = "330a5ed07fa54e4702c9d6c4174f74427fc0ef6e214bbd677ae50a5099946470"
 name = "archtype-config-cli"
 version = "0.8.0"
 dependencies = [
+ "archtype-net",
  "serde_json",
  "sha2",
 ]
@@ -55,6 +56,13 @@ dependencies = [
  "archtype-voice",
  "libc",
  "serde_json",
+]
+
+[[package]]
+name = "archtype-net"
+version = "0.8.0"
+dependencies = [
+ "sha2",
 ]
 
 [[package]]

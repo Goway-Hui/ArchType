@@ -7,7 +7,6 @@ mod config;
 mod diagnostics;
 mod fcitx;
 mod lexicon;
-mod net;
 mod setup;
 mod startup;
 
