@@ -66,6 +66,7 @@ stdenv.mkDerivation {
       ../voice
       ../voice-daemon
       ../cli
+      ../net
       ../fcitx5-addon
       ../voice-overlay
       ../icons

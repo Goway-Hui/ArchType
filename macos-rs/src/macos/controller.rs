@@ -160,9 +160,8 @@ define_class!(
 
         #[unsafe(method_id(menu))]
         fn menu(&self) -> Option<Retained<NSMenu>> {
-            let Some(mtm) = MainThreadMarker::new() else {
-                return None;
-            };
+            (|| -> Option<Retained<NSMenu>> {
+            let mtm = MainThreadMarker::new()?;
             let menu = NSMenu::initWithTitle(mtm.alloc(), &NSString::from_str("ArchType"));
             let settings = unsafe {
                 NSMenuItem::initWithTitle_action_keyEquivalent(
@@ -185,6 +184,7 @@ define_class!(
             unsafe { about.setTarget(Some(self.as_any())) };
             menu.addItem(&about);
             Some(menu)
+            })()
         }
 
         #[unsafe(method(openSettings:))]
@@ -359,7 +359,7 @@ impl Controller {
                     return Bool::YES;
                 }
             }
-            return false;
+            return Bool::NO;
         };
 
         let time_ms = (event.timestamp() * 1000.0) as u64;
@@ -483,15 +483,40 @@ impl Controller {
                 texts.push(candidate.text.clone());
                 comments.push(candidate.comment.clone());
             }
+            let (vertical, columns) = match frame.panel {
+                archtype_core::session::Panel::Normal => (!input.config().horizontal, None),
+                archtype_core::session::Panel::Expanded => (false, Some(Page::GRID_COLUMNS)),
+                archtype_core::session::Panel::Emoji => (false, Some(Page::GRID_COLUMNS)),
+                archtype_core::session::Panel::Tool => (true, None),
+            };
+            let (aux_top, aux_bottom) = match &frame.translate {
+                Some(view) => (
+                    Some(view.title.clone()),
+                    if view.status.is_empty() {
+                        None
+                    } else {
+                        Some(view.status.clone())
+                    },
+                ),
+                None => (
+                    if frame.aux.is_empty() {
+                        None
+                    } else {
+                        Some(frame.aux.clone())
+                    },
+                    None,
+                ),
+            };
             Page {
                 texts,
                 comments,
                 cursor: frame.cand_cursor,
                 has_prev: frame.has_prev,
                 has_next: frame.has_next,
-                vertical: !input.config().horizontal,
-                expanded: matches!(frame.panel, archtype_core::session::Panel::Expanded),
-                aux: None,
+                vertical,
+                columns,
+                aux_top,
+                aux_bottom,
                 font_size: input.config().candidate_font_size,
             }
         };
@@ -500,17 +525,16 @@ impl Controller {
             return;
         }
 
-        let panel = {
-            let mut panel = self.ivars().panel.borrow_mut();
-            if panel.is_none() {
-                let Some(mtm) = MainThreadMarker::new() else {
-                    return;
-                };
-                *panel = Some(CandidatePanel::new(mtm));
-            }
-            panel.as_ref().unwrap()
-        };
-        panel.show(&page, caret_rect(client));
+        let mut panel = self.ivars().panel.borrow_mut();
+        if panel.is_none() {
+            let Some(mtm) = MainThreadMarker::new() else {
+                return;
+            };
+            *panel = Some(CandidatePanel::new(mtm));
+        }
+        if let Some(panel) = panel.as_ref() {
+            panel.show(&page, caret_rect(client));
+        }
     }
 
     fn hide_panel(&self) {
