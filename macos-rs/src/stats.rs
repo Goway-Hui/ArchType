@@ -7,7 +7,7 @@
 use std::ffi::CString;
 use std::path::Path;
 
-use archtype_core::stats::{self, SENSITIVE};
+use archtype_core::stats::SENSITIVE;
 use archtype_core::stats_ffi::{
     archtype_stats_commit, archtype_stats_enabled, archtype_stats_flush, archtype_stats_free,
     archtype_stats_key, archtype_stats_new, archtype_stats_now_ms, archtype_stats_set_enabled,

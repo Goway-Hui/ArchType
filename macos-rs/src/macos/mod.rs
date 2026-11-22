@@ -13,7 +13,7 @@ use objc2::{AnyThread, MainThreadMarker};
 use objc2_app_kit::{
     NSApplication, NSApplicationActivationPolicy, NSWorkspace, NSWorkspaceOpenConfiguration,
 };
-use objc2_foundation::{NSString, NSURL};
+use objc2_foundation::{NSArray, NSString, NSURL};
 use objc2_input_method_kit::IMKServer;
 
 use crate::config::Config;

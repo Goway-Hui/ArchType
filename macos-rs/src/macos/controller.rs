@@ -432,6 +432,33 @@ define_class!(
 );
 
 impl Controller {
+    /// 这个输入框能不能按位置改字（自动配对要能挪光标、替换旁边的字）。
+    /// 终端这类应用读不到光标周围，照 Swift 版的做法直接不配对。
+    fn can_edit_around_caret(&self) -> bool {
+        let Some(client) = self.current_client() else {
+            return false;
+        };
+        let bundle: Option<Retained<NSString>> = unsafe { msg_send![&*client, bundleIdentifier] };
+        let id = bundle.map(|value| value.to_string()).unwrap_or_default();
+        const TERMINALS: [&str; 6] = [
+            "com.apple.Terminal",
+            "com.googlecode.iterm2",
+            "net.kovidgoyal.kitty",
+            "org.alacritty",
+            "com.github.wez.wezterm",
+            "io.alacritty",
+        ];
+        if TERMINALS
+            .iter()
+            .any(|terminal| id.eq_ignore_ascii_case(terminal))
+        {
+            return false;
+        }
+        let responds: bool =
+            unsafe { msg_send![&*client, respondsToSelector: sel!(selectedRange)] };
+        responds
+    }
+
     /// 切换输入框时看一眼剪贴板（设置里开了「记录剪贴板历史」才记，只在内存里）。
     fn sample_clipboard(&self) {
         if !app::start().config().clipboard_history {
@@ -656,7 +683,8 @@ impl Controller {
         if let Some(config) = shared.reload_config_if_changed() {
             if let Some(input) = input.as_mut() {
                 let available = crate::translate::translate_available(&config, &shared.layout);
-                let problems = input.apply_config(&config, available, false);
+                let can_edit = self.can_edit_around_caret();
+                let problems = input.apply_config(&config, available, can_edit);
                 for problem in problems {
                     eprintln!("ArchType: {problem}");
                 }
