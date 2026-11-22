@@ -21,7 +21,11 @@ path = "src/main.rs"
 archtype-shell = { path = "../shell" }
 archtype-core = { path = "../core", default-features = false, features = ["voice"] }
 windows = { version = "0.58", features = [
+    # COM 的 #[implement] 与 *_Impl trait
+    "implement",
     "Win32_Foundation",
+    # RegCreateKeyExW 的 SECURITY_ATTRIBUTES 参数
+    "Win32_Security",
     "Win32_System_Com",
     "Win32_System_LibraryLoader",
     "Win32_System_Registry",
@@ -29,3 +33,5 @@ windows = { version = "0.58", features = [
     "Win32_UI_Input_KeyboardAndMouse",
     "Win32_UI_TextServices",
 ] }
+# #[implement] 宏展开用 ::windows_core::，需要直接依赖
+windows-core = "0.58"

@@ -6,10 +6,10 @@
 use std::ffi::c_void;
 
 use windows::core::PCWSTR;
-use windows::Win32::Foundation::{ERROR_SUCCESS, HKEY, WIN32_ERROR};
+use windows::Win32::Foundation::{ERROR_SUCCESS, WIN32_ERROR};
 use windows::Win32::System::LibraryLoader::{GetModuleFileNameW, GetModuleHandleW};
 use windows::Win32::System::Registry::{
-    RegCloseKey, RegCreateKeyExW, RegDeleteTreeW, RegSetValueExW, HKEY_CLASSES_ROOT,
+    RegCloseKey, RegCreateKeyExW, RegDeleteTreeW, RegSetValueExW, HKEY, HKEY_CLASSES_ROOT,
     HKEY_LOCAL_MACHINE, KEY_WRITE, REG_DWORD, REG_OPTION_NON_VOLATILE, REG_SZ,
     REG_CREATE_KEY_DISPOSITION,
 };

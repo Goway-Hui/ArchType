@@ -6,9 +6,9 @@
 use std::path::PathBuf;
 
 use archtype_shell::engine::Layout;
-use windows::Win32::Foundation::{ERROR_SUCCESS, HKEY};
+use windows::Win32::Foundation::ERROR_SUCCESS;
 use windows::Win32::System::Registry::{
-    RegCloseKey, RegQueryValueExW, HKEY_LOCAL_MACHINE, KEY_READ, REG_SZ, REG_VALUE_TYPE,
+    RegCloseKey, RegQueryValueExW, HKEY, HKEY_LOCAL_MACHINE, KEY_READ, REG_SZ, REG_VALUE_TYPE,
 };
 
 pub fn install_dir() -> PathBuf {
