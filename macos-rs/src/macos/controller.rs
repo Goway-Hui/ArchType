@@ -1,6 +1,6 @@
 //! IMK 输入控制器：每个输入框一个。按键翻成核心的 `Key` 交给会话，结果写回输入框和候选框。
 
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 
 use objc2::rc::Retained;
 use objc2::runtime::{AnyObject, Bool};
@@ -13,15 +13,22 @@ use objc2_foundation::{NSNotFound, NSObjectProtocol, NSRange, NSString};
 use objc2_input_method_kit::IMKInputController;
 
 use crate::input::{make_key, Input};
-use crate::keys::{keysym, virtual_key};
+use crate::keys::{keysym, virtual_key, VoiceKey};
 use crate::macos::app::{self, BUNDLE_ID};
 use crate::macos::panel::{CandidatePanel, Page};
+use crate::voice::{self, Voice};
 
 struct Ivars {
     input: RefCell<Option<Input>>,
     panel: RefCell<Option<CandidatePanel>>,
     /// 上一次给输入框的编辑区和光标（一样就不再发）
     last_marked: RefCell<(String, usize)>,
+    /// 语音输入（第一次用到时建）
+    voice: RefCell<Option<Voice>>,
+    /// 语音键（设置里的 VoiceKey 翻成 macOS 键码）
+    voice_key: Cell<Option<VoiceKey>>,
+    /// 语音状态轮询的定时器
+    voice_timer: RefCell<Option<Retained<NSTimer>>>,
 }
 
 define_class!(
@@ -45,10 +52,19 @@ define_class!(
                 input: RefCell::new(None),
                 panel: RefCell::new(None),
                 last_marked: RefCell::new((String::new(), 0)),
+                voice: RefCell::new(None),
+                voice_key: Cell::new(None),
+                voice_timer: RefCell::new(None),
             });
             unsafe {
                 msg_send![super(this), initWithServer: server, delegate: delegate, client: client]
             }
+        }
+
+        /// 按键、松开、修饰键都要（语音键要看到松开；F 键松开才算说完）。
+        #[unsafe(method(recognizedEvents:))]
+        fn recognized_events(&self, _sender: Option<&AnyObject>) -> usize {
+            (NSEventMask::KeyDown | NSEventMask::KeyUp | NSEventMask::FlagsChanged).0 as usize
         }
 
         /// 系统把按键交给我们：返回 true 表示这个键不交给应用。
@@ -62,12 +78,57 @@ define_class!(
             }
             let event_type = event.r#type();
             if event_type == NSEventType::KeyDown {
+                if self.voice_key_down(event) {
+                    return Bool::YES;
+                }
                 self.handle_key_down(event, client)
+            } else if event_type == NSEventType::KeyUp {
+                if self.voice_key_up(event) {
+                    return Bool::YES;
+                }
+                Bool::NO
             } else if event_type == NSEventType::FlagsChanged {
+                if self.voice_modifier_changed(event) {
+                    return Bool::NO;
+                }
                 self.handle_flags_changed(event, client);
                 Bool::NO
             } else {
                 Bool::NO
+            }
+        }
+
+        /// 语音状态轮询：定时器每 50 毫秒调一次（录音中看音量、松开后等识别结果）。
+        #[unsafe(method(pollVoice:))]
+        fn poll_voice(&self, _timer: Option<&NSTimer>) {
+            let state = {
+                let voice = self.ivars().voice.borrow();
+                match voice.as_ref() {
+                    Some(voice) => voice.poll(),
+                    None => return,
+                }
+            };
+            if state == voice::VOICE_RESULT {
+                let text = self
+                    .ivars()
+                    .voice
+                    .borrow()
+                    .as_ref()
+                    .map(|voice| voice.text())
+                    .unwrap_or_default();
+                if !text.is_empty() {
+                    if let Some(client) = self.current_client() {
+                        insert_text(&client, &text);
+                        app::start().stats().flush();
+                    }
+                }
+                if let Some(voice) = self.ivars().voice.borrow().as_ref() {
+                    voice.cancel();
+                }
+            } else if state == voice::VOICE_ERROR {
+                if let Some(voice) = self.ivars().voice.borrow().as_ref() {
+                    voice.cancel();
+                }
             }
         }
 
@@ -138,6 +199,104 @@ define_class!(
 );
 
 impl Controller {
+    /// 语音键（修饰键）：flagsChanged 里看按下 / 松开；是语音键就吃了，别当成普通 Shift 处理。
+    fn voice_modifier_changed(&self, event: &NSEvent) -> bool {
+        let Some(key) = self.ivars().voice_key.get() else {
+            return false;
+        };
+        if !key.is_modifier() || event.keyCode() != key.key_code {
+            return false;
+        }
+        let flags = event.modifierFlags().0 as u64;
+        let down = key.is_down(flags);
+        self.with_voice(|voice| {
+            if down {
+                voice.key_down();
+            } else {
+                voice.key_up();
+            }
+        });
+        true
+    }
+
+    /// 语音键（F 键）：keyDown 时开始听。
+    fn voice_key_down(&self, event: &NSEvent) -> bool {
+        let Some(key) = self.ivars().voice_key.get() else {
+            return false;
+        };
+        if key.is_modifier() || event.keyCode() != key.key_code {
+            return false;
+        }
+        self.with_voice(|voice| voice.key_down());
+        true
+    }
+
+    /// 语音键（F 键）：keyUp 时说完。
+    fn voice_key_up(&self, event: &NSEvent) -> bool {
+        let Some(key) = self.ivars().voice_key.get() else {
+            return false;
+        };
+        if key.is_modifier() || event.keyCode() != key.key_code {
+            return false;
+        }
+        self.with_voice(|voice| voice.key_up());
+        true
+    }
+
+    fn with_voice(&self, action: impl FnOnce(&Voice)) {
+        self.ensure_voice();
+        if let Some(voice) = self.ivars().voice.borrow().as_ref() {
+            action(voice);
+        }
+        self.ensure_voice_timer();
+    }
+
+    /// 第一次用到语音时建句柄（模型目录在数据目录下的 wtlocal）。
+    fn ensure_voice(&self) {
+        let shared = app::start();
+        let config = shared.config();
+        let key = VoiceKey::parse(&config.voice_key).filter(|_| config.voice);
+        self.ivars().voice_key.set(key);
+        if key.is_none() {
+            return;
+        }
+        if self.ivars().voice.borrow().is_none() {
+            let dir = voice::model_dir(&shared.layout.support_dir);
+            *self.ivars().voice.borrow_mut() = Voice::new(&dir);
+        }
+        // macOS 没有单独的录音设备设置项（spec 的 MicDevice 只给 Linux），用系统默认输入
+        if let Some(voice) = self.ivars().voice.borrow().as_ref() {
+            voice.set_device("");
+        }
+    }
+
+    /// 语音状态轮询的定时器（50 毫秒一次，主线程 run loop）。
+    fn ensure_voice_timer(&self) {
+        let mut timer = self.ivars().voice_timer.borrow_mut();
+        if timer.is_some() {
+            return;
+        }
+        let Some(_mtm) = MainThreadMarker::new() else {
+            return;
+        };
+        let created = unsafe {
+            NSTimer::scheduledTimerWithTimeInterval_target_selector_userInfo_repeats(
+                0.05,
+                self.as_any(),
+                sel!(pollVoice:),
+                None,
+                true,
+            )
+        };
+        *timer = Some(created);
+    }
+
+    /// 当前输入框（定时器回调里用；会话调用时用的是同一个）。
+    fn current_client(&self) -> Option<Retained<AnyObject>> {
+        let client: Option<Retained<AnyObject>> = unsafe { msg_send![self, client] };
+        client
+    }
+
     fn as_any(&self) -> &AnyObject {
         // SAFETY: 所有 NSObject 子类都布局成 AnyObject；这里只用来当菜单项的 target。
         unsafe { &*(self as *const Self as *const AnyObject) }
@@ -271,11 +430,7 @@ impl Controller {
     /// 把会话的结果写回输入框和候选框。
     fn apply_frame(&self, frame: &archtype_core::session::Frame, client: &AnyObject) {
         if let Some(text) = &frame.commit {
-            let ns = NSString::from_str(text);
-            let range = NSRange::new(NSNotFound as usize, 0);
-            unsafe {
-                let _: () = msg_send![client, insertText: &*ns, replacementRange: range];
-            }
+            insert_text(client, text);
         }
 
         let marked = (
@@ -386,6 +541,15 @@ fn utf16_offset(text: &str, byte_offset: usize) -> usize {
         boundary -= 1;
     }
     text[..boundary].encode_utf16().count()
+}
+
+/// 往输入框里上屏一段文字。
+fn insert_text(client: &AnyObject, text: &str) {
+    let ns = NSString::from_str(text);
+    let range = NSRange::new(NSNotFound as usize, 0);
+    unsafe {
+        let _: () = msg_send![client, insertText: &*ns, replacementRange: range];
+    }
 }
 
 /// 系统现在是不是安全输入（密码框、终端的安全键盘输入）：统计和学习都不记。
