@@ -1,300 +1,51 @@
-//! 词库：下载万象词库并切换、或切回安装包自带的雾凇。
+//! 词库命令（`--install-lexicon` / `--use-lexicon`）：路径和配置读写接到命令行这一侧，
+//! 下载、校验、安装的逻辑在 `archtype-lexicon`，和 macOS 外壳共用。
 
 use crate::config;
-use archtype_net as net;
-use std::process::Command;
+use archtype_lexicon::Env;
 
-const RELEASE_API: &str = "https://api.github.com/repos/Goway-Hui/ArchType/releases/latest";
+pub struct CliEnv;
 
-fn wanxiang_dir() -> String {
-    format!("{}/dicts/wanxiang", config::data_dir())
-}
-
-fn wanxiang_lexicon() -> String {
-    format!("{}/lexicon.tsv", wanxiang_dir())
-}
-
-/// 万象词库包的版本（包里的 VERSION 文件），没装返回空串。
-pub fn installed_version() -> String {
-    config::read(&format!("{}/VERSION", wanxiang_dir()))
-        .trim()
-        .to_string()
-}
-
-/// 文件名 -> 版本（不是词库包或版本不像样时 None）。
-fn pack_version(name: &str) -> Option<String> {
-    const PREFIX: &str = "archtype-data-wanxiang-";
-    const SUFFIX: &str = ".tar.gz";
-    let rest = name.strip_prefix(PREFIX)?.strip_suffix(SUFFIX)?;
-    let mut chars = rest.chars();
-    let first = chars.next()?;
-    // spec：版本整个符合 [0-9][0-9A-Za-z.]*
-    if !first.is_ascii_digit() || !chars.all(|c| c.is_ascii_alphanumeric() || c == '.') {
-        return None;
+impl Env for CliEnv {
+    fn data_dir(&self) -> String {
+        config::data_dir()
     }
-    Some(rest.to_string())
-}
 
-/// 版本按数字段比大小（同 spec 的 pickAsset）。
-fn version_key(version: &str) -> Vec<u64> {
-    version
-        .split('.')
-        .map(|segment| {
-            segment
-                .chars()
-                .take_while(|c| c.is_ascii_digit())
-                .collect::<String>()
-                .parse()
-                .unwrap_or(0)
-        })
-        .collect()
-}
-
-/// 读一次发布页（资产列表与下载地址都用它，别每次安装请求两遍）。
-fn release() -> Result<serde_json::Value, String> {
-    let text = net::fetch(RELEASE_API)?;
-    serde_json::from_str(&text).map_err(|_| "看不懂 GitHub 的返回".to_string())
-}
-
-/// 发布页上最新的万象词库包：(文件名, 下载地址)。按 spec 取版本最大的，不是第一个匹配的。
-fn latest_asset(value: &serde_json::Value) -> Result<(String, String), String> {
-    let assets = value["assets"]
-        .as_array()
-        .ok_or_else(|| "发布页上没有资产".to_string())?;
-    let mut best: Option<(Vec<u64>, String, String)> = None;
-    for asset in assets {
-        let Some(name) = asset["name"].as_str() else { continue };
-        let Some(version) = pack_version(name) else { continue };
-        let url = asset["browser_download_url"]
-            .as_str()
-            .unwrap_or("")
-            .to_string();
-        if url.is_empty() {
-            continue;
-        }
-        let key = version_key(&version);
-        if best.as_ref().is_none_or(|(current, _, _)| key > *current) {
-            best = Some((key, name.to_string(), url));
-        }
+    fn get(&self, key: &str) -> String {
+        config::get(key)
     }
-    best.map(|(_, name, url)| (name, url))
-        .ok_or_else(|| "最新版的发布页上还没有万象词库包".to_string())
-}
 
-fn sums_url(value: &serde_json::Value) -> Result<String, String> {
-    value["assets"]
-        .as_array()
-        .and_then(|assets| {
-            assets.iter().find_map(|asset| {
-                (asset["name"].as_str() == Some("SHA256SUMS"))
-                    .then(|| asset["browser_download_url"].as_str().map(str::to_string))
-                    .flatten()
-            })
-        })
-        .ok_or_else(|| "发布页缺少 SHA256SUMS".to_string())
-}
-
-/// 下载并安装万象词库，返回版本号。
-pub fn install_wanxiang() -> Result<String, String> {
-    let release = release()?;
-    let (name, url) = latest_asset(&release)?;
-    println!("下载 {name}");
-    let work = format!("{}/updates/lexicon", config::data_dir());
-    let _ = std::fs::create_dir_all(&work);
-    let path = format!("{work}/{name}");
-    net::download(&url, &path)?;
-    let sums = net::fetch(&sums_url(&release)?)?;
-    let expected = net::expected_digest(&sums, &name)
-        .ok_or_else(|| format!("SHA256SUMS 里没有 {name}"))?;
-    let actual = net::sha256(&path)?;
-    if actual != expected {
-        let _ = std::fs::remove_file(&path);
-        return Err(format!("{name} 校验和不对，可能没下完整，请重试"));
+    fn set(&self, key: &str, value: &str) -> bool {
+        config::set(key, value)
     }
-    let version = install_pack(&path)?;
-    let _ = std::fs::remove_file(&path);
-    Ok(version)
+
+    fn reload(&self) -> bool {
+        std::process::Command::new("gdbus")
+            .args([
+                "call",
+                "--session",
+                "--dest",
+                "org.fcitx.Fcitx5",
+                "--object-path",
+                "/controller",
+                "--method",
+                "org.fcitx.Fcitx.Controller1.ReloadAddonConfig",
+                "archtype",
+            ])
+            .status()
+            .map(|status| status.success())
+            .unwrap_or(false)
+    }
 }
 
-/// 当前用的是不是万象词库（看 archtype.conf 的 Lexicon 指向）。
-pub fn using_wanxiang() -> bool {
-    config::get("Lexicon") == wanxiang_lexicon()
-}
-
-/// 后台自动更新正在用的万象词库：发布页上有比本地 VERSION 新的包就换上。没在用万象时什么都不做。
 pub fn auto_update() -> Result<bool, String> {
-    if !using_wanxiang() {
-        return Ok(false);
-    }
-    let installed = installed_version();
-    if installed.is_empty() {
-        return Ok(false);
-    }
-    let release = release()?;
-    let (name, _url) = latest_asset(&release)?;
-    let Some(latest) = pack_version(&name) else {
-        return Ok(false);
-    };
-    if version_key(&latest) <= version_key(&installed) {
-        return Ok(false);
-    }
-    install_wanxiang()?;
-    Ok(true)
+    archtype_lexicon::auto_update(&CliEnv)
 }
 
-/// 列出 tar 成员（解包前校验用）。
-fn tar_members(tarball: &str) -> Result<Vec<String>, String> {
-    let output = Command::new("tar")
-        .args(["-tzf", tarball])
-        .output()
-        .map_err(|error| format!("跑不了 tar：{error}"))?;
-    if !output.status.success() {
-        return Err("读不了词库包".to_string());
-    }
-    Ok(String::from_utf8_lossy(&output.stdout)
-        .lines()
-        .map(|line| line.trim_end_matches('/').to_string())
-        .filter(|line| !line.is_empty() && line != ".")
-        .collect())
-}
-
-/// 从 tar.gz 装上词库（只认可白名单里的文件），返回版本号。
-pub fn install_pack(tarball: &str) -> Result<String, String> {
-    const PACK_FILES: [&str; 4] = ["lexicon.tsv", "LICENSE", "SOURCE.txt", "VERSION"];
-    let staging = format!("{}.staging", wanxiang_dir());
-    let _ = std::fs::remove_dir_all(&staging);
-    std::fs::create_dir_all(&staging).map_err(|error| error.to_string())?;
-    // 先看成员再解包：`../`、绝对路径、链接在 read_dir 校验之前就会写到 staging 外面
-    for name in tar_members(tarball)? {
-        let normalized = name.trim_start_matches("./");
-        if !PACK_FILES.contains(&normalized) {
-            let _ = std::fs::remove_dir_all(&staging);
-            return Err(format!("词库包里有不安全的文件 {name}，不安装"));
-        }
-    }
-    let status = Command::new("tar")
-        .args(["-xzf", tarball, "-C", &staging])
-        .status()
-        .map_err(|error| format!("跑不了 tar：{error}"))?;
-    if !status.success() {
-        let _ = std::fs::remove_dir_all(&staging);
-        return Err("解压词库包失败".to_string());
-    }
-    for entry in std::fs::read_dir(&staging).map_err(|error| error.to_string())? {
-        let entry = entry.map_err(|error| error.to_string())?;
-        let name = entry.file_name().to_string_lossy().to_string();
-        if !PACK_FILES.contains(&name.as_str()) {
-            let _ = std::fs::remove_dir_all(&staging);
-            return Err(format!("词库包里有不认识的文件 {name}，不安装"));
-        }
-    }
-    if !std::path::Path::new(&format!("{staging}/lexicon.tsv")).is_file() {
-        let _ = std::fs::remove_dir_all(&staging);
-        return Err("词库包里没有 lexicon.tsv，不安装".to_string());
-    }
-    let version = config::read(&format!("{staging}/VERSION")).trim().to_string();
-    // spec：VERSION 缺失或为空算「?」，有 lexicon.tsv 就算装好
-    let version = if version.is_empty() {
-        "?".to_string()
-    } else {
-        version
-    };
-    let target = wanxiang_dir();
-    if let Some(parent) = std::path::Path::new(&target).parent() {
-        std::fs::create_dir_all(parent).map_err(|error| error.to_string())?;
-    }
-    // 先把旧目录挪到 .old，新目录进去以后才删：中途失败能回滚，不会两个都没有
-    let old = format!("{target}.old");
-    let _ = std::fs::remove_dir_all(&old);
-    if std::path::Path::new(&target).exists() {
-        std::fs::rename(&target, &old).map_err(|error| format!("挪不开旧词库：{error}"))?;
-    }
-    if let Err(error) = std::fs::rename(&staging, &target) {
-        if std::path::Path::new(&old).exists() {
-            let _ = std::fs::rename(&old, &target);
-        }
-        return Err(format!("换不到位置：{error}"));
-    }
-    let _ = std::fs::remove_dir_all(&old);
-    Ok(version)
-}
-
-fn reload() -> bool {
-    Command::new("gdbus")
-        .args([
-            "call",
-            "--session",
-            "--dest",
-            "org.fcitx.Fcitx5",
-            "--object-path",
-            "/controller",
-            "--method",
-            "org.fcitx.Fcitx.Controller1.ReloadAddonConfig",
-            "archtype",
-        ])
-        .status()
-        .map(|status| status.success())
-        .unwrap_or(false)
-}
-
-/// `--use-lexicon rime-ice|wanxiang`
 pub fn use_lexicon(kind: &str) -> i32 {
-    match kind {
-        "rime-ice" => {
-            config::set("Lexicon", "");
-        }
-        "wanxiang" => {
-            if installed_version().is_empty() {
-                println!("还没装万象词库，先运行 archtype-config --install-lexicon wanxiang");
-                return 1;
-            }
-            config::set("Lexicon", &wanxiang_lexicon());
-        }
-        _ => {
-            println!("用法：archtype-config --use-lexicon rime-ice|wanxiang");
-            return 2;
-        }
-    }
-    let running = reload();
-    println!(
-        "已切到{}{}",
-        if kind == "wanxiang" { "万象拼音" } else { "雾凇拼音（默认）" },
-        if running {
-            "，fcitx5 正在后台换词库，过几秒生效"
-        } else {
-            "，fcitx5 下次启动时生效"
-        }
-    );
-    0
+    archtype_lexicon::use_lexicon(&CliEnv, kind)
 }
 
-/// `--install-lexicon [wanxiang|文件.tar.gz]`
 pub fn install_lexicon(source: &str) -> i32 {
-    let result = if source == "wanxiang" || source.is_empty() {
-        install_wanxiang()
-    } else {
-        install_pack(source)
-    };
-    let version = match result {
-        Ok(version) => version,
-        Err(error) => {
-            println!("没装好：{error}");
-            return 1;
-        }
-    };
-    config::set("Lexicon", &wanxiang_lexicon());
-    let running = reload();
-    println!(
-        "万象词库 {version} 装好了：{}",
-        wanxiang_dir()
-    );
-    println!(
-        "已切到万象拼音{}",
-        if running {
-            "，fcitx5 正在后台换词库，过几秒生效"
-        } else {
-            "，fcitx5 下次启动时生效"
-        }
-    );
-    0
+    archtype_lexicon::install_lexicon(&CliEnv, source)
 }

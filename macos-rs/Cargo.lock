@@ -50,10 +50,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "archtype-lexicon"
+version = "0.8.0"
+dependencies = [
+ "archtype-net",
+ "serde_json",
+]
+
+[[package]]
 name = "archtype-macos"
 version = "0.1.0"
 dependencies = [
  "archtype-core",
+ "archtype-lexicon",
  "archtype-net",
  "objc2",
  "objc2-app-kit",

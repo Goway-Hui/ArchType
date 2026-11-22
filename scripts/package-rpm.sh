@@ -35,7 +35,7 @@ mkdir -p "$work"/{SOURCES,SPECS,BUILD,BUILDROOT,SRPMS}
 src="$work/source"
 mkdir -p "$src/dist/data" "$src/packaging"
 tar --exclude=target --exclude=build --exclude=build-test -cf - \
-  Cargo.toml Cargo.lock core voice voice-daemon cli net fcitx5-addon voice-overlay icons themes settings README.md |
+  Cargo.toml Cargo.lock core voice voice-daemon cli net lexicon fcitx5-addon voice-overlay icons themes settings README.md |
   tar -xf - -C "$src"
 cp "$DATA"/{lexicon.tsv,english.txt,words.lm,LICENSE,SOURCE.txt} "$src/dist/data/"
 cp "$DATA"/{wubi86.tsv,WUBI-LICENSE,WUBI-SOURCE.txt,WUBI-AUTHORS} "$src/dist/data/"

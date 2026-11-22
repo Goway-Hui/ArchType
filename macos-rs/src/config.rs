@@ -1097,10 +1097,8 @@ mod tests {
 
     #[test]
     fn set_key_in_file_keeps_other_lines() {
-        let dir = std::env::temp_dir().join(format!(
-            "archtype-macos-config-{}",
-            std::process::id()
-        ));
+        let dir =
+            std::env::temp_dir().join(format!("archtype-macos-config-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
         let path = dir.join("archtype.conf");

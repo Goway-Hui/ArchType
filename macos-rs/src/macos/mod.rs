@@ -30,6 +30,17 @@ pub fn run() {
         Some("--enable") => exit_with(installer::enable()),
         Some("--select") => exit_with(installer::select()),
         Some("--disable") => exit_with(installer::disable()),
+        Some("--install-lexicon") | Some("--use-lexicon") => {
+            let layout = &app::start().layout;
+            let env = LexiconEnv { layout };
+            let argument = args.get(1).map(String::as_str).unwrap_or("");
+            let code = if args[0] == "--use-lexicon" {
+                archtype_lexicon::use_lexicon(&env, argument)
+            } else {
+                archtype_lexicon::install_lexicon(&env, argument)
+            };
+            std::process::exit(code);
+        }
         Some("--uninstall") => {
             let layout = &app::start().layout;
             let (ok, message) = installer::uninstall(&layout.support_dir);
@@ -43,6 +54,31 @@ pub fn run() {
             std::process::exit(2);
         }
         None => run_input_method(),
+    }
+}
+
+/// 词库命令用的路径与配置读写：macOS 上数据在 Application Support，配置是 archtype.conf。
+/// 输入法自己盯着配置文件，写完就算生效（reload 返回 true）。
+struct LexiconEnv<'a> {
+    layout: &'a crate::engine::Layout,
+}
+
+impl archtype_lexicon::Env for LexiconEnv<'_> {
+    fn data_dir(&self) -> String {
+        self.layout.support_dir.to_string_lossy().into_owned()
+    }
+
+    fn get(&self, key: &str) -> String {
+        let config = Config::load(&self.layout.config_path().to_string_lossy());
+        config.value(key).unwrap_or_default()
+    }
+
+    fn set(&self, key: &str, value: &str) -> bool {
+        Config::set_key_in_file(&self.layout.config_path(), key, value)
+    }
+
+    fn reload(&self) -> bool {
+        true
     }
 }
 
@@ -68,6 +104,7 @@ unsafe extern "C" {
 fn usage() {
     println!(
         "用法：ArchType [--register | --enable | --select | --disable | --selftest | --settings [页面] |\n\
+         \t\t\t--install-lexicon [wanxiang|文件.tar.gz] | --use-lexicon rime-ice|wanxiang |\n\
          \t\t\t--uninstall | --version | --help]\n\
          \n\
          不带参数时是输入法进程（系统按 Info.plist 把它拉起来）。\n\
