@@ -168,6 +168,9 @@ struct Shared {
     text: String,
     /// 最近一次检测到说话的时间（点按模式靠它判断说完了）。
     voice_at: Option<Instant>,
+    /// 这次会话里 VAD 检测到过说话没有。点按模式下一直没开口，
+    /// 静音超时就是「什么也没说」，直接取消，不跑识别、不报错。
+    voiced: bool,
     /// 最近一块音频的音量，0–100（给插件画波形）。
     level: u8,
 }
@@ -221,6 +224,7 @@ impl ArchtypeVoice {
                 phase: VOICE_IDLE,
                 text: String::new(),
                 voice_at: None,
+                voiced: false,
                 level: 0,
             })),
             trigger: VoiceTrigger::new(TriggerConfig::default()),
@@ -252,6 +256,7 @@ impl ArchtypeVoice {
                 let mut shared = self.shared.lock().unwrap();
                 shared.session = self.session;
                 shared.voice_at = None;
+                shared.voiced = false;
                 shared.level = 0;
             }
             let hint = self.model.unavailable_hint();
@@ -265,6 +270,7 @@ impl ArchtypeVoice {
             shared.phase = VOICE_LISTENING;
             shared.text.clear();
             shared.voice_at = Some(Instant::now());
+            shared.voiced = false;
             shared.level = 0;
         }
         let (tx, rx) = mpsc::channel();
@@ -276,6 +282,8 @@ impl ArchtypeVoice {
             model: self.model.clone(),
             shared: self.shared.clone(),
             tx: tx.clone(),
+            started_at: Instant::now(),
+            trace: std::env::var_os("ARCHTYPE_VOICE_TRACE").is_some(),
         };
         let spawned = std::thread::Builder::new()
             .name("archtype-voice".into())
@@ -313,15 +321,22 @@ impl ArchtypeVoice {
 
     fn poll(&mut self) -> c_int {
         let now = Instant::now();
-        let (phase, text, voice_at) = {
+        let (phase, text, voice_at, voiced) = {
             let shared = self.shared.lock().unwrap();
-            (shared.phase, shared.text.clone(), shared.voice_at)
+            (shared.phase, shared.text.clone(), shared.voice_at, shared.voiced)
         };
         if let Some(at) = voice_at {
             self.trigger.note_voice(at);
         }
+        // 点按模式下静音超时：如果整段都没检测到说话，就是误按/没开口，
+        // 直接取消（不跑识别、不弹「没听清」）
+        let tap_timed_out = self.trigger.mode() == Mode::Tap;
         if let Some(action) = self.trigger.tick(now) {
-            self.apply(vec![action]);
+            if action == Action::Stop && tap_timed_out && !voiced {
+                self.cancel();
+            } else {
+                self.apply(vec![action]);
+            }
         }
         // 工作线程自己停了（到了时长上限、开不了麦克风）：热键状态机跟着复位
         if phase != VOICE_LISTENING && self.trigger.is_recording() {
@@ -347,6 +362,10 @@ struct Worker {
     model: Arc<ModelSlot>,
     shared: Arc<Mutex<Shared>>,
     tx: Sender<Msg>,
+    /// 热键按下的时间（打启动延迟用）
+    started_at: Instant,
+    /// ARCHTYPE_VOICE_TRACE=1：把按下、开麦、首帧、定稿的时间打到 stderr
+    trace: bool,
 }
 
 /// 麦克风（或测试用的 WAV）。丢弃即停。
@@ -356,7 +375,23 @@ enum Source {
     Wav,
 }
 
+/// 模型还没载入时先攒着的音频上限（30 秒、16kHz 单声道 16bit ≈ 960KB）。
+const MAX_PENDING: usize = 16_000 * 30;
+
 impl Worker {
+    /// 模型还没好时先把音频攒着；超过上限就不等了，按错误收场。
+    fn stash(&self, pending: &mut Vec<i16>, pcm: &[i16]) -> bool {
+        if pending.len() + pcm.len() > MAX_PENDING {
+            self.update(|s| {
+                s.phase = VOICE_ERROR;
+                s.text = "语音模型还没准备好".into();
+            });
+            return false;
+        }
+        pending.extend_from_slice(pcm);
+        true
+    }
+
     /// 改共享状态；这次说话已经被新的一次顶掉（或取消）就什么也不做。
     fn update(&self, f: impl FnOnce(&mut Shared)) {
         let mut shared = self.shared.lock().unwrap();
@@ -366,6 +401,20 @@ impl Worker {
     }
 
     fn open(&self) -> anyhow::Result<Source> {
+        let t = Instant::now();
+        let source = self.open_inner();
+        if self.trace {
+            eprintln!(
+                "archtype-voice: 开麦 {:.0}ms（按下后 {:.0}ms）{}",
+                t.elapsed().as_millis(),
+                self.started_at.elapsed().as_millis(),
+                if source.is_err() { " 失败" } else { "" }
+            );
+        }
+        source
+    }
+
+    fn open_inner(&self) -> anyhow::Result<Source> {
         if let Some(path) = &self.wav {
             let (rate, channels, pcm) = archtype_voice::read_wav(path)?;
             let mono: Vec<f32> = downmix(
@@ -399,6 +448,7 @@ impl Worker {
             }
         };
         let started = Instant::now();
+        let mut first_pcm = false;
         let mut framer = Framer::default();
         let mut vad = Vad::default();
         let mut pending: Vec<i16> = Vec::new();
@@ -445,6 +495,16 @@ impl Worker {
                 }
             }
             for pcm in &batch {
+                if !first_pcm {
+                    first_pcm = true;
+                    if self.trace {
+                        eprintln!(
+                            "archtype-voice: 首帧 {:.0}ms（按下后 {:.0}ms）",
+                            started.elapsed().as_millis(),
+                            self.started_at.elapsed().as_millis()
+                        );
+                    }
+                }
                 let level = level_of(pcm);
                 self.update(|s| s.level = level);
                 let mut voiced = false;
@@ -452,11 +512,18 @@ impl Worker {
                     voiced |= vad.push(&frame);
                 }
                 if voiced {
-                    self.update(|s| s.voice_at = Some(Instant::now()));
+                    self.update(|s| {
+                        s.voice_at = Some(Instant::now());
+                        s.voiced = true;
+                    });
                 }
                 match asr.as_mut() {
                     Some(ch) => ch.push(pcm),
-                    None => pending.extend_from_slice(pcm),
+                    None => {
+                        if !self.stash(&mut pending, pcm) {
+                            return;
+                        }
+                    }
                 }
             }
             if let Some(stopped) = end {
@@ -482,7 +549,11 @@ impl Worker {
             match msg {
                 Msg::Pcm(pcm) => match asr.as_mut() {
                     Some(ch) => ch.push(&pcm),
-                    None => pending.extend_from_slice(&pcm),
+                    None => {
+                        if !self.stash(&mut pending, &pcm) {
+                            return;
+                        }
+                    }
                 },
                 Msg::Cancel => return,
                 Msg::Stop => {}
@@ -513,6 +584,14 @@ impl Worker {
             }
         };
         let text = asr.finish().unwrap_or_default();
+        if self.trace {
+            eprintln!(
+                "archtype-voice: 定稿 {:.0}ms（录音 {:.0}ms，{} 字）",
+                started.elapsed().as_millis(),
+                self.started_at.elapsed().as_millis(),
+                text.chars().count()
+            );
+        }
         self.update(|s| {
             if text.trim().is_empty() {
                 s.phase = VOICE_ERROR;

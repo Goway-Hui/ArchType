@@ -41,6 +41,8 @@ struct Ivars {
     focus: RefCell<WindowFocus>,
     /// 面板现在显示的是语音提示（不是候选）
     voice_panel: Cell<bool>,
+    /// 最近一次轮询到的语音状态（按键取消、切走时判断要不要丢掉这次说话）
+    voice_phase: Cell<i32>,
 }
 
 define_class!(
@@ -70,6 +72,7 @@ define_class!(
                 initial_mode_done: Cell::new(false),
                 focus: RefCell::new(WindowFocus::new()),
                 voice_panel: Cell::new(false),
+                voice_phase: Cell::new(voice::VOICE_IDLE),
             });
             unsafe {
                 msg_send![super(this), initWithServer: server, delegate: delegate, client: client]
@@ -96,6 +99,8 @@ define_class!(
                 if self.voice_key_down(event) {
                     return Bool::YES;
                 }
+                // 录音/识别中按了别的键：丢掉这次说话（和 Linux 插件一致）
+                self.cancel_voice_if_listening();
                 self.handle_key_down(event, client)
             } else if event_type == NSEventType::KeyUp {
                 if self.voice_key_up(event) {
@@ -127,17 +132,26 @@ define_class!(
                     None => return,
                 }
             };
+            self.ivars().voice_phase.set(state);
             if state == voice::VOICE_LISTENING {
-                let level = self
+                let (level, text) = self
                     .ivars()
                     .voice
                     .borrow()
                     .as_ref()
-                    .map(|voice| voice.level())
-                    .unwrap_or(0);
-                self.show_voice_hint(&format!("正在听… {}", archtype_shell::keys::voice_wave(&[level])));
+                    .map(|voice| (voice.level(), voice.text()))
+                    .unwrap_or((0, String::new()));
+                let wave = archtype_shell::keys::voice_wave(&[level]);
+                self.show_voice_hint(&voice_hint("正在听…", &wave, &text));
             } else if state == voice::VOICE_RECOGNIZING {
-                self.show_voice_hint("识别中…");
+                let text = self
+                    .ivars()
+                    .voice
+                    .borrow()
+                    .as_ref()
+                    .map(|voice| voice.text())
+                    .unwrap_or_default();
+                self.show_voice_hint(&voice_hint("识别中…", "", &text));
             } else if state == voice::VOICE_IDLE && self.ivars().voice_panel.get() {
                 self.ivars().voice_panel.set(false);
                 self.hide_panel();
@@ -185,6 +199,7 @@ define_class!(
         #[unsafe(method(deactivateServer:))]
         fn deactivate(&self, client: Option<&AnyObject>) {
             super::external::clear_active(self.as_any());
+            self.cancel_voice_if_listening();
             self.flush(client);
             self.hide_panel();
             app::start().stats().flush();
@@ -482,6 +497,20 @@ impl Controller {
     }
 
     /// 语音提示：在光标下面画一行（正在听 + 波形、识别中）。
+    /// 这次说话还在录/识别：丢掉结果并收起提示（按别的键、切走输入法时用）。
+    fn cancel_voice_if_listening(&self) {
+        let phase = self.ivars().voice_phase.get();
+        if phase != voice::VOICE_LISTENING && phase != voice::VOICE_RECOGNIZING {
+            return;
+        }
+        if let Some(voice) = self.ivars().voice.borrow().as_ref() {
+            voice.cancel();
+        }
+        self.ivars().voice_phase.set(voice::VOICE_IDLE);
+        self.ivars().voice_panel.set(false);
+        self.hide_panel();
+    }
+
     fn show_voice_hint(&self, text: &str) {
         let Some(client) = self.current_client() else {
             return;
@@ -877,6 +906,30 @@ impl Controller {
         if let Some(client) = client {
             self.apply_frame(&frame, client);
         }
+    }
+}
+
+/// 语音提示：「正在听… 波形」后面接最后识别到的几个字，让用户边看边说。
+fn voice_hint(status: &str, wave: &str, text: &str) -> String {
+    const TAIL: usize = 12;
+    let text = text.trim();
+    if text.is_empty() {
+        return if wave.is_empty() {
+            status.to_string()
+        } else {
+            format!("{status} {wave}")
+        };
+    }
+    let count = text.chars().count();
+    let tail: String = if count <= TAIL {
+        text.to_string()
+    } else {
+        text.chars().skip(count - TAIL).collect()
+    };
+    if wave.is_empty() {
+        format!("{status} {tail}")
+    } else {
+        format!("{status} {wave} {tail}")
     }
 }
 

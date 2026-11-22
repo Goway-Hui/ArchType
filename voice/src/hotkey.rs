@@ -35,6 +35,10 @@ pub struct TriggerConfig {
     pub silence_timeout: Duration,
     /// 松开时短按是否算点按（`--mode hold` 时 false：松手就结束）
     pub tap: bool,
+    /// 一次会话结束后的冷却：这期间再按不开始新会话。
+    /// 上一句的定稿（整段推理）可能还没跑完，马上开新会话会把它的结果顶掉；
+    /// 顺带把按键抖动（按下-松开-按下）也挡在外面。
+    pub cooldown: Duration,
 }
 
 impl Default for TriggerConfig {
@@ -43,6 +47,7 @@ impl Default for TriggerConfig {
             hold_threshold: Duration::from_millis(300),
             silence_timeout: Duration::from_millis(1500),
             tap: true,
+            cooldown: Duration::from_millis(450),
         }
     }
 }
@@ -54,6 +59,8 @@ pub struct VoiceTrigger {
     mode: Mode,
     pressed_at: Option<Instant>,
     last_voice: Option<Instant>,
+    /// 上一次会话结束的时间（冷却用）
+    last_stop: Option<Instant>,
 }
 
 impl VoiceTrigger {
@@ -64,6 +71,7 @@ impl VoiceTrigger {
             mode: Mode::Hold,
             pressed_at: None,
             last_voice: None,
+            last_stop: None,
         }
     }
 
@@ -77,10 +85,16 @@ impl VoiceTrigger {
 
     /// 键按下
     pub fn on_down(&mut self, now: Instant) -> Vec<Action> {
+        if let Some(stop) = self.last_stop {
+            if now.saturating_duration_since(stop) < self.cfg.cooldown {
+                return Vec::new();
+            }
+        }
         if self.recording {
             // 点按模式下再次按下 = 提前结束
             if self.mode == Mode::Tap {
                 self.reset();
+                self.last_stop = Some(now);
                 return vec![Action::Stop];
             }
             return Vec::new();
@@ -107,6 +121,7 @@ impl VoiceTrigger {
             vec![Action::Continue]
         } else {
             self.reset();
+            self.last_stop = Some(now);
             vec![Action::Stop]
         }
     }
@@ -127,6 +142,7 @@ impl VoiceTrigger {
             let last = self.last_voice.unwrap_or(now);
             if now.saturating_duration_since(last) >= self.cfg.silence_timeout {
                 self.reset();
+                self.last_stop = Some(now);
                 return Some(Action::Stop);
             }
             return None;
@@ -136,6 +152,7 @@ impl VoiceTrigger {
         if let Some(pressed) = self.pressed_at {
             if now.saturating_duration_since(pressed) >= MAX_HOLD {
                 self.reset();
+                self.last_stop = Some(now);
                 return Some(Action::Stop);
             }
         }
@@ -159,6 +176,7 @@ mod tests {
             hold_threshold: Duration::from_millis(300),
             silence_timeout: Duration::from_millis(1500),
             tap: true,
+            cooldown: Duration::from_millis(450),
         }
     }
 
@@ -236,6 +254,40 @@ mod tests {
         tr.on_down(t0);
         assert!(tr.on_down(t0 + Duration::from_millis(50)).is_empty());
         assert!(tr.is_recording());
+    }
+
+    #[test]
+    fn cooldown_blocks_restart_right_after_stop() {
+        // 上一句刚结束（整段定稿可能还在跑）时按下去不算新会话；
+        // 冷却过了再按才重新开始
+        let t0 = Instant::now();
+        let mut tr = VoiceTrigger::new(cfg());
+        tr.on_down(t0);
+        assert_eq!(tr.on_up(t0 + Duration::from_millis(600)), vec![Action::Stop]);
+        assert!(tr.on_down(t0 + Duration::from_millis(700)).is_empty());
+        assert!(!tr.is_recording());
+        assert_eq!(
+            tr.on_down(t0 + Duration::from_millis(1100)),
+            vec![Action::Start]
+        );
+        assert!(tr.is_recording());
+    }
+
+    #[test]
+    fn cooldown_also_covers_tap_stop() {
+        let t0 = Instant::now();
+        let mut tr = VoiceTrigger::new(cfg());
+        tr.on_down(t0);
+        tr.on_up(t0 + Duration::from_millis(80));
+        assert_eq!(
+            tr.on_down(t0 + Duration::from_millis(500)),
+            vec![Action::Stop]
+        );
+        assert!(tr.on_down(t0 + Duration::from_millis(600)).is_empty());
+        assert_eq!(
+            tr.on_down(t0 + Duration::from_millis(1000)),
+            vec![Action::Start]
+        );
     }
 
     #[test]
