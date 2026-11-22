@@ -269,7 +269,7 @@ pub fn make_key(
 mod tests {
     use super::*;
     use crate::keys::{KeyInput, Modifiers};
-    use archtype_core::session::{key_hints, keysym, modifier, Mode};
+    use archtype_core::session::{key_hints, keysym, Mode};
 
     fn temp_dir(name: &str) -> PathBuf {
         let dir = std::env::temp_dir().join(format!(

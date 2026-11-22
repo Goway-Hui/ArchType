@@ -6,7 +6,8 @@
 use std::path::PathBuf;
 
 use archtype_core::llama::LocalConfig;
-use archtype_core::translate::{TranslateConfig, Translator};
+use archtype_core::translate::TranslateConfig;
+pub use archtype_core::translate::Translator;
 
 use crate::config::Config;
 use crate::engine::Layout;

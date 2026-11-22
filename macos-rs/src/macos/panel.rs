@@ -90,10 +90,10 @@ fn attributes(
     // 当 AnyObject 传进字典只用来读。
     let font_obj: &AnyObject = unsafe { &*(font as *const NSFont as *const AnyObject) };
     let color_obj: &AnyObject = unsafe { &*(color as *const NSColor as *const AnyObject) };
-    NSDictionary::from_slices(
-        &[NSFontAttributeName, NSForegroundColorAttributeName],
-        &[font_obj, color_obj],
-    )
+    // SAFETY: 这两个是 AppKit 提供的全局 NSString 键，进程活多久它们活多久。
+    let font_key = unsafe { NSFontAttributeName };
+    let color_key = unsafe { NSForegroundColorAttributeName };
+    NSDictionary::from_slices(&[font_key, color_key], &[font_obj, color_obj])
 }
 
 /// 一段文字的宽度、高度。

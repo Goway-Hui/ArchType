@@ -6,10 +6,11 @@ use objc2::rc::Retained;
 use objc2::runtime::{AnyObject, Bool};
 use objc2::{define_class, msg_send, sel, DefinedClass, MainThreadMarker};
 use objc2_app_kit::{
-    NSAlert, NSEvent, NSEventModifierFlags, NSEventType, NSMenu, NSMenuItem, NSPoint, NSRect,
-    NSSize,
+    NSAlert, NSEvent, NSEventMask, NSEventModifierFlags, NSEventType, NSMenu, NSMenuItem,
 };
-use objc2_foundation::{NSNotFound, NSObjectProtocol, NSRange, NSString};
+use objc2_foundation::{
+    NSNotFound, NSObjectProtocol, NSPoint, NSRange, NSRect, NSSize, NSString, NSTimer,
+};
 use objc2_input_method_kit::IMKInputController;
 
 use crate::input::{make_key, Input};
@@ -40,7 +41,7 @@ define_class!(
     unsafe impl NSObjectProtocol for Controller {}
 
     impl Controller {
-        #[unsafe(method(initWithServer:delegate:client:))]
+        #[unsafe(method_id(initWithServer:delegate:client:))]
         #[unsafe(method_family = init)]
         fn init_with_server(
             this: objc2::rc::Allocated<Self>,
