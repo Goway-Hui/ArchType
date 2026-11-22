@@ -134,9 +134,23 @@ fn modified(path: &std::path::Path) -> Option<SystemTime> {
     std::fs::metadata(path).and_then(|m| m.modified()).ok()
 }
 
-/// 输入法进程的名字要和 Info.plist 的 InputMethodConnectionName 一致；bundle id 也用它。
-pub const CONNECTION_NAME: &str = "ArchType_Connection";
-pub const BUNDLE_ID: &str = "io.github.gloridust.inputmethod.ArchType";
+/// 输入法连接名（Info.plist 的 InputMethodConnectionName）：IMKServer 用它注册，系统按它连进来。
+pub fn connection_name() -> String {
+    let key = ns_string!("InputMethodConnectionName");
+    NSBundle::mainBundle()
+        .objectForInfoDictionaryKey(key)
+        .and_then(|value| value.downcast::<NSString>().ok())
+        .map(|value| value.to_string())
+        .unwrap_or_else(|| format!("{}_Connection", bundle_id()))
+}
+
+/// 安装包的 bundle id（Info.plist 的 CFBundleIdentifier）。
+pub fn bundle_id() -> String {
+    NSBundle::mainBundle()
+        .bundleIdentifier()
+        .map(|value| value.to_string())
+        .unwrap_or_else(|| "io.github.gloridust.inputmethod.ArchType".to_string())
+}
 
 /// `ArchType --version` 用的版本号（Info.plist 的 CFBundleShortVersionString）。
 pub fn version() -> String {

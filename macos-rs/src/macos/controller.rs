@@ -15,7 +15,7 @@ use objc2_input_method_kit::IMKInputController;
 
 use crate::input::{make_key, Input};
 use crate::keys::{keysym, virtual_key, VoiceKey};
-use crate::macos::app::{self, BUNDLE_ID};
+use crate::macos::app::{self};
 use crate::macos::panel::{CandidatePanel, Page};
 use crate::voice::{self, Voice};
 
@@ -618,7 +618,7 @@ fn show_about_panel() {
     };
     let alert = NSAlert::new(mtm);
     alert.setMessageText(&NSString::from_str("ArchType 输入法"));
-    let text = format!("版本 {}（{}）", app::version(), BUNDLE_ID);
+    let text = format!("版本 {}（{}）", app::version(), app::bundle_id());
     alert.setInformativeText(&NSString::from_str(&text));
     alert.runModal();
 }

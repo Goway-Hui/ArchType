@@ -66,15 +66,15 @@ fn run_input_method() {
     // 后台载入词库和引擎；输入控制器在引擎就绪前不接按键
     app::start();
 
-    let name = NSString::from_str(app::CONNECTION_NAME);
-    let bundle = NSString::from_str(app::BUNDLE_ID);
+    let name = NSString::from_str(&app::connection_name());
+    let bundle = NSString::from_str(&app::bundle_id());
     let server = unsafe {
         IMKServer::initWithName_bundleIdentifier(IMKServer::alloc(), Some(&name), Some(&bundle))
     };
     if server.is_none() {
         eprintln!(
             "ArchType: IMKServer 起不来（连接名 {}）",
-            app::CONNECTION_NAME
+            app::connection_name()
         );
     }
 

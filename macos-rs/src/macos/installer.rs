@@ -8,7 +8,7 @@ use std::path::Path;
 
 use objc2_foundation::NSBundle;
 
-use crate::macos::app::BUNDLE_ID;
+use crate::macos::app::bundle_id;
 
 /// `noErr`
 const NO_ERR: i32 = 0;
@@ -41,7 +41,7 @@ unsafe extern "C" {
 }
 
 fn mode_id() -> String {
-    format!("{BUNDLE_ID}.Hans")
+    format!("{}.Hans", bundle_id())
 }
 
 fn bundle_url() -> Option<*const c_void> {
@@ -62,7 +62,9 @@ fn sources() -> Vec<*const c_void> {
         if source.is_null() {
             continue;
         }
-        if property_string(source, unsafe { kTISPropertyBundleID }).as_deref() == Some(BUNDLE_ID) {
+        if property_string(source, unsafe { kTISPropertyBundleID }).as_deref()
+            == Some(bundle_id().as_str())
+        {
             out.push(source);
         }
     }
