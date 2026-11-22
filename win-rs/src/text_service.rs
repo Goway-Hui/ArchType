@@ -98,19 +98,19 @@ impl TextService {
     }
 }
 
-impl ITfTextInputProcessor_Impl for TextService {
+impl ITfTextInputProcessor_Impl for TextService_Impl {
     fn Activate(&self, ptim: Option<&ITfThreadMgr>, tid: u32) -> Result<()> {
-        self.activate(ptim, tid)
+        self.this.activate(ptim, tid)
     }
 
     fn Deactivate(&self) -> Result<()> {
-        self.deactivate()
+        self.this.deactivate()
     }
 }
 
-impl ITfTextInputProcessorEx_Impl for TextService {
+impl ITfTextInputProcessorEx_Impl for TextService_Impl {
     fn ActivateEx(&self, ptim: Option<&ITfThreadMgr>, tid: u32, _flags: u32) -> Result<()> {
-        self.activate(ptim, tid)
+        self.this.activate(ptim, tid)
     }
 }
 
@@ -155,7 +155,7 @@ impl KeySink {
     }
 }
 
-impl ITfKeyEventSink_Impl for KeySink {
+impl ITfKeyEventSink_Impl for KeySink_Impl {
     fn OnSetFocus(&self, _foreground: BOOL) -> Result<()> {
         Ok(())
     }
@@ -181,7 +181,7 @@ impl ITfKeyEventSink_Impl for KeySink {
     }
 
     fn OnKeyDown(&self, pic: Option<&ITfContext>, wparam: WPARAM, lparam: LPARAM) -> Result<BOOL> {
-        self.handle(pic, wparam, lparam)
+        self.this.handle(pic, wparam, lparam)
     }
 
     fn OnKeyUp(
@@ -238,16 +238,17 @@ struct InsertText {
     text: Vec<u16>,
 }
 
-impl ITfEditSession_Impl for InsertText {
+impl ITfEditSession_Impl for InsertText_Impl {
     fn DoEditSession(&self, ec: u32) -> Result<()> {
         unsafe {
-            let insert: ITfInsertAtSelection = self.context.cast()?;
+            let this = &self.this;
+            let insert: ITfInsertAtSelection = this.context.cast()?;
             let mut start = 0i32;
             let mut end = 0i32;
-            let mut change: TS_TEXTCHANGE = unsafe { std::mem::zeroed() };
+            let mut change: TS_TEXTCHANGE = std::mem::zeroed();
             insert.InsertTextAtSelection(
                 TF_IAS_NOQUERY.0,
-                &self.text,
+                &this.text,
                 &mut start,
                 &mut end,
                 &mut change,
@@ -301,7 +302,7 @@ fn key_characters(vk: u16, lparam: LPARAM) -> Option<String> {
 #[implement(windows::Win32::System::Com::IClassFactory)]
 pub struct Factory;
 
-impl windows::Win32::System::Com::IClassFactory_Impl for Factory {
+impl windows::Win32::System::Com::IClassFactory_Impl for Factory_Impl {
     fn CreateInstance(
         &self,
         _outer: Option<&windows::core::IUnknown>,

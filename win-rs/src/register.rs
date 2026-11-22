@@ -156,7 +156,7 @@ fn set_value(
 
 fn dll_path() -> Result<String, String> {
     unsafe {
-        let module = GetModuleHandleW(None).map_err(|err| err.to_string())?;
+        let module = GetModuleHandleW(PCWSTR::null()).map_err(|err| err.to_string())?;
         let mut buf = [0u16; 1024];
         let len = GetModuleFileNameW(module, &mut buf) as usize;
         if len == 0 || len >= buf.len() {

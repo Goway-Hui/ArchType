@@ -3601,7 +3601,24 @@ pub fn system_time() -> Option<LocalTime> {
     })
 }
 
-#[cfg(not(unix))]
+/// Windows：本地时间（日期时间候选）。
+#[cfg(windows)]
+pub fn system_time() -> Option<LocalTime> {
+    use windows_sys::Win32::System::SystemInformation::GetLocalTime;
+    let mut time: windows_sys::Win32::Foundation::SYSTEMTIME = unsafe { std::mem::zeroed() };
+    unsafe { GetLocalTime(&mut time) };
+    Some(LocalTime {
+        year: time.wYear as i32,
+        month: time.wMonth as u32,
+        day: time.wDay as u32,
+        hour: time.wHour as u32,
+        minute: time.wMinute as u32,
+        second: time.wSecond as u32,
+        weekday: (time.wDayOfWeek as u32) % 7,
+    })
+}
+
+#[cfg(not(any(unix, windows)))]
 pub fn system_time() -> Option<LocalTime> {
     None
 }
