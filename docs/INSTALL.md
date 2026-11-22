@@ -346,14 +346,14 @@ curl -fsSL https://raw.githubusercontent.com/Goway-Hui/ArchType/pre-release/inst
 
 ## macOS
 
-需要 macOS 14 或更新（Apple 芯片和 Intel 都行）。
+需要 macOS 12 或更新（Apple 芯片和 Intel 都行；安装包是通用二进制）。
 
 - 下载 `ArchType-<版本>-macos.pkg` 双击安装：只装给当前用户，不要管理员密码；系统会问要不要打开这个没公证的安装包，
   到「系统设置 → 隐私与安全性」点「仍要打开」。
-- 或者解压 `ArchType-<版本>-macos.zip`，把 `ArchType.app` 放进 `~/Library/Input Methods/`，再运行
-  `"$HOME/Library/Input Methods/ArchType.app/Contents/MacOS/ArchType" --enable` 登记并打开。
+- 或者解压 `ArchType-<版本>-macos.zip`，运行发布页里的 `install.sh`（或仓库里的 `macos/install.sh`）：
+  装到 `~/Library/Input Methods/`、去掉隔离标记，再 `--register` / `--enable` 登记并打开。
 
-设置界面是同一个跨平台 app（`ArchType 设置.app`，随输入法包一起安装）：菜单栏「ArchType → ArchType 设置…」打开，
+设置界面是同一个跨平台 app（`ArchType 设置.app`，随输入法包一起安装）：菜单栏的输入法菜单「设置…」打开，
 也可以从 `ArchType --settings` 打开，`--settings voice` 直接到「语音」页。
 
 语音输入要先在设置「语音」页下载模型；第一次按语音键时系统会问麦克风权限，在「系统设置 → 隐私与安全性 → 麦克风」里允许。
