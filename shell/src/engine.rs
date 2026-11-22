@@ -114,7 +114,15 @@ impl Layout {
             Ok(target) if target == bundled => Some(link),
             _ => {
                 let _ = std::fs::remove_file(&link);
-                match std::os::unix::fs::symlink(&bundled, &link) {
+                // Windows 没有 symlink 权限时退回复制一份（词库几十 MB，但只拷这一次）
+                #[cfg(unix)]
+                let created = std::os::unix::fs::symlink(&bundled, &link);
+                #[cfg(windows)]
+                let created = match std::os::windows::fs::symlink_file(&bundled, &link) {
+                    Ok(()) => Ok(()),
+                    Err(_) => std::fs::copy(&bundled, &link).map(|_| ()),
+                };
+                match created {
                     Ok(()) => Some(link),
                     Err(_) => Some(bundled),
                 }
