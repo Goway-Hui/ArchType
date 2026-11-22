@@ -1,4 +1,4 @@
-# 语音输入设计（Linux）
+# 语音输入设计（Linux 与 macOS）
 
 目标：在 Ubuntu 上提供与微信输入法一致的语音输入体验——按住说话、点按说话、
 边说边上屏、多渠道候选——并与拼音输入共用同一个候选面板。
@@ -16,7 +16,7 @@
                                                     └─ 上屏 / 候选面板
 ```
 
-已实现（`voice/`，20 个单测通过）：
+已实现（`voice/`，52 个单测 + 4 个管线测试通过）：
 
 | 模块 | 说明 |
 |---|---|
@@ -85,8 +85,8 @@ archtype-asr --download 音频.wav        # 或直接转写一个 WAV（16kHz �
 
 微信输入法自带的离线语音（`stt.bin` + `wx_asr_*` 那套，以及 VoiceKey 从
 腾讯 CDN 拉的 `wtoffline` 模型）技术上也能接，但那颗模型是腾讯的资产，
-再分发有风险，而且 VoiceKey 已经用 Rust 重写了它的 int8 推理（`crates/wtlocal`
-约 40 层 Transformer + FBank）。我们把它列为可选实验项，不作为默认。
+再分发有风险，而且 VoiceKey 已经用 Rust 重写了它的 int8 推理（上游 voicekey 的 `crates/wtlocal`，本仓库在
+`voice/src/wtlocal`，约 40 层 Transformer + FBank）。我们把它列为可选实验项，不作为默认。
 
 ## 4. 与 fcitx5 的集成（已落地）
 
@@ -98,6 +98,17 @@ Wayland 下这是唯一不需要额外权限的做法：键本来就送到输入
 |---|---|---|
 | C 接口 | `core/src/voice_ffi.rs`、`core/include/archtype_core.h` | `archtype_voice_new/key_down/key_up/poll/text/cancel`；都不阻塞 |
 | 工作线程 | 同上 | 每次说话一个线程：cpal 开默认输入设备 → 分帧 + VAD → 喂 wtlocal 出中间结果 → 结束时整段定稿 |
+
+## 4.1 macOS
+
+外壳（`macos-rs`）直接用同一套 `archtype_voice_*`，没有第二份语音实现：
+
+- 热键：`VoiceKey` 翻成 `NSEvent` 的键码与修饰键设备位（`shell/src/keys/macos.rs`），
+  修饰键在 `flagsChanged` 里看左右，F 键在 `keyDown`/`keyUp`；
+- 轮询：主线程 50ms 定时器调 `archtype_voice_poll`，状态到 `RESULT` 就把文本上屏；
+- 浮条：候选框上方一行（「正在听…」+ 波形，`shell::keys::voice_wave`），复用候选面板；
+- 模型：设置窗口「语音」页下载到 `~/Library/Application Support/ArchType/wtlocal`；
+- 全局热键只在本输入法激活时生效（和 Linux 插件一致），不需要辅助功能权限。
 | 模型线程 | 同上 | 第一次按热键时把模型读进内存，只做一次；还没读完时音频先攒着。不下载：模型不在磁盘上时不开麦克风，`poll` 返回出错，文字是「没有语音模型，请在「ArchType 设置 → 语音」里下载」，`model_state` 返回 `MODEL_MISSING` |
 | 插件 | `fcitx5-addon/src/archtype_engine.cpp` | 热键按下/松开都吃掉（免得应用把单按 Alt 当成打开菜单）；50ms 定时轮询；编辑区显示中间结果，前面是麦克风图标和跟着音量动的波形（不写说明文字，免得和识别出的字混在一起）；结果用 `commitString` 上屏 |
 

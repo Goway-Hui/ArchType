@@ -19,7 +19,7 @@
 ## 最短上手（5 条）
 
 ```bash
-cargo test --workspace     # 142 项，应当全绿
+cargo test --workspace     # 599 项，应当全绿（外壳共用逻辑在 archtype-shell）
 ./scripts/abi-smoke.sh     # C ABI 契约
 # 词库（唯一需要自己准备的数据）
 git clone --depth 1 https://github.com/iDvel/rime-ice /tmp/rime-ice
@@ -30,7 +30,7 @@ cargo run --release -p archtype-core --bin archtype-demo -- --lexicon /tmp/lexic
 
 `nihao` 出「你好」就说明引擎链路正常。装插件见 `docs/INSTALL.md`。
 
-## 三个未验证项
+## 四个未验证项
 
 按「最可能出问题」排序。每项都给了怎么验、炸了看什么。
 
@@ -56,7 +56,14 @@ cargo build -p archtype-voiced        # 先看能不能编过
 
 上屏默认走剪贴板（`ydotool type` 发不出汉字），需要 `xclip`+`xdotool`（X11）或 `wl-clipboard`（Wayland）。
 
-### 3. 排序手感
+### 3. macOS 输入法的真实交互
+
+外壳是 Rust（`macos-rs/`），CI 编译、打包 `.app`/`.pkg`、`--selftest`、真装一遍 pkg 都过了；
+但没有交互式 CI，键盘、候选框、语音浮条在真实应用里的表现要手动验证：
+多试几个应用（原生 AppKit、VS Code/Chrome 这类 Electron/Chromium、Word 这类老 Win 式的文本控件）、
+高 DPI、多屏、管理员窗口。
+
+### 4. 排序手感
 
 我只验证了「频率忠实度」和「候选召回」，**没验证人到底想选哪个词**。
 真实手感要在你打字几百个字之后才知道。攒一批用例后用 `archtype-eval` 量化：

@@ -66,7 +66,7 @@
 - **线程**：一个会话只在一个线程里用。
 - **键码**：`keysym` 是 XKB keysym 的子集，`modifiers` 是 `ARCHTYPE_MOD_*`（取值和 X11 / fcitx5 的 KeyState 一样）。macOS 外壳把 `kVK_*` / `flagsChanged:` 翻成这个。
 
-会话的行为（`core/tests/session_keys.rs` 测，和 `fcitx5-addon/test/key_harness.cpp`、`macos/Tests/main.swift` 里的同名用例对应）：
+会话的行为（`core/tests/session_keys.rs` 测，和 `fcitx5-addon/test/key_harness.cpp` 里的同名用例对应；外壳侧的按键到上屏在 `shell/src/input.rs` 的测试里）：
 
 | 键 | 会话做什么 |
 |---|---|

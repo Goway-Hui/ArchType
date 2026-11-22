@@ -1,5 +1,8 @@
 # 验收记录
 
+> 本页是提交 `e6b4cf5` 的验收记录，保留用于复核当时的数字；
+> 当前测试分布（`cargo test --workspace` 599 项）见 [STATUS.md](STATUS.md)。
+
 在最后一次提交上完整跑一遍所有验证，记录结果以便复核。
 
 ## 环境
@@ -19,10 +22,10 @@ cargo test
 | 套件 | 数量 |
 |---|---|
 | core 单元 | 83 |
-| core 组合场景（`tests/combinations.rs`） | 8 |
-| core 连续会话（`tests/session.rs`） | 5 |
+| core 组合场景（`core/tests/combinations.rs`） | 8 |
+| core 连续会话（`core/tests/session.rs`） | 5 |
 | voice 单元 | 31 |
-| voice 端到端（`tests/pipeline.rs`） | 4 |
+| voice 端到端（`voice/tests/pipeline.rs`） | 4 |
 | **合计** | **131，全部通过** |
 
 ## 2. 静态检查

@@ -405,8 +405,12 @@ pub fn voice_wave(levels: &[i32]) -> String {
 }
 
 
-#[cfg(not(target_os = "windows"))]
+// 两个键表都是纯 Rust，所有平台都编译（测试在 Linux 上也跑）；导出按平台选。
 pub mod macos;
+pub mod win;
+
+#[cfg(target_os = "windows")]
+pub use win::{translate_key_down, virtual_key, VoiceKey};
 #[cfg(not(target_os = "windows"))]
 pub use macos::{translate_key_down, virtual_key, VoiceKey};
 

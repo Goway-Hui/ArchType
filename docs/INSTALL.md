@@ -4,7 +4,7 @@ ArchType 是 Fcitx 5 的输入法插件。安装时需要让插件、Fcitx 5 和
 安装包因此按发行版构建。源码构建会使用本机的 Fcitx 5 开发文件。
 
 最低要求：Fcitx 5.0、C++20 编译器、CMake 3.16。构建使用当前稳定版 Rust 和仓库的 `Cargo.lock`。
-默认启用的语音功能需要 ALSA。设置界面需要 Python 3、PyGObject、GTK 4.14+、libadwaita 1.5+；
+默认启用的语音功能需要 ALSA。设置界面是 Rust + NSH 写的原生程序：构建需要 GTK 4.14+、libadwaita、WebKitGTK 6、GStreamer 的开发包和 `nsh` CLI，运行时只需要这些库（不需要 Python）；
 蓝色候选框主题和语音浮条（GNOME 扩展）需要 GNOME 45+。
 
 ## 选择安装方式
@@ -65,7 +65,8 @@ sudo apt update
 sudo apt install build-essential pkg-config cmake extra-cmake-modules git curl xz-utils \
   libasound2-dev libfcitx5core-dev libfcitx5config-dev libfcitx5utils-dev \
   fcitx5 fcitx5-frontend-all fcitx5-config-qt im-config \
-  python3 python3-gi python3-gi-cairo gir1.2-gtk-4.0 gir1.2-adw-1
+  libgtk-4-dev libadwaita-1-dev libwebkitgtk-6.0-dev libjavascriptcoregtk-6.0-dev \
+  libsoup-3.0-dev libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev clang
 ```
 
 已有可用的 Rust 工具链可以直接使用；未安装时按 [Rust 官方说明](https://www.rust-lang.org/tools/install)安装：
@@ -80,7 +81,7 @@ curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- --profile m
 ```bash
 sudo pacman -Syu --needed base-devel rust cmake extra-cmake-modules pkgconf git curl xz \
   fcitx5 fcitx5-gtk fcitx5-qt fcitx5-configtool alsa-lib \
-  python python-gobject gtk4 libadwaita
+  gtk4 libadwaita webkitgtk-6.0 gstreamer gst-plugins-base clang
 ```
 
 Arch 的 `fcitx5` 包已经包含头文件和 CMake 配置，不需要另找 `fcitx5-devel`。
@@ -93,7 +94,8 @@ Manjaro 在自己的仓库内完整升级后，本机编译下面的安装包。
 sudo dnf install rust cargo gcc-c++ make cmake extra-cmake-modules pkgconf-pkg-config git curl xz \
   fcitx5 fcitx5-devel alsa-lib-devel \
   fcitx5-configtool fcitx5-gtk3 fcitx5-gtk4 fcitx5-qt5 fcitx5-qt6 \
-  python3 python3-gobject gtk4 libadwaita gobject-introspection
+  gtk4-devel libadwaita-devel webkitgtk6.0-devel javascriptcoregtk6.0-devel \
+  libsoup3-devel gstreamer1-devel gstreamer1-plugins-base-devel clang
 ```
 
 GTK 和 Qt 前端显式安装各自的版本子包，适用于禁用弱依赖的系统。
@@ -105,12 +107,12 @@ GTK 和 Qt 前端显式安装各自的版本子包，适用于禁用弱依赖的
 sudo zypper refresh
 sudo zypper install rust cargo gcc-c++ make cmake extra-cmake-modules pkgconf-pkg-config git curl xz \
   fcitx5 fcitx5-devel fcitx5-configtool fcitx5-gtk3 fcitx5-gtk4 alsa-devel \
-  python3 python3-gobject python3-gobject-Gdk \
-  typelib-1_0-Gtk-4_0 typelib-1_0-Adw-1
+  gtk4-devel libadwaita-devel webkit2gtk6.0-devel libsoup-3_0-devel \
+  gstreamer-devel gstreamer-plugins-base-devel clang
 ```
 
 Qt 应用还需要与应用 Qt 版本对应的 Fcitx 前端，可用 `zypper search fcitx5-qt` 查看仓库提供的子包。
-Python 的实际版本包名会随 Tumbleweed 更新；上面的通用名字采用 [PyGObject 官方安装说明](https://pygobject.gnome.org/getting_started.html#opensuse)。
+WebKitGTK / libsoup 的 -devel 包名会随 Tumbleweed 调整；改设置界面时需要它们（`nsh` 的 Linux host 用 WebKit 画网页界面）。
 
 ### 2. 获取源码与词库
 
@@ -160,9 +162,12 @@ sudo cmake --install build
 CMake 使用 Fcitx 5 导出的安装路径：Debian / Ubuntu 通常为 `/usr/lib/<multiarch>/fcitx5`，
 Arch 为 `/usr/lib/fcitx5`，Fedora / openSUSE 为 `/usr/lib64/fcitx5`。
 可用 `pkg-config --variable=libdir Fcitx5Core` 查看本机库目录。
-设置界面、输入法注册文件、简繁映射表、自检工具（`archtype-check`、`archtype-show`）和第 2 节生成的
+输入法注册文件、简繁映射表、自检工具（`archtype-check`、`archtype-show`）、`archtype-config` 命令行和第 2 节生成的
 `dist/data` 里的词库、英文词表、语言模型、五笔码表都由 `cmake --install` 装好（装在 `/usr/share/archtype/`），
-不用再往用户目录拷文件。以后更新数据：重新跑第 2 节的脚本，再 `sudo cmake --install build`。
+不用再往用户目录拷文件。图形设置界面是 NSH 的独立产物：需要 `nsh` 时先
+`curl -fsSL https://nsh.dev/install.sh | NSH_VERSION=v0.6.0 sh`，再
+`scripts/package-settings-nsh.sh "$version" dist/pkg` 打出 tar.gz，解压到 `/usr/lib/archtype/settings/`
+并装好 `archtype-settings` 启动脚本（各发行版的包脚本会自动接上）；不装图形界面时用 `fcitx5-configtool` 添加输入法。以后更新数据：重新跑第 2 节的脚本，再 `sudo cmake --install build`。
 数据放在别处时加 `-DARCHTYPE_DATA_DIR=<目录>`。
 以前按旧说明拷进 `~/.local/share/archtype/` 的那几个文件不用管，插件认得出来、会改用新装的（见
 [CONFIG.md](CONFIG.md) 的「数据文件」）。
@@ -244,7 +249,7 @@ fcitx5-diagnose
 | 找不到 `libarchtype_core.a` | 先构建 Rust 核心；自定义 target 目录时用 `-DARCHTYPE_CORE_LIB=/绝对路径/libarchtype_core.a` |
 | 输入法列表没有 ArchType | 检查 `/usr/share/fcitx5/addon/archtype.conf`、`/usr/share/fcitx5/inputmethod/archtype.conf` 和插件库目录 |
 | 插件报 undefined symbol | 按本机发行版安装匹配包；Arch 完整升级，Manjaro 本机重编译 |
-| 设置界面缺 `gi` / `Gtk` / `Adw` | 按第 1 节补齐当前发行版的 Python GI / GTK / libadwaita 包 |
+| 设置界面打不开 | 缺 GTK 4 / libadwaita / WebKitGTK 6 的运行时库（设置界面是 NSH 的原生程序，不用 Python）；按第 1 节补齐，或看 `archtype-settings` 的报错 |
 | 只有少量候选 | 真实词库未加载，程序退回演示词典；检查 `lexicon.tsv` 路径 |
 | 只在部分应用里无法输入 | 检查应用所用 GTK / Qt 前端、X11 / Wayland 配置，并重启应用 |
 | emoji 显示方框 | Debian / Ubuntu 安装 `fonts-noto-color-emoji`；Arch 安装 `noto-fonts-emoji`；Fedora 安装 `google-noto-color-emoji-fonts` |
@@ -366,7 +371,7 @@ Silverblue / Kinoite 等桌面在宿主上使用匹配当前 Fedora 版本的 RP
 ```bash
 rpm-ostree install ./archtype-*.rpm fcitx5 fcitx5-configtool \
   fcitx5-gtk3 fcitx5-gtk4 fcitx5-qt5 fcitx5-qt6 \
-  python3-gobject gtk4 libadwaita gobject-introspection
+  gtk4 libadwaita webkitgtk6.0 libsoup3 gstreamer1 gstreamer1-plugins-base
 systemctl reboot
 ```
 
@@ -402,6 +407,6 @@ sudo rm -f /usr/bin/archtype-check /usr/bin/archtype-show
 - [Arch 的 Fcitx 5 包与开发文件](https://archlinux.org/packages/extra/x86_64/fcitx5/)
 - [Manjaro 软件源分支](https://wiki.manjaro.org/index.php/Switching_Branches)
 - [Fedora 的 Fcitx 5 开发包](https://packages.fedoraproject.org/pkgs/fcitx5/fcitx5-devel/)与 [GTK 前端](https://packages.fedoraproject.org/pkgs/fcitx5-gtk/fcitx5-gtk3/)
-- [PyGObject 各发行版安装方式](https://pygobject.gnome.org/getting_started.html)
+- [NSH（设置界面框架）](https://nsh.dev/)
 - libadwaita 1.5 起提供的 [AlertDialog](https://gnome.pages.gitlab.gnome.org/libadwaita/doc/main/class.AlertDialog.html) 和 [AboutDialog](https://gnome.pages.gitlab.gnome.org/libadwaita/doc/main/class.AboutDialog.html)
 - [Fcitx 5 启动与会话设置](https://fcitx-im.org/wiki/Setup_Fcitx_5)和 [Wayland 配置](https://fcitx-im.org/wiki/Using_Fcitx_5_on_Wayland/en)

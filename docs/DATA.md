@@ -314,7 +314,7 @@ ArchType 发布的每个数据文件都带一个机器可读的版本标记，�
 微信输入法的 `nlrgpt2_nnlm.bin`（§3.1）不能分发，所以照同样的结构自己训了一个，安装包都带上
 （Linux 装到 `/usr/share/archtype/nnlm.bin`，macOS 在 `ArchType.app/Contents/Resources/nnlm.bin`），许可证 CC BY-SA 4.0。
 插件和输入法先用用户导入的微信输入法模型，没有再用它（`fcitx5-addon/src/archtype_engine.cpp` 的 `findNnlm`、
-macOS `AppState.nnlmPath`）。
+macOS 外壳的 `archtype_shell::engine::Layout::nnlm_path`）。
 
 - 结构：3 层 GPT-2，d=256、4 头、FFN 1024、最长 512 位置，pre-LN，GELU 用 tanh 近似，输出头和字向量共用；
   和微信的模型一样大，每步推理的耗时也一样。字表 6995 个字（出现 50 次以上、最多 7000 个），覆盖语料 99.59%。

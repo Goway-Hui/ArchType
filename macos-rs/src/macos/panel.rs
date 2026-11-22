@@ -1,7 +1,7 @@
 //! 候选框：一个不抢焦点的浮动面板，自绘（背景、序号、候选、注释、高亮、提示行）。
 //!
-//! 横排 / 竖排跟着设置；展开面板（下键）每行 6 个，表情面板同样是网格，工具栏是一列；
-//! 互译时上方是方向标签、下方是状态/提示。
+//! 数据与布局（横/竖排、6 列网格、序号宽度、点击命中）在 `archtype_shell::panel`；
+//! 这里只做 macOS 的文字测量与绘制。
 
 use std::cell::{Cell, RefCell};
 
@@ -15,34 +15,21 @@ use objc2_app_kit::{
 };
 use objc2_foundation::{NSAttributedStringKey, NSDictionary, NSPoint, NSRect, NSSize, NSString};
 
-/// 一页要画的候选。
-#[derive(Clone, Debug, Default)]
-pub struct Page {
-    pub texts: Vec<String>,
-    pub comments: Vec<String>,
-    /// 光标在这一页里的位置；不在这一页上是 None
-    pub cursor: Option<usize>,
-    pub has_prev: bool,
-    pub has_next: bool,
-    pub vertical: bool,
-    /// 展开面板（每行 6 个）；None 是普通的一行/一列
-    pub columns: Option<usize>,
-    /// 候选上方的一行（互译的方向标签、工具栏标题）
-    pub aux_top: Option<String>,
-    /// 候选下方的一行（互译的「翻译中…」「回车发送」，工具栏提示）
-    pub aux_bottom: Option<String>,
-    /// 画序号（联想没按 Tab 进联想行时不画：数字照常交给应用）
-    pub labels: bool,
-    pub font_size: f64,
-}
+use archtype_shell::panel::{
+    clicked_index, layout, Page, TextMeasurer, LABEL_SCALE, PADDING_X, PADDING_Y, RADIUS,
+};
 
-impl Page {
-    pub fn is_empty(&self) -> bool {
-        self.texts.is_empty() && self.aux_top.is_none() && self.aux_bottom.is_none()
+/// macOS 的文字测量（`NSString.sizeWithAttributes`）。
+struct MacMeasurer;
+
+impl TextMeasurer for MacMeasurer {
+    fn measure(&self, text: &str, font_size: f64) -> (f64, f64) {
+        let font = NSFont::systemFontOfSize(font_size);
+        let color = NSColor::labelColor();
+        let attrs = attributes(&font, &color);
+        let size = text_size(text, &attrs);
+        (size.width, size.height)
     }
-
-    /// 展开面板用的列数（工具栏是一列；表情面板和展开候选一样 6 列）。
-    pub const GRID_COLUMNS: usize = 6;
 }
 
 struct ViewIvars {
@@ -77,7 +64,10 @@ define_class!(
                 return;
             };
             let point = self.convertPoint_fromView(event.locationInWindow(), None);
-            let index = clicked_index(&self.ivars().page.borrow(), point);
+            let index = {
+                let page = self.ivars().page.borrow();
+                clicked_index(&page, &MacMeasurer, point.x, point.y)
+            };
             let Some(index) = index else {
                 return;
             };
@@ -119,7 +109,8 @@ impl CandidateView {
 
     fn page_size(&self) -> NSSize {
         let page = self.ivars().page.borrow();
-        layout(&page).size
+        let (width, height) = layout(&page, &MacMeasurer).size;
+        NSSize::new(width, height)
     }
 }
 
@@ -147,124 +138,16 @@ fn text_size(text: &str, attrs: &NSDictionary<NSAttributedStringKey, AnyObject>)
     unsafe { s.sizeWithAttributes(Some(attrs)) }
 }
 
-const PADDING_X: f64 = 10.0;
-const PADDING_Y: f64 = 7.0;
-const ITEM_GAP: f64 = 14.0;
-const RADIUS: f64 = 9.0;
-
-/// 一页的排版：每项的宽度、每项的位置、总尺寸。
-struct Layout {
-    widths: Vec<f64>,
-    positions: Vec<NSPoint>,
-    size: NSSize,
-    row_height: f64,
-    top_height: f64,
-}
-
-/// 算一页的尺寸和每个候选的位置（视图坐标，y 向下）。
-fn layout(page: &Page) -> Layout {
-    let font = NSFont::systemFontOfSize(page.font_size);
-    let attrs = attributes(&font, &NSColor::labelColor());
-    let label_font = NSFont::systemFontOfSize(page.font_size * 0.78);
-    let label_attrs = attributes(&label_font, &NSColor::secondaryLabelColor());
-
-    let line = text_size("国", &attrs).height.max(1.0);
-    let row_height = line + PADDING_Y * 2.0;
-
-    let mut widths = Vec::with_capacity(page.texts.len());
-    for (i, text) in page.texts.iter().enumerate() {
-        let mut width = if page.labels {
-            text_size(&format!("{}.", i + 1), &label_attrs).width
-        } else {
-            0.0
-        };
-        width += text_size(text, &attrs).width;
-        if let Some(comment) = page.comments.get(i) {
-            if !comment.is_empty() {
-                width += 4.0 + text_size(comment, &label_attrs).width;
-            }
-        }
-        widths.push(width);
-    }
-
-    let top_height = if page.aux_top.is_some() {
-        row_height
-    } else {
-        0.0
-    };
-    let bottom_height = if page.aux_bottom.is_some() {
-        row_height
-    } else {
-        0.0
-    };
-    let count = page.texts.len();
-
-    let mut positions = vec![NSPoint::new(PADDING_X, top_height + PADDING_Y); count];
-    let body_width;
-    let body_height;
-
-    if let Some(columns) = page.columns.filter(|c| *c > 0) {
-        let mut col_widths = vec![0.0_f64; columns];
-        for (i, width) in widths.iter().enumerate() {
-            let slot = &mut col_widths[i % columns];
-            *slot = slot.max(*width);
-        }
-        let rows = count.div_ceil(columns);
-        body_width = col_widths.iter().sum::<f64>()
-            + ITEM_GAP * columns.saturating_sub(1) as f64
-            + PADDING_X * 2.0;
-        body_height = row_height * rows as f64;
-        let mut x = PADDING_X;
-        for (i, position) in positions.iter_mut().enumerate() {
-            let column = i % columns;
-            if column == 0 {
-                x = PADDING_X;
-            }
-            let row = i / columns;
-            *position = NSPoint::new(x, top_height + row as f64 * row_height + PADDING_Y);
-            x += col_widths[column] + ITEM_GAP;
-        }
-    } else if page.vertical {
-        body_width = widths.iter().copied().fold(0.0_f64, f64::max) + PADDING_X * 2.0;
-        body_height = row_height * count as f64;
-        for (i, position) in positions.iter_mut().enumerate() {
-            *position = NSPoint::new(PADDING_X, top_height + i as f64 * row_height + PADDING_Y);
-        }
-    } else {
-        body_width = widths.iter().sum::<f64>()
-            + ITEM_GAP * count.saturating_sub(1) as f64
-            + PADDING_X * 2.0;
-        body_height = row_height;
-        let mut x = PADDING_X;
-        for (i, position) in positions.iter_mut().enumerate() {
-            *position = NSPoint::new(x, top_height + PADDING_Y);
-            x += widths[i] + ITEM_GAP;
-        }
-    }
-
-    let aux_width = [page.aux_top.as_deref(), page.aux_bottom.as_deref()]
-        .into_iter()
-        .flatten()
-        .map(|text| text_size(text, &label_attrs).width + PADDING_X * 2.0)
-        .fold(0.0_f64, f64::max);
-    let width = body_width.max(aux_width).max(1.0);
-    let height = (top_height + body_height + bottom_height).max(row_height);
-    Layout {
-        widths,
-        positions,
-        size: NSSize::new(width, height),
-        row_height,
-        top_height,
-    }
-}
-
 /// 画一页（视图坐标，y 向下）。
 fn draw_page(page: &Page) {
     if page.is_empty() {
         return;
     }
-    let layout = layout(page);
-    let bounds = NSRect::new(NSPoint::new(0.0, 0.0), layout.size);
+    let frame = layout(page, &MacMeasurer);
+    let bounds = NSRect::new(
+        NSPoint::new(0.0, 0.0),
+        NSSize::new(frame.size.0, frame.size.1),
+    );
 
     // 背景：圆角、浅色 / 深色跟着系统
     NSColor::windowBackgroundColor().setFill();
@@ -277,13 +160,13 @@ fn draw_page(page: &Page) {
     path.stroke();
 
     let font = NSFont::systemFontOfSize(page.font_size);
-    let label_font = NSFont::systemFontOfSize(page.font_size * 0.78);
+    let label_font = NSFont::systemFontOfSize(page.font_size * LABEL_SCALE);
     let normal_attrs = attributes(&font, &NSColor::labelColor());
     let highlight_attrs = attributes(&font, &NSColor::whiteColor());
     let label_attrs = attributes(&label_font, &NSColor::secondaryLabelColor());
     let highlight_label_attrs = attributes(&label_font, &NSColor::whiteColor());
 
-    // 上方一行（互译的方向标签、工具栏标题）
+    // 上方一行（互译的方向标签、工具栏标题、语音提示）
     if let Some(aux) = &page.aux_top {
         draw_aux(aux, NSPoint::new(PADDING_X, PADDING_Y), &label_attrs);
     }
@@ -293,7 +176,7 @@ fn draw_page(page: &Page) {
             aux,
             NSPoint::new(
                 PADDING_X,
-                layout.size.height - layout.row_height + PADDING_Y,
+                frame.size.1 - frame.row_height + PADDING_Y,
             ),
             &label_attrs,
         );
@@ -301,21 +184,17 @@ fn draw_page(page: &Page) {
 
     let item_height = page.font_size * 1.6 + PADDING_Y;
     for (i, text) in page.texts.iter().enumerate() {
-        let position = layout.positions[i];
-        let width = layout.widths[i];
+        let (left, top) = frame.positions[i];
+        let width = frame.widths[i];
         let row = NSRect::new(
-            NSPoint::new(position.x, position.y - PADDING_Y / 2.0),
+            NSPoint::new(left, top - PADDING_Y / 2.0),
             NSSize::new(width + PADDING_X, item_height),
         );
         let selected = page.cursor == Some(i);
         if selected {
             NSColor::selectedContentBackgroundColor().setFill();
-            NSBezierPath::bezierPathWithRoundedRect_xRadius_yRadius(
-                row,
-                RADIUS - 2.0,
-                RADIUS - 2.0,
-            )
-            .fill();
+            NSBezierPath::bezierPathWithRoundedRect_xRadius_yRadius(row, RADIUS - 2.0, RADIUS - 2.0)
+                .fill();
         }
 
         let number = format!("{}.", i + 1);
@@ -325,7 +204,7 @@ fn draw_page(page: &Page) {
             &label_attrs
         };
         let number_width = if page.labels {
-            draw_aux(&number, position, number_attrs);
+            draw_aux(&number, NSPoint::new(left, top), number_attrs);
             text_size(&number, number_attrs).width
         } else {
             0.0
@@ -340,8 +219,8 @@ fn draw_page(page: &Page) {
         unsafe {
             body.drawAtPoint_withAttributes(
                 NSPoint::new(
-                    position.x + number_width + if page.labels { 4.0 } else { 0.0 },
-                    position.y,
+                    left + number_width + if page.labels { 4.0 } else { 0.0 },
+                    top,
                 ),
                 Some(attrs),
             );
@@ -358,32 +237,14 @@ fn draw_page(page: &Page) {
                 draw_aux(
                     comment,
                     NSPoint::new(
-                        position.x + width - comment_width,
-                        position.y + page.font_size * 0.15,
+                        left + width - comment_width,
+                        top + page.font_size * 0.15,
                     ),
                     comment_attrs,
                 );
             }
         }
     }
-}
-
-/// 点在哪个候选上（视图坐标，y 向下）。
-fn clicked_index(page: &Page, point: NSPoint) -> Option<usize> {
-    let layout = layout(page);
-    let item_height = page.font_size * 1.6 + PADDING_Y;
-    for (i, position) in layout.positions.iter().enumerate() {
-        let width = layout.widths[i] + PADDING_X;
-        let top = position.y - PADDING_Y / 2.0;
-        if point.x >= position.x
-            && point.x <= position.x + width
-            && point.y >= top
-            && point.y <= top + item_height
-        {
-            return Some(i);
-        }
-    }
-    None
 }
 
 fn draw_aux(text: &str, point: NSPoint, attrs: &NSDictionary<NSAttributedStringKey, AnyObject>) {

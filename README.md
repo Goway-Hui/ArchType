@@ -113,7 +113,8 @@
 
 装完在菜单栏的输入法菜单里选「ArchType 拼音」，打 `nihao` 试试。设置界面「ArchType 设置」随包带着，
 语音模型、词库包（万象）都在设置窗口里；命令行也能切词库：`ArchType --install-lexicon wanxiang`、
-`ArchType --use-lexicon rime-ice`。
+`ArchType --use-lexicon rime-ice`。语音输入按住设置的语音键（默认右 Option）说话，候选框上方显示「正在听…」和波形，
+松开后识别结果上屏。
 
 > macOS 的输入法外壳是 Rust 写的（`macos-rs/`）：InputMethodKit 控制器、候选框、语音浮条、TIS 登记、更新检查，
 > 引擎、会话、翻译、统计、语音和 Linux 用同一套 Rust 实现。
@@ -533,7 +534,7 @@ ArchType 默认用自己的蓝色主题：选中的词是图标里的那种蓝�
 | 按 Super + . 打不开表情面板 | 只在 ArchType 是当前输入法时有效；桌面或别的程序占了这个键的话，到设置里换成 Ctrl + ; |
 | emoji 显示成方块 | 缺彩色 emoji 字体：`sudo apt install fonts-noto-color-emoji` |
 | 按右 Alt 没反应 | 只在 ArchType 是当前输入法、没在打拼音时有效；有的键盘右边是 AltGr，到设置的「语音」页换个键 |
-| 应用菜单里没有「ArchType 设置」，或者打不开 | 缺 GTK 4 / libadwaita：`sudo apt install python3-gi gir1.2-gtk-4.0 gir1.2-adw-1`。在终端里运行 `archtype-config` 能看到报错 |
+| 应用菜单里没有「ArchType 设置」，或者打不开 | 缺 GTK 4 / libadwaita / WebKitGTK 6 的运行时库（设置界面是 NSH 的原生程序，不用 Python）：`sudo apt install libgtk-4-1 libadwaita-1-0 libwebkitgtk-6.0-4`；终端里运行 `archtype-settings` 能看到报错 |
 | 设置里改了，打字时没变化 | 看看是不是设了 `ARCHTYPE_*` 环境变量（`env \| grep ARCHTYPE`），它们优先于设置；fcitx5 没在运行时，设置会在它下次启动时生效 |
 | 想看日志 | `~/.local/state/archtype/archtype.log`，或者[导出日志](#出问题时导出日志) |
 | 怎么确认 fcitx5 在工作 | 运行 `fcitx5-diagnose`，它会列出缺的环境变量和前端 |
@@ -593,13 +594,15 @@ ARCHTYPE_VOICE_WAV=说的话.wav ARCHTYPE_VOICE_EXPECT=期望的字 scripts/addo
 | `macos/` | macOS 安装形态：`Info.plist`、pkg 脚本、`build.sh`（不含代码） |
 | `icons/`、`themes/` | 图标（含 macOS 菜单栏的单色模板图）与 fcitx5 主题 |
 | `tools/` | 词库转换、评测用例生成 |
-| `docs/` | [引擎细节](docs/ENGINE.md)、[体验审查](docs/UX-AUDIT.md)、[接手指南](docs/HANDOFF.md)、[语音](docs/VOICE.md)、[数据格式](docs/DATA.md) |
+| `docs/` | [引擎细节](docs/ENGINE.md)、[体验审查](docs/UX-AUDIT.md)、[接手指南](docs/HANDOFF.md)、[平台移植契约](docs/PORTING.md)、[语音](docs/VOICE.md)、[数据格式](docs/DATA.md) |
 
 ## 更多文档
 
 - 输入示例：[docs/USAGE.md](docs/USAGE.md)
 - 设置项、环境变量、数据文件：[docs/CONFIG.md](docs/CONFIG.md)
 - 从源码构建：[docs/INSTALL.md](docs/INSTALL.md)
+- 新平台外壳（键表、面板、运行时怎么接）：[docs/PORTING.md](docs/PORTING.md)
+- Windows 适配方案：[docs/plans/2026-11-22-windows-port.md](docs/plans/2026-11-22-windows-port.md)
 - 卸载：[docs/INSTALL.md](docs/INSTALL.md#卸载)
 - 目前做不到的：[docs/LIMITATIONS.md](docs/LIMITATIONS.md)
 

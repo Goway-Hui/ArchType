@@ -220,7 +220,8 @@ TSF 没有 run loop API；建一个 `HWND_MESSAGE` 隐藏窗口，`SetTimer(50ms
 
 | 里程碑 | 内容 | 预估 |
 |---|---|---|
-| M0 | 抽 `shell` crate，macOS 回归全绿（41 项测试迁移） | 2–3 人日 |
+| M0 | 抽 `shell` crate，macOS 回归全绿（测试迁移） | ✅ 已完成 |
+| M0.5 | 抽 `runtime`、拆 `keys`（`keys/{mod,macos,win}`）、抽 `panel`/`view` | ✅ 已完成 |
 | M1 | `win-rs` 骨架：COM DLL、注册表注册、TSF 激活、按键 → 上屏（无编辑区/候选） | 8–10 人日 |
 | M2 | TSF composition（编辑区）、候选窗口（自绘、翻页、点击、DPI/多屏） | 10–12 人日 |
 | M3 | 设置界面 Windows 路径、配置热重载、`--selftest` | 3–4 人日 |
