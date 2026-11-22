@@ -454,6 +454,13 @@ jobs:
         with:
           name: data
           path: dist/data
+      - name: 语音浮条（编译 + 样式检查）
+        # 编译 GTK 4 + layer-shell 浮条；tools/voice-overlay-check.sh 检查窗口背景透明的
+        # CSS（GTK 不支持 !important、必须覆盖 window.background），防止四角露主题色复发。
+        run: |
+          cmake -S voice-overlay -B build-voice -DCMAKE_BUILD_TYPE=Release
+          cmake --build build-voice -j"$(nproc)"
+          tools/voice-overlay-check.sh
       - name: 按键测试（私有 fcitx5 实例 + 真实词库和语言模型）
         run: ARCHTYPE_LM="$PWD/dist/data/words.lm" scripts/addon-test.sh "$PWD/dist/data/lexicon.tsv" "$PWD/dist/data/english.txt"
       - name: 版本号

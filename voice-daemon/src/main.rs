@@ -117,6 +117,7 @@ pub fn trigger_config(opt: &Options) -> TriggerConfig {
         hold_threshold: Duration::from_millis(300),
         silence_timeout: Duration::from_millis(opt.silence_ms),
         tap: opt.mode != "hold",
+        cooldown: Duration::from_millis(450),
     }
 }
 

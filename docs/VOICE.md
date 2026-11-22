@@ -125,6 +125,11 @@ fcitx5 的候选框只能显示文字，画不出宣传片里那条带动画的�
   `State(u 状态, s 文字, i 音量 0–100, i x, i y, i w, i h, b 相对窗口, d 缩放)`。
   状态：0 收起、1 正在听、2 识别中、3 识别完成、4 出错；x/y/w/h 是光标矩形，和 kimpanel 的
   `SetSpotRect` / `SetRelativeSpotRectV2` 同一个意思，扩展换算到屏幕坐标的方法也照抄 Input Method Panel。
+- 非 GNOME（niri / sway）用同一个仓库里的 `voice-overlay/`（GTK 4 + layer-shell），浮条的四角要透明：
+  窗口背景必须透明，而且 GTK CSS 不支持 `!important`（写了整条规则会被丢掉），
+  主题的 `window.background` 比 `.transparent` 更具体，必须一起覆盖；圆角裁剪靠
+  `gtk_widget_set_overflow(HIDDEN)`。改样式或换 GTK 主题后跑 `tools/voice-overlay-check.sh`
+  做静态检查并截一张图看四角；CI 的发行版任务会编译浮条并跑这个检查，别等装完才发现黑角。
 - 浮条：白色圆角卡片，左边蓝色话筒 + 跟着音量变大的浅蓝光晕，中间「正在听… 离线」，右边 24 根竖条
   （高度 = 真实音量 × 一道从左往右走的起伏，照宣传片的公式）；弹出时上浮 + 从 0.94 放大，收起时 0.25 秒淡出下沉。
   浮条左边对着开始说话时的光标，字多了光标往右走才跟着挪。

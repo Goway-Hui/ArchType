@@ -381,6 +381,7 @@ vim.api.nvim_create_autocmd("InsertEnter", { callback = function() vim.fn.system
   光标右边也会裂成几根跳动的蓝色竖条；松开后显示「识别完成」再淡出。浮条是 ArchType 的 GNOME 扩展画的
   （和蓝色主题是同一个扩展，见[主题](#主题)），**装好或升级后要注销重新登录一次**才会出现。
 - **niri / sway 等其他 Wayland 桌面**：装包后运行 `archtype-voice-overlay`（GTK 4 + layer-shell）会画同样的浮条。
+  浮条窗口四角透明靠窗口背景透明，改动后跑 `tools/voice-overlay-check.sh`（静态检查 + 截图）确认没有黑角。
   开机自启：niri 在 `config.kdl` 里加 `spawn-at-startup "archtype-voice-overlay"`，sway 在配置里加
   `exec archtype-voice-overlay`。不跑浮条时（或关掉了蓝色主题）在候选框里显示 🎙 和用字符画的波形。
 

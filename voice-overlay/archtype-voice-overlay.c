@@ -381,11 +381,21 @@ static void activate(GtkApplication *app, gpointer data) {
 
     GtkCssProvider *css = gtk_css_provider_new();
     gtk_css_provider_load_from_string(css,
-        // 顶层窗口的默认底色是实色，四角会露出黑角：透明掉，pill 自己画底
-        ".transparent {"
-        "  background: transparent;"
+        // 顶层窗口的默认底色是实色，四角会露出主题的深色块：把窗口背景透明掉，pill 自己画底。
+        // 主题（libadwaita / adw-gtk3）用 window.background，比 .transparent 更具体，
+        // 所以这里同时点名窗口节点和它的 background 节点。GTK CSS 不支持 !important（写了
+        // 整条规则会被丢掉，四角又会露出来），别再加。
+        "window.transparent,"
+        "window.transparent.background,"
+        ".transparent.background,"
+        ".transparent > .background,"
+        ".transparent .background {"
+        "  background: none;"
+        "  background-color: transparent;"
+        "}"
+        // 圆角裁剪靠代码里的 gtk_widget_set_overflow（GTK CSS 没有 overflow 属性）
+        "window.transparent {"
         "  border-radius: 14px;"
-        "  overflow: hidden;"
         "}"
         ".archtype-voice-pill {"
         "  background-color: #ffffff;"
