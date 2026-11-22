@@ -10,7 +10,9 @@ mod installer;
 mod panel;
 
 use objc2::{AnyThread, MainThreadMarker};
-use objc2_app_kit::{NSApplication, NSApplicationActivationPolicy, NSWorkspace};
+use objc2_app_kit::{
+    NSApplication, NSApplicationActivationPolicy, NSWorkspace, NSWorkspaceOpenConfiguration,
+};
 use objc2_foundation::{NSString, NSURL};
 use objc2_input_method_kit::IMKServer;
 
@@ -149,9 +151,21 @@ fn open_settings(page: Option<&str>) {
     let settings_app = app::resource_dir().join("ArchType 设置.app");
     if settings_app.exists() {
         let url = NSURL::fileURLWithPath(&NSString::from_str(&settings_app.to_string_lossy()));
-        if NSWorkspace::sharedWorkspace().openURL(&url) {
-            return;
+        let configuration = NSWorkspaceOpenConfiguration::configuration();
+        configuration.setActivates(true);
+        if let Some(page) = page {
+            let arguments = NSArray::from_retained_slice(&[
+                NSString::from_str("--page"),
+                NSString::from_str(page),
+            ]);
+            configuration.setArguments(&arguments);
         }
+        NSWorkspace::sharedWorkspace().openApplicationAtURL_configuration_completionHandler(
+            &url,
+            &configuration,
+            None,
+        );
+        return;
     }
     // 开发目录里没有打包的 NSH app：直接跑 nsh 的产物
     if let Ok(exe) = std::env::current_exe() {
