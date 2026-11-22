@@ -244,7 +244,7 @@ Lexicon=
 
 **改设置项（加键、改名、改默认值、范围、可选值）要先改规格 [`spec/config.json`](../spec/config.json)**（可选词库包的规矩在
 [`spec/lexicon-pack.json`](../spec/lexicon-pack.json)），Linux 插件、设置界面、macOS 三端的测试都拿它对照，哪一端没跟上 CI 就挂：
-插件在 `scripts/addon-test.sh`、设置界面在 `scripts/test-config-contract.py`、macOS 在 `macos/test.sh`。
+插件在 `scripts/addon-test.sh`、设置界面在 `scripts/test-config-contract.py`、macOS 在 `macos-rs` 的 `cargo test`。
 两端故意不一样的（比如 `EmojiKey` 的默认值）、只有一端有的项，规格里都写了原因。
 
 下面这些环境变量主要是**调试和测试用**，设了的话**优先于**配置文件（在设置界面里改了也不起作用），平时用不着：
@@ -434,10 +434,8 @@ cargo run --release -p archtype-core --bin archtype-lmbuild -- \
   没网时可以用「从文件安装」选手动下载的 `.tar.gz`。
 - **命令行**：`archtype-config --install-lexicon wanxiang`（下载并切过去，也接受本地 `.tar.gz` 路径），`archtype-config --use-lexicon rime-ice` 切回默认。
 - **macOS**：设置窗口「输入 → 词库」里一样有「万象拼音」（下载、更新、从文件安装、不用时删除），装到
-  `~/Library/Application Support/ArchType/dicts/wanxiang/`。命令行是
-  `"~/Library/Input Methods/ArchType.app/Contents/MacOS/ArchType" --install-lexicon wanxiang`（或 `.tar.gz` 路径）、
-  `--use-lexicon rime-ice|wanxiang`。包里只许有哪几个文件、少于多少条不装、怎么校验，和 Linux 的规矩一样
-  （`macos/Sources/Shared/LexiconPack.swift`）。正在用万象、开着 `CheckUpdate` 时，输入法每天检查更新时顺带看一眼：
+  `~/Library/Application Support/ArchType/dicts/wanxiang/`。包里只许有哪几个文件、少于多少条不装、怎么校验，
+  和 Linux 的规矩一样。正在用万象、开着 `CheckUpdate` 时，输入法每天检查更新时顺带看一眼：
   发布页上有新版万象就在后台下载、校验、换上（和 Linux 设置界面的后台检查一样，不打扰人；没成功的那一版一天以内不再试）。
 - **代价**：比雾凇多占约 60 MB 内存，第一次载入（建快照）要四五秒，之后启动约 0.1 秒。
 - 只用了万象的词条，没有用它的 `.gram` 语法模型（那是 librime 专用的格式）；整句仍靠 ArchType 自己的 `words.lm`。

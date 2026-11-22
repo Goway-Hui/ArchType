@@ -1,7 +1,7 @@
 //! 评测工具（`archtype-eval`、`archtype-show`）共用的「和外壳一致」的引擎配置。
 //!
 //! 两个外壳（fcitx5 插件 `fcitx5-addon/src/archtype_engine.cpp` 的 `loadCore` / `applyCoreSettings`，
-//! macOS `macos/Sources/Shared/Composer.swift` 的 `Engine`）在默认设置下都这样配引擎：
+//! macOS 外壳 `macos-rs/src/config.rs` 的 `session_config` / `apply_engine_settings`）在默认设置下都这样配引擎：
 //!
 //! | 项 | 外壳 | 这里 |
 //! |---|---|---|

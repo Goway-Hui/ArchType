@@ -208,7 +208,7 @@ lmcnmac.bin 导不出来（§3），所以自己从语料训练。`archtype-lmbu
 的 18 个候选和基线完全一样；xz、nh、shim 第 3~9 个有调换（xz 第 5 个多了「鞋子」，nh 第 9 个多了「女孩」），首选不变，
 `xz` 仍是「现在」（`data/rime-ice-freq.tsv` 修的那条）。
 fcitx5 按键测试里依赖词库的输入（nihao、zhongdi、kyi、yongzwen、kaixin、jixu……）首选也不变；
-`macos/test.sh`（`ARCHTYPE_EXPECT_FULL_CHARS=1`）和 Ubuntu 24.04 容器里的 fcitx5 按键测试（`scripts/addon-test.sh`）
+`macos-rs` 的 `cargo test` 和 Ubuntu 24.04 容器里的 fcitx5 按键测试（`scripts/addon-test.sh`）
 用默认构建的词库跑通过。
 
 试过、没采用的：
