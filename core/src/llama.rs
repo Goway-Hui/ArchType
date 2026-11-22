@@ -87,11 +87,18 @@ pub fn downloaded_server() -> Option<PathBuf> {
     Some(data.join("archtype/llama/llama-server"))
 }
 
+#[cfg(unix)]
 fn is_executable(path: &Path) -> bool {
     use std::os::unix::fs::PermissionsExt;
     path.metadata()
         .map(|m| m.is_file() && m.permissions().mode() & 0o111 != 0)
         .unwrap_or(false)
+}
+
+#[cfg(not(unix))]
+fn is_executable(path: &Path) -> bool {
+    // Windows 没有可执行位，是不是 .exe 由文件名/扩展名决定
+    path.is_file()
 }
 
 struct Running {

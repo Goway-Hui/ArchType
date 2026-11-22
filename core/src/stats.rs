@@ -1063,6 +1063,7 @@ fn macos_key_id(code: u16) -> Option<&'static str> {
 // ---------------- 工具
 
 /// Unix 毫秒 → 本地日期 `YYYY-MM-DD`。
+#[cfg(unix)]
 pub fn local_day(now_ms: i64) -> String {
     let seconds = now_ms.div_euclid(1000);
     let mut tm: libc::tm = unsafe { std::mem::zeroed() };
@@ -1071,6 +1072,15 @@ pub fn local_day(now_ms: i64) -> String {
         return String::new();
     }
     format!("{:04}-{:02}-{:02}", tm.tm_year + 1900, tm.tm_mon + 1, tm.tm_mday)
+}
+
+/// Windows：取本地时间（调用时 `now_ms` 就是当前时间，统计只关心「今天」）。
+#[cfg(windows)]
+pub fn local_day(_now_ms: i64) -> String {
+    use windows_sys::Win32::System::SystemInformation::GetLocalTime;
+    let mut time: windows_sys::Win32::Foundation::SYSTEMTIME = unsafe { std::mem::zeroed() };
+    unsafe { GetLocalTime(&mut time) };
+    format!("{:04}-{:02}-{:02}", time.wYear, time.wMonth, time.wDay)
 }
 
 pub fn now_ms() -> i64 {

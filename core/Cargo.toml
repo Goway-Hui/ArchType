@@ -53,6 +53,13 @@ archtype-voice = { path = "../voice", features = ["capture"], optional = true }
 # 会话读本地时间（日期时间候选）；libc 只在 unix 平台用到
 libc = "0.2"
 
+[target.'cfg(windows)'.dependencies]
+# 统计的「今天」用本地时间（libc 的 localtime_r 只在 unix 有）
+windows-sys = { version = "0.59", features = [
+    "Win32_Foundation",
+    "Win32_System_SystemInformation",
+] }
+
 [features]
 # 默认带语音：core 的构建者因此要装音频开发包（Linux 是 libasound2-dev，cpal 的其它平台各有对应依赖）。
 # 不需要语音的下游可以用 default-features = false。
