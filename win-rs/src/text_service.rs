@@ -291,9 +291,9 @@ impl ITfEditSession_Impl for FrameEditSession_Impl {
                         composition
                     }
                 };
-                let range = unsafe { composition.GetRange(ec) }?;
+                let range = unsafe { composition.GetRange() }?;
                 unsafe {
-                    range.SetText(0, 0, -1, text)?;
+                    range.SetText(ec, 0, text)?;
                 }
             }
             EditKind::Commit(text) => {
@@ -301,9 +301,9 @@ impl ITfEditSession_Impl for FrameEditSession_Impl {
                 this.state.composition_sinks.borrow_mut().remove(&this.key);
                 match composition {
                     Some(composition) => {
-                        let range = unsafe { composition.GetRange(ec) }?;
+                        let range = unsafe { composition.GetRange() }?;
                         unsafe {
-                            range.SetText(0, 0, -1, text)?;
+                            range.SetText(ec, 0, text)?;
                             composition.EndComposition(ec)?;
                         }
                     }
@@ -317,9 +317,9 @@ impl ITfEditSession_Impl for FrameEditSession_Impl {
                 let composition = this.state.compositions.borrow_mut().remove(&this.key);
                 this.state.composition_sinks.borrow_mut().remove(&this.key);
                 if let Some(composition) = composition {
-                    let range = unsafe { composition.GetRange(ec) }?;
+                    let range = unsafe { composition.GetRange() }?;
                     unsafe {
-                        range.SetText(0, 0, -1, &[])?;
+                        range.SetText(ec, 0, &[])?;
                         composition.EndComposition(ec)?;
                     }
                 }
