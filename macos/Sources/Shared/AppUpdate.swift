@@ -5,7 +5,7 @@
 
 public enum AppUpdate {
     /// 发布页（出错时给用户的链接）
-    public static let releasesPage = "https://github.com/Gloridust/ArchType/releases"
+    public static let releasesPage = "https://github.com/Goway-Hui/ArchType/releases"
     /// 输入法进程最多隔这么久查一次（秒）：一天
     public static let checkInterval: Int64 = 24 * 3600
 
@@ -67,14 +67,14 @@ public enum AppUpdate {
     /// 用完了回 403。所以检查更新先走网页：releases/latest 跳到最新正式版的 tag 页，releases.atom 列着最近的发布，
     /// 发布页的 SHA256SUMS 列着这一版的全部文件，RELEASE-NOTES.md 是更新说明。这些都不算接口次数。
     /// 和 Linux 的 fetch_latest_web 一样
-    public static let repoPage = "https://github.com/Gloridust/ArchType"
+    public static let repoPage = "https://github.com/Goway-Hui/ArchType"
     public static let latestPage = repoPage + "/releases/latest"
     public static let atomFeed = repoPage + "/releases.atom"
     /// 发布任务把「这一版要注意」那一节单独传成这个文件（0.7.1 起），取更新说明也不用接口
     public static let notesFile = "RELEASE-NOTES.md"
     /// 更早的版本没有那个文件：有新版时才问一次接口要说明
     public static func tagAPI(_ tag: String) -> String {
-        "https://api.github.com/repos/Gloridust/ArchType/releases/tags/\(tag)"
+        "https://api.github.com/repos/Goway-Hui/ArchType/releases/tags/\(tag)"
     }
 
     public static func downloadURL(tag: String, file: String) -> String {

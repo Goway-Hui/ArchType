@@ -8,9 +8,9 @@ import CryptoKit
 import Foundation
 
 enum LexiconPackInstaller {
-    static let releaseAPI = URL(string: "https://api.github.com/repos/Gloridust/ArchType/releases/latest")!
+    static let releaseAPI = URL(string: "https://api.github.com/repos/Goway-Hui/ArchType/releases/latest")!
     /// Beta 计划：最近的几十个发布（含预发布）
-    static let releasesAPI = URL(string: "https://api.github.com/repos/Gloridust/ArchType/releases?per_page=30")!
+    static let releasesAPI = URL(string: "https://api.github.com/repos/Goway-Hui/ArchType/releases?per_page=30")!
 
     struct Release {
         let tag: String
