@@ -4,9 +4,9 @@
 
 # ArchType
 
-**在 Linux 上打字，像微信输入法一样顺手。**
+**在 Linux 和 macOS 上打字，像微信输入法一样顺手。**
 
-一个 fcitx5 拼音输入法：长句一次打完、打一半就有词、按错键也能认出来，越用越懂你。
+一个 fcitx5 / macOS 拼音输入法：长句一次打完、打一半就有词、按错键也能认出来，越用越懂你。
 
 [![CI](https://github.com/Goway-Hui/ArchType/actions/workflows/ci.yml/badge.svg)](https://github.com/Goway-Hui/ArchType/actions/workflows/ci.yml)
 [![Release](https://img.shields.io/github/v/release/Goway-Hui/ArchType?include_prereleases&label=release)](https://github.com/Goway-Hui/ArchType/releases)
@@ -97,9 +97,26 @@
 ### 系统要求
 
 - Linux x86_64 或 arm64（aarch64），输入法框架 **fcitx5 5.0 或更新**。Arch 的安装包只有 x86_64
+- macOS 12 以上，Apple 芯片或 Intel（安装包是通用二进制）
 - 有现成安装包的发行版：**Ubuntu 24.04 / 26.04、Debian 13、deepin 25**（deb）、**Arch Linux** 及 EndeavourOS / Garuda / CachyOS（pkg.tar.zst）、**Fedora**（[rpm](#fedora)）、**NixOS**（[flake](#nixos--nix)）。其他发行版请[从源码构建](docs/INSTALL.md)
 - deepin 的安装包只有 x86_64
 - 「ArchType 设置」是 NSH 重写的界面，要求 GTK 4.14+（Arch、Fedora 40+、Ubuntu 24.04+、Debian 13+、deepin 25）。原来的 Python 界面只剩命令行部分（`archtype-config --setup` 等）
+
+### macOS
+
+到 [Releases](https://github.com/Goway-Hui/ArchType/releases) 下载 `ArchType-<版本>-macos.pkg`，双击安装：
+装到 `~/Library/Input Methods`，只装给当前用户、不要管理员密码，装完自动登记并切到 ArchType。安装包没有 Apple
+开发者签名，第一次打开要去「系统设置 → 隐私与安全性」点「仍要打开」。
+
+不想用 pkg：下载同名 `.zip`，解压后运行发布页里的 `install.sh`（或仓库里的 `macos/install.sh`）装到同一个位置，
+它会去掉隔离标记并登记输入法。
+
+装完在菜单栏的输入法菜单里选「ArchType 拼音」，打 `nihao` 试试。设置界面「ArchType 设置」随包带着，
+语音模型、词库包（万象）都在设置窗口里；命令行也能切词库：`ArchType --install-lexicon wanxiang`、
+`ArchType --use-lexicon rime-ice`。
+
+> macOS 的输入法外壳是 Rust 写的（`macos-rs/`）：InputMethodKit 控制器、候选框、语音浮条、TIS 登记、更新检查，
+> 引擎、会话、翻译、统计、语音和 Linux 用同一套 Rust 实现。
 
 ### 一行命令安装（推荐）
 
@@ -160,7 +177,7 @@ dpkg --print-architecture                      # amd64 或 arm64
 sudo apt install ./archtype_*.deb
 ```
 
-`apt` 会顺带装上设置界面要用的 GTK 4 和 libadwaita（`python3-gi`、`gir1.2-gtk-4.0`、`gir1.2-adw-1`）。
+`apt` 会顺带装上设置界面要用的 GTK 4、libadwaita 和 WebKitGTK（设置界面是 Rust + NSH 写的原生程序，不用 Python）。
 装完打开应用菜单里的「ArchType 设置」，点第一页的「一键设置」（或者在终端运行 `archtype-config --setup`）：
 输入法框架还不是 fcitx5 时问你要不要用 `im-config` 切过去（之后注销重新登录），fcitx5 正在运行的话问你要不要重启它，
 再把 ArchType 加进输入法列表。
@@ -176,7 +193,7 @@ sudo dnf install ./archtype-*.rpm
 archtype-config --setup             # 把 ArchType 加进 fcitx5 的输入法列表（fcitx5 在跑时会问要不要重启它）
 ```
 
-`dnf` 会顺带装上 fcitx5 和设置界面要用的 PyGObject、GTK 4、libadwaita。
+`dnf` 会顺带装上 fcitx5 和设置界面要用的 GTK 4、libadwaita、WebKitGTK。
 还没在用 fcitx5 的话，先 `sudo dnf install fcitx5 fcitx5-configtool fcitx5-gtk fcitx5-qt fcitx5-autostart` 并重新登录。
 
 ###### NixOS / Nix
@@ -563,11 +580,17 @@ ARCHTYPE_VOICE_WAV=说的话.wav ARCHTYPE_VOICE_EXPECT=期望的字 scripts/addo
 
 | 目录 | 内容 |
 |---|---|
-| `core/` | 拼音引擎和 C 接口 |
-| `fcitx5-addon/` | fcitx5 插件 |
-| `settings/` | 设置界面 `archtype-config`（Python、GTK 4、libadwaita） |
+| `core/` | 拼音引擎、会话（按键 → 候选 → 上屏）、翻译、统计、剪贴板，以及 C 接口 |
+| `fcitx5-addon/` | fcitx5 插件（C++，调 core 的 C 接口） |
 | `voice/` | 语音输入：热键状态机、麦克风采集、微信离线模型推理（插件通过 `core/src/voice_ffi.rs` 调用） |
 | `voice-daemon/` | 不依赖输入法的语音守护进程（X11，实验性，没进安装包） |
+| `cli/` | `archtype-config` 命令行（诊断、自检、词库包、更新检查） |
+| `settings-nsh/` | 跨平台设置界面（Rust + NSH；Linux 用 GTK 4，macOS 打包成 .app，两端共用一份） |
+| `net/` | 下载与校验（curl + SHA256SUMS），命令行、设置界面、macOS 外壳共用 |
+| `lexicon/` | 万象词库包的下载、校验、安装与切换，命令行与 macOS 外壳共用 |
+| `macos-rs/` | macOS 输入法外壳（Rust：InputMethodKit 控制器、候选框、语音浮条、更新、TIS 登记） |
+| `macos/` | macOS 安装形态：`Info.plist`、pkg 脚本、`build.sh`（不含代码） |
+| `icons/`、`themes/` | 图标（含 macOS 菜单栏的单色模板图）与 fcitx5 主题 |
 | `tools/` | 词库转换、评测用例生成 |
 | `docs/` | [引擎细节](docs/ENGINE.md)、[体验审查](docs/UX-AUDIT.md)、[接手指南](docs/HANDOFF.md)、[语音](docs/VOICE.md)、[数据格式](docs/DATA.md) |
 
