@@ -8,12 +8,18 @@ use objc2_foundation::{ns_string, NSBundle, NSString};
 
 use crate::config::Config;
 use crate::engine::{load_engine, EngineStore, Layout};
+use crate::stats::Stats;
+use crate::translate::{translate_config, TranslatorStore};
 
 pub struct Shared {
     pub layout: Layout,
     config: Mutex<Config>,
     config_stamp: Mutex<Option<SystemTime>>,
     engine: OnceLock<EngineStore>,
+    /// 进程里共用的翻译器（本地 llama-server 也只起一个）
+    translator: TranslatorStore,
+    /// 打字统计（进程共用；统计关着时它自己什么都不记）
+    stats: OnceLock<Stats>,
     /// 载入失败的原因（菜单里显示、自检打印）
     engine_error: Mutex<Option<String>>,
 }
@@ -44,11 +50,17 @@ impl Shared {
         let layout = Layout::new(resource_dir(), Layout::support_dir_standard());
         let config = Config::load(&layout.config_path().to_string_lossy());
         let stamp = modified(&layout.config_path());
+        let translator = TranslatorStore::new();
+        translator
+            .get()
+            .configure(translate_config(&config, &layout));
         Self {
             layout,
             config: Mutex::new(config),
             config_stamp: Mutex::new(stamp),
             engine: OnceLock::new(),
+            translator,
+            stats: OnceLock::new(),
             engine_error: Mutex::new(None),
         }
     }
@@ -74,6 +86,19 @@ impl Shared {
         self.engine.get().copied()
     }
 
+    pub fn translator(&self) -> &'static crate::translate::Translator {
+        self.translator.get()
+    }
+
+    /// 打字统计（统计关着也建，开着时才开始记）。
+    pub fn stats(&self) -> &'static Stats {
+        self.stats.get_or_init(|| {
+            let path = crate::stats::stats_path(&self.layout.support_dir);
+            let enabled = self.config().typing_stats;
+            Stats::new(&path, enabled).expect("建统计记录器")
+        })
+    }
+
     pub fn engine_error(&self) -> Option<String> {
         self.engine_error.lock().unwrap().clone()
     }
@@ -92,6 +117,10 @@ impl Shared {
         }
         *known = stamp;
         let config = Config::load(&path.to_string_lossy());
+        self.translator
+            .get()
+            .configure(crate::translate::translate_config(&config, &self.layout));
+        self.stats().set_enabled(config.typing_stats);
         *self.config.lock().unwrap() = config.clone();
         Some(config)
     }

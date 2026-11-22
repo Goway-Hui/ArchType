@@ -8,8 +8,11 @@ use std::path::PathBuf;
 use archtype_core::session::{Candidate, Frame, Key, Mode, Session};
 use archtype_core::Engine;
 
+use archtype_core::translate::Translator;
+
 use crate::config::Config;
 use crate::engine::{apply_engine_settings, load_engine, EngineStore, Layout};
+use crate::translate::translate_config;
 
 /// 每上屏这么多次存一次（系统可能随时杀掉输入法进程）。
 const SAVE_EVERY: usize = 20;
@@ -23,6 +26,8 @@ pub struct Input {
     owned_engine: Option<Box<Engine>>,
     /// 进程里共用的引擎（`attach` 传进来的）。
     shared_engine: Option<EngineStore>,
+    /// 进程里共用的翻译器（`attach` 传进来的，所有输入框共用一个本地 server）
+    shared_translator: Option<&'static Translator>,
     session: Session<'static>,
 }
 
@@ -31,14 +36,22 @@ impl Input {
     ///
     /// 引擎必须在 `'static` 的地方（进程级 `OnceLock<Box<Engine>>`，永不释放），
     /// 外壳在配置变了的时候可以往它上面重新套设置（[`apply_engine_settings`]）。
-    pub fn attach(engine: EngineStore, layout: Layout, config: Config) -> Self {
-        let session = Session::with_engine(engine.get());
+    pub fn attach(
+        engine: EngineStore,
+        translator: Option<&'static Translator>,
+        layout: Layout,
+        config: Config,
+    ) -> Self {
+        let mut session = Session::with_engine(engine.get());
+        session
+            .set_translator(translator.map(|t| t as &dyn archtype_core::session::TranslateBackend));
         let mut input = Self {
             layout,
             config: config.clone(),
             commits_since_save: 0,
             owned_engine: None,
             shared_engine: Some(engine),
+            shared_translator: translator,
             session,
         };
         input.apply_config(&config, false, false);
@@ -57,6 +70,7 @@ impl Input {
             commits_since_save: 0,
             owned_engine: Some(engine),
             shared_engine: None,
+            shared_translator: None,
             session,
         };
         input.apply_config(&config, false, false);
@@ -82,6 +96,9 @@ impl Input {
             }
         };
         let problems = apply_engine_settings(engine, config, &self.layout);
+        if let Some(translator) = self.shared_translator {
+            translator.configure(translate_config(config, &self.layout));
+        }
         self.session
             .configure(config.session_config(translate_available, auto_pair_ok));
         problems
@@ -144,6 +161,37 @@ impl Input {
         self.session.shown()
     }
 
+    /// 这次上屏的输入来源（统计口径：quanpin/shuangpin/wubi/english/translate）。
+    pub fn commit_source(&self) -> &'static str {
+        match self.session.mode() {
+            Mode::English => "english",
+            Mode::Translate => "translate",
+            Mode::Chinese => {
+                if self.config.wubi() {
+                    "wubi"
+                } else if self.config.shuangpin() {
+                    "shuangpin"
+                } else {
+                    "quanpin"
+                }
+            }
+        }
+    }
+
+    /// 双拼方案名（只有双拼时统计才记）。
+    pub fn commit_scheme(&self) -> String {
+        if self.config.shuangpin() {
+            self.config.shuangpin_scheme.clone()
+        } else {
+            String::new()
+        }
+    }
+
+    /// 上屏的是第几个候选（1 起）；原样上屏输入、标点、emoji 时是 0。
+    pub fn last_choice_index(&self) -> usize {
+        self.session.last_choice_index()
+    }
+
     pub fn frame(&mut self, handled: bool) -> Frame {
         self.session.frame(handled)
     }
@@ -185,7 +233,8 @@ impl Input {
 
 impl Drop for Input {
     fn drop(&mut self) {
-        // 先把会话对引擎的引用卸掉，再按字段顺序 drop（engine 在 session 前面）
+        // 先把会话对引擎、翻译器的引用卸掉，再按字段顺序 drop
+        self.session.set_translator(None);
         self.session.set_engine(None);
     }
 }

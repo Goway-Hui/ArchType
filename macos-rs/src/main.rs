@@ -7,6 +7,8 @@ pub mod config;
 pub mod engine;
 pub mod input;
 pub mod keys;
+pub mod stats;
+pub mod translate;
 
 #[cfg(target_os = "macos")]
 mod macos;

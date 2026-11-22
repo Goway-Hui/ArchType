@@ -28,6 +28,16 @@ fn state_home() -> String {
     std::env::var("XDG_STATE_HOME").unwrap_or_else(|_| format!("{}/.local/state", home()))
 }
 
+/// macOS 上输入法的数据目录（和输入法进程一致：`~/Library/Application Support/ArchType`）。
+fn support_dir() -> String {
+    format!("{}/Library/Application Support/ArchType", home())
+}
+
+/// 设置界面跑在哪：macOS 的路径、重载方式都和 Linux 不一样。
+pub fn on_macos() -> bool {
+    cfg!(target_os = "macos")
+}
+
 fn read(path: &str) -> String {
     fs::read_to_string(path).unwrap_or_default()
 }
@@ -110,15 +120,24 @@ fn json_set(path: &str, key: &str, value: &str) -> bool {
 }
 
 fn classicui_path() -> String {
+    // fcitx5 经典界面的主题和字体：macOS 上没有这一套
     format!("{}/fcitx5/conf/classicui.conf", config_home())
 }
 
 fn state_path() -> String {
-    format!("{}/archtype/state.json", state_home())
+    if on_macos() {
+        format!("{}/state.json", support_dir())
+    } else {
+        format!("{}/archtype/state.json", state_home())
+    }
 }
 
 fn translate_key_path() -> String {
-    format!("{}/archtype/translate.key", config_home())
+    if on_macos() {
+        format!("{}/translate.key", support_dir())
+    } else {
+        format!("{}/archtype/translate.key", config_home())
+    }
 }
 
 /// 语音包：地址、大小、MD5、内层模型包名、词表文件名。
@@ -987,6 +1006,14 @@ fn font_size_of(font: &str) -> String {
         .to_string()
 }
 
+/// archtype.conf 的 CandidateFontSize：spec 里是 10–40，界面滑杆是 8–32，按 10–32 取。
+fn clamp_candidate_font_size(value: &str) -> String {
+    match value.trim().parse::<i64>() {
+        Ok(n) => n.clamp(10, 32).to_string(),
+        Err(_) => "17".to_string(),
+    }
+}
+
 /// 配置和数据文件。
 #[module]
 pub struct Config;
@@ -995,12 +1022,25 @@ pub struct Config;
 impl Config {
     /// archtype.conf 的完整路径。
     pub fn config_path() -> String {
-        format!("{}/fcitx5/conf/archtype.conf", config_home())
+        if on_macos() {
+            format!("{}/archtype.conf", support_dir())
+        } else {
+            format!("{}/fcitx5/conf/archtype.conf", config_home())
+        }
     }
 
     /// 用户数据目录（词库、模型、自定义词）。
     pub fn data_dir() -> String {
-        format!("{}/archtype", data_home())
+        if on_macos() {
+            support_dir()
+        } else {
+            format!("{}/archtype", data_home())
+        }
+    }
+
+    /// 这个界面跑在 macOS 上（UI 按它隐藏 Linux 专属的项）。
+    pub fn platform_is_macos() -> bool {
+        on_macos()
     }
 
     /// 读 archtype.conf 原文；读不到返回空串。
@@ -1029,12 +1069,20 @@ impl Config {
     }
 
     /// 读 classicui.conf（fcitx5 经典界面主题、字体）。
+    ///
+    /// macOS 上没有 fcitx5：候选框主题记在 state.json 里（键名不变），界面代码两端一样。
     pub fn classicui_get(key: String) -> String {
+        if on_macos() {
+            return json_get(&state_path(), &format!("classicui.{key}"));
+        }
         get_key(&classicui_path(), &key)
     }
 
     /// 写 classicui.conf。
     pub fn classicui_set(key: String, value: String) -> bool {
+        if on_macos() {
+            return json_set(&state_path(), &format!("classicui.{key}"), &value);
+        }
         set_key(&classicui_path(), &key, &value)
     }
 
@@ -1042,6 +1090,10 @@ impl Config {
     /// 走 fcitx5 的 ReloadAddonConfig（旧版设置界面每次保存都调）；`fcitx5-remote -r`
     /// 只重载输入法配置，插件不会重新读。
     pub fn reload_config() -> bool {
+        // macOS 的输入法自己盯着 archtype.conf 的修改时间，改完就重读，不用通知
+        if on_macos() {
+            return true;
+        }
         std::process::Command::new("gdbus")
             .args([
                 "call",
@@ -1061,6 +1113,10 @@ impl Config {
 
     /// 重启 fcitx5（换字体、换主题这类要整个进程重来的地方）。
     pub fn restart_fcitx() -> bool {
+        // macOS 上没有 fcitx5 可以重启；设置改完输入法立刻按新设置走，这里什么也不用做。
+        if on_macos() {
+            return true;
+        }
         std::process::Command::new("gdbus")
             .args([
                 "call",
@@ -1086,6 +1142,9 @@ impl Config {
     /// 版本行副标题：包管理器装的显示「X 管理的安装」，否则说明是源码安装。
     /// 只识别 pacman、dpkg、rpm；其余发行版的完整判定（NixOS、deepin、不可变系统）未移植。
     pub fn install_source() -> String {
+        if on_macos() {
+            return "装到 ~/Library/Input Methods，更新时下载新的 pkg 再装一遍".to_string();
+        }
         for (manager, query) in [
             ("pacman", vec!["-Qq", "archtype"]),
             ("dpkg", vec!["-s", "archtype"]),
@@ -1107,8 +1166,10 @@ impl Config {
 
     /// fcitx5 是否在运行（pgrep -x fcitx5，同旧版 _fcitx_running）。
     pub fn fcitx_running() -> bool {
+        // macOS 上输入法由系统按需拉起，看 ArchType 进程在不在
+        let name = if on_macos() { "ArchType" } else { "fcitx5" };
         std::process::Command::new("pgrep")
-            .args(["-x", "fcitx5"])
+            .args(["-x", name])
             .stdout(std::process::Stdio::null())
             .stderr(std::process::Stdio::null())
             .status()
@@ -1116,13 +1177,22 @@ impl Config {
             .unwrap_or(false)
     }
 
-    /// 当前候选字号（classicui 的 Font 末尾数字）。
+    /// 当前候选字号（Linux 是 classicui 的 Font 末尾数字；macOS 是 archtype.conf 的 CandidateFontSize）。
     pub fn font_size() -> String {
+        if on_macos() {
+            return clamp_candidate_font_size(&Config::get("CandidateFontSize".to_string()));
+        }
         font_size_of(&Config::classicui_get("Font".to_string()))
     }
 
-    /// 改候选字号，保留字体名。
+    /// 改候选字号（Linux 保留字体名；macOS 写 CandidateFontSize）。
     pub fn set_font_size(size: String) -> bool {
+        if on_macos() {
+            let value = clamp_candidate_font_size(&size);
+            let ok = Config::set("CandidateFontSize".to_string(), value);
+            Config::reload_config();
+            return ok;
+        }
         let font = Config::classicui_get("Font".to_string());
         if font.is_empty() {
             return Config::classicui_set("Font".to_string(), format!("Sans {size}"));
@@ -1413,6 +1483,15 @@ impl Config {
             Err(_) => return serde_json::json!({"can_install": false, "reason": "读不懂发布信息"}).to_string(),
         };
         let version = value["version"].as_str().unwrap_or("").to_string();
+        if on_macos() {
+            return serde_json::json!({
+                "can_install": false,
+                "reason": "macOS 上用安装包更新：下载新的 pkg 后双击安装（会装到 ~/Library/Input Methods）",
+                "version": version,
+                "files": [],
+            })
+            .to_string();
+        }
         let assets = &value["assets"];
         let (manager, distro, arch, reason) = update_platform();
         if !reason.is_empty() {

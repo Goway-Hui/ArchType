@@ -12,7 +12,6 @@ use objc2_app_kit::{
 use objc2_foundation::{NSNotFound, NSObjectProtocol, NSRange, NSString};
 use objc2_input_method_kit::IMKInputController;
 
-use crate::config::Config;
 use crate::input::{make_key, Input};
 use crate::keys::{keysym, virtual_key};
 use crate::macos::app::{self, BUNDLE_ID};
@@ -84,6 +83,7 @@ define_class!(
         fn deactivate(&self, client: Option<&AnyObject>) {
             self.flush(client);
             self.hide_panel();
+            app::start().stats().flush();
         }
 
         #[unsafe(method(commitComposition:))]
@@ -153,6 +153,7 @@ impl Controller {
         if input.is_none() {
             *input = Some(Input::attach(
                 engine,
+                Some(shared.translator()),
                 shared.layout.clone(),
                 shared.config(),
             ));
@@ -160,7 +161,8 @@ impl Controller {
         let mut config_changed = false;
         if let Some(config) = shared.reload_config_if_changed() {
             if let Some(input) = input.as_mut() {
-                let problems = input.apply_config(&config, translate_available(&config), false);
+                let available = crate::translate::translate_available(&config, &shared.layout);
+                let problems = input.apply_config(&config, available, false);
                 for problem in problems {
                     eprintln!("ArchType: {problem}");
                 }
@@ -176,6 +178,10 @@ impl Controller {
 
     fn handle_key_down(&self, event: &NSEvent, client: &AnyObject) -> Bool {
         let key_code = event.keyCode();
+        if !event.isARepeat() {
+            // 自动重复不算；密码框（安全输入）里的也不记
+            app::start().stats().record_key(key_code, secure_input());
+        }
         let characters = event.characters().map(|s| s.to_string());
         let ignoring = event.charactersIgnoringModifiers().map(|s| s.to_string());
         let flags = event.modifierFlags().0 as u64;
@@ -213,13 +219,23 @@ impl Controller {
         let frame = {
             let mut input = self.ivars().input.borrow_mut();
             let Some(input) = input.as_mut() else {
-                return false;
+                return Bool::NO;
             };
-            input.key(&key)
+            let frame = input.key(&key);
+            if let Some(text) = &frame.commit {
+                app::start().stats().record_commit(
+                    text,
+                    input.commit_source(),
+                    &input.commit_scheme(),
+                    input.last_choice_index(),
+                    secure_input(),
+                );
+            }
+            frame
         };
 
         self.apply_frame(&frame, client);
-        frame.handled
+        Bool::from(frame.handled)
     }
 
     /// 修饰键：Shift 单按切中英（会话按按住多久、有没有按别的键判断）。
@@ -372,9 +388,13 @@ fn utf16_offset(text: &str, byte_offset: usize) -> usize {
     text[..boundary].encode_utf16().count()
 }
 
-/// 配好了翻译服务（有本地模型或填了接口）才给「译」这一档。
-fn translate_available(config: &Config) -> bool {
-    config.translate && (config.translate_local || !config.translate_base_url.is_empty())
+/// 系统现在是不是安全输入（密码框、终端的安全键盘输入）：统计和学习都不记。
+fn secure_input() -> bool {
+    #[link(name = "Carbon")]
+    unsafe extern "C" {
+        fn IsSecureEventInputEnabled() -> u8;
+    }
+    unsafe { IsSecureEventInputEnabled() != 0 }
 }
 
 /// 光标（插入点）的屏幕矩形，候选框画在它下面。
