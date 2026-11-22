@@ -12,6 +12,8 @@ description = "ArchType 的 macOS 输入法外壳：IMKServer + IMKInputControll
 [dependencies]
 # 平台无关的外壳逻辑（按键、设置、引擎、会话、统计、翻译、更新、语音）
 archtype-shell = { path = "../shell" }
+# 会话的 Frame / Panel / Mode 类型（外壳照它上屏、画候选框）
+archtype-core = { path = "../core", default-features = false, features = ["voice"] }
 archtype-lexicon = { path = "../lexicon" }
 
 [target.'cfg(target_os = "macos")'.dependencies]

@@ -61,6 +61,7 @@ dependencies = [
 name = "archtype-macos"
 version = "0.1.0"
 dependencies = [
+ "archtype-core",
  "archtype-lexicon",
  "archtype-shell",
  "objc2",
