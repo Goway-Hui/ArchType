@@ -3,7 +3,6 @@
 #![cfg(windows)]
 
 use archtype_shell::config::Config;
-use archtype_shell::engine::Layout;
 use archtype_shell::input::{make_key, Input};
 
 fn main() {
@@ -63,7 +62,7 @@ fn selftest() -> bool {
 
     let mut frame = input.frame(false);
     for c in ['n', 'i', 'h', 'a', 'o'] {
-        frame = input.key(&make_key(*c as u32, 0, false, None, None, 0, 0, false, 0));
+        frame = input.key(&make_key(c as u32, 0, false, None, None, 0, 0, false, 0));
     }
     let first = input
         .shown()
