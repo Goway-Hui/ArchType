@@ -309,6 +309,32 @@ define_class!(
             }
         }
 
+        /// 面板上点了一个候选（第几个，按显示的顺序）。
+        #[unsafe(method(candidateClicked:))]
+        fn candidate_clicked(&self, index: usize) {
+            let frame = {
+                let mut input = self.ivars().input.borrow_mut();
+                match input.as_mut() {
+                    Some(input) => input.select(index),
+                    None => return,
+                }
+            };
+            if let Some(client) = self.current_client() {
+                self.apply_frame(&frame, &client);
+            }
+            let composing = self
+                .ivars()
+                .input
+                .borrow()
+                .as_ref()
+                .map(|input| input.composing())
+                .unwrap_or(false);
+            if !composing {
+                self.ivars().voice_panel.set(false);
+                self.hide_panel();
+            }
+        }
+
         #[unsafe(method(showAbout:))]
         fn show_about(&self, _sender: Option<&AnyObject>) {
             show_about_panel();
@@ -360,7 +386,9 @@ impl Controller {
             let Some(mtm) = MainThreadMarker::new() else {
                 return;
             };
-            *panel = Some(CandidatePanel::new(mtm));
+            let created = CandidatePanel::new(mtm);
+            created.set_target(self.as_any());
+            *panel = Some(created);
         }
         if let Some(panel) = panel.as_ref() {
             panel.show(&page, caret_rect(&client));
@@ -755,7 +783,9 @@ impl Controller {
             let Some(mtm) = MainThreadMarker::new() else {
                 return;
             };
-            *panel = Some(CandidatePanel::new(mtm));
+            let created = CandidatePanel::new(mtm);
+            created.set_target(self.as_any());
+            *panel = Some(created);
         }
         if let Some(panel) = panel.as_ref() {
             panel.show(&page, caret_rect(client));

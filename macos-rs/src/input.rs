@@ -200,6 +200,13 @@ impl Input {
         self.session.last_choice_index()
     }
 
+    /// 选候选框里显示的第 `index` 个（鼠标点击用）。
+    pub fn select(&mut self, index: usize) -> Frame {
+        let frame = self.session.select(index);
+        self.after_frame(&frame);
+        frame
+    }
+
     pub fn frame(&mut self, handled: bool) -> Frame {
         self.session.frame(handled)
     }

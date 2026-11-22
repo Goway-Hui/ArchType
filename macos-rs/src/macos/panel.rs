@@ -3,14 +3,15 @@
 //! 横排 / 竖排跟着设置；展开面板（下键）每行 6 个，表情面板同样是网格，工具栏是一列；
 //! 互译时上方是方向标签、下方是状态/提示。
 
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 
 use objc2::rc::Retained;
 use objc2::runtime::AnyObject;
 use objc2::{define_class, msg_send, DefinedClass, MainThreadMarker};
 use objc2_app_kit::{
-    NSBackingStoreType, NSBezierPath, NSColor, NSFloatingWindowLevel, NSFont, NSFontAttributeName,
-    NSForegroundColorAttributeName, NSPanel, NSStringDrawing, NSView, NSWindowStyleMask,
+    NSBackingStoreType, NSBezierPath, NSColor, NSEvent, NSFloatingWindowLevel, NSFont,
+    NSFontAttributeName, NSForegroundColorAttributeName, NSPanel, NSStringDrawing, NSView,
+    NSWindowStyleMask,
 };
 use objc2_foundation::{NSAttributedStringKey, NSDictionary, NSPoint, NSRect, NSSize, NSString};
 
@@ -46,6 +47,8 @@ impl Page {
 
 struct ViewIvars {
     page: RefCell<Page>,
+    /// 点击候选时通知谁（控制器的裸指针：面板活在控制器里，不会比它长）
+    target: Cell<*mut AnyObject>,
 }
 
 define_class!(
@@ -66,6 +69,30 @@ define_class!(
             let page = self.ivars().page.borrow();
             draw_page(&page);
         }
+
+        /// 点候选：算出点的是第几个，交给控制器选。
+        #[unsafe(method(mouseDown:))]
+        fn mouse_down(&self, event: Option<&NSEvent>) {
+            let Some(event) = event else {
+                return;
+            };
+            let point = self.convertPoint_fromView(event.locationInWindow(), None);
+            let index = clicked_index(&self.ivars().page.borrow(), point);
+            let Some(index) = index else {
+                return;
+            };
+            let target = self.ivars().target.get();
+            if !target.is_null() {
+                unsafe {
+                    let _: () = msg_send![target, candidateClicked: index];
+                }
+            }
+        }
+
+        #[unsafe(method(acceptsFirstMouse:))]
+        fn accepts_first_mouse(&self, _event: Option<&NSEvent>) -> bool {
+            true
+        }
     }
 );
 
@@ -74,8 +101,15 @@ impl CandidateView {
     fn make(mtm: MainThreadMarker, frame: NSRect) -> Retained<Self> {
         let this = mtm.alloc::<Self>().set_ivars(ViewIvars {
             page: RefCell::new(Page::default()),
+            target: Cell::new(std::ptr::null_mut()),
         });
         unsafe { msg_send![super(this), initWithFrame: frame] }
+    }
+
+    fn set_target(&self, target: &AnyObject) {
+        self.ivars()
+            .target
+            .set(target as *const AnyObject as *mut AnyObject);
     }
 
     fn set_page(&self, page: Page) {
@@ -334,6 +368,24 @@ fn draw_page(page: &Page) {
     }
 }
 
+/// 点在哪个候选上（视图坐标，y 向下）。
+fn clicked_index(page: &Page, point: NSPoint) -> Option<usize> {
+    let layout = layout(page);
+    let item_height = page.font_size * 1.6 + PADDING_Y;
+    for (i, position) in layout.positions.iter().enumerate() {
+        let width = layout.widths[i] + PADDING_X;
+        let top = position.y - PADDING_Y / 2.0;
+        if point.x >= position.x
+            && point.x <= position.x + width
+            && point.y >= top
+            && point.y <= top + item_height
+        {
+            return Some(i);
+        }
+    }
+    None
+}
+
 fn draw_aux(text: &str, point: NSPoint, attrs: &NSDictionary<NSAttributedStringKey, AnyObject>) {
     let string = NSString::from_str(text);
     unsafe { string.drawAtPoint_withAttributes(point, Some(attrs)) };
@@ -360,7 +412,8 @@ impl CandidatePanel {
         window.setHasShadow(true);
         window.setBackgroundColor(Some(&NSColor::clearColor()));
         window.setLevel(NSFloatingWindowLevel);
-        window.setIgnoresMouseEvents(true);
+        // 鼠标能点候选（点空白处不抢焦点，NonactivatingPanel 保证）
+        window.setIgnoresMouseEvents(false);
 
         let view = CandidateView::make(mtm, frame);
         window.setContentView(Some(&view));
@@ -383,6 +436,11 @@ impl CandidatePanel {
         self.window.setContentSize(size);
         self.window.setFrameOrigin(origin);
         self.window.orderFrontRegardless();
+    }
+
+    /// 点击候选时通知谁（控制器）。
+    pub fn set_target(&self, target: &AnyObject) {
+        self.view.set_target(target);
     }
 
     pub fn hide(&self) {
