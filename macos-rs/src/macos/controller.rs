@@ -488,7 +488,11 @@ impl Controller {
                 archtype_core::session::Panel::Expanded => (false, Some(Page::GRID_COLUMNS)),
                 archtype_core::session::Panel::Emoji => (false, Some(Page::GRID_COLUMNS)),
                 archtype_core::session::Panel::Tool => (true, None),
+                // 联想照普通候选画；没按 Tab 进联想行时不画序号（数字照常交给应用）
+                archtype_core::session::Panel::Association => (!input.config().horizontal, None),
             };
+            let labels = !(matches!(frame.panel, archtype_core::session::Panel::Association)
+                && frame.cand_cursor.is_none());
             let (aux_top, aux_bottom) = match &frame.translate {
                 Some(view) => (
                     Some(view.title.clone()),
@@ -517,6 +521,7 @@ impl Controller {
                 columns,
                 aux_top,
                 aux_bottom,
+                labels,
                 font_size: input.config().candidate_font_size,
             }
         };

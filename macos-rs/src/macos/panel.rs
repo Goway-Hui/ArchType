@@ -30,6 +30,8 @@ pub struct Page {
     pub aux_top: Option<String>,
     /// 候选下方的一行（互译的「翻译中…」「回车发送」，工具栏提示）
     pub aux_bottom: Option<String>,
+    /// 画序号（联想没按 Tab 进联想行时不画：数字照常交给应用）
+    pub labels: bool,
     pub font_size: f64,
 }
 
@@ -137,7 +139,11 @@ fn layout(page: &Page) -> Layout {
 
     let mut widths = Vec::with_capacity(page.texts.len());
     for (i, text) in page.texts.iter().enumerate() {
-        let mut width = text_size(&format!("{}.", i + 1), &label_attrs).width;
+        let mut width = if page.labels {
+            text_size(&format!("{}.", i + 1), &label_attrs).width
+        } else {
+            0.0
+        };
         width += text_size(text, &attrs).width;
         if let Some(comment) = page.comments.get(i) {
             if !comment.is_empty() {
@@ -284,8 +290,12 @@ fn draw_page(page: &Page) {
         } else {
             &label_attrs
         };
-        draw_aux(&number, position, number_attrs);
-        let number_width = text_size(&number, number_attrs).width;
+        let number_width = if page.labels {
+            draw_aux(&number, position, number_attrs);
+            text_size(&number, number_attrs).width
+        } else {
+            0.0
+        };
 
         let attrs = if selected {
             &highlight_attrs
@@ -295,7 +305,10 @@ fn draw_page(page: &Page) {
         let body = NSString::from_str(text);
         unsafe {
             body.drawAtPoint_withAttributes(
-                NSPoint::new(position.x + number_width + 4.0, position.y),
+                NSPoint::new(
+                    position.x + number_width + if page.labels { 4.0 } else { 0.0 },
+                    position.y,
+                ),
                 Some(attrs),
             );
         }
