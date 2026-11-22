@@ -11,6 +11,7 @@ pub mod stats;
 pub mod translate;
 pub mod update;
 pub mod voice;
+pub mod window_mode;
 
 #[cfg(target_os = "macos")]
 mod macos;

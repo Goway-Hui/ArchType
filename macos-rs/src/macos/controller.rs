@@ -18,6 +18,7 @@ use crate::keys::{keysym, virtual_key, VoiceKey};
 use crate::macos::app::{self};
 use crate::macos::panel::{CandidatePanel, Page};
 use crate::voice::{self, Voice};
+use crate::window_mode::WindowFocus;
 
 struct Ivars {
     input: RefCell<Option<Input>>,
@@ -30,6 +31,10 @@ struct Ivars {
     voice_key: Cell<Option<VoiceKey>>,
     /// 语音状态轮询的定时器
     voice_timer: RefCell<Option<Retained<NSTimer>>>,
+    /// 这个输入框是不是已经按 InitialMode 定过模式
+    initial_mode_done: Cell<bool>,
+    /// 上一次的应用 / 窗口（WindowMode）
+    focus: RefCell<WindowFocus>,
 }
 
 define_class!(
@@ -56,6 +61,8 @@ define_class!(
                 voice: RefCell::new(None),
                 voice_key: Cell::new(None),
                 voice_timer: RefCell::new(None),
+                initial_mode_done: Cell::new(false),
+                focus: RefCell::new(WindowFocus::new()),
             });
             unsafe {
                 msg_send![super(this), initWithServer: server, delegate: delegate, client: client]
@@ -142,7 +149,9 @@ define_class!(
             *self.ivars().last_marked.borrow_mut() = (String::new(), 0);
             super::external::set_active(self.as_any());
             if let Some(client) = client {
-                self.prepare(client);
+                if self.prepare(client) {
+                    self.apply_modes_on_activate(client);
+                }
             }
         }
 
@@ -236,6 +245,55 @@ define_class!(
 );
 
 impl Controller {
+    /// 输入框启用了：进程里第一次按 InitialMode 定中 / 英；换了应用 / 窗口按 WindowMode 定一次。
+    fn apply_modes_on_activate(&self, _client: &AnyObject) {
+        let shared = app::start();
+        let config = shared.config();
+        let mut target: Option<Mode> = None;
+        if !self.ivars().initial_mode_done.get() {
+            self.ivars().initial_mode_done.set(true);
+            target = match config.initial_mode {
+                InitialMode::Chinese => Some(Mode::Chinese),
+                InitialMode::English => Some(Mode::English),
+                InitialMode::Last => None,
+            };
+        }
+        if let Some(key) = self.focus_key() {
+            let moved = self.ivars().focus.borrow_mut().moved(&key);
+            if moved && target.is_none() {
+                target = match config.window_mode {
+                    WindowMode::Chinese => Some(Mode::Chinese),
+                    WindowMode::English => Some(Mode::English),
+                    WindowMode::Same => None,
+                };
+            }
+        }
+        let Some(mode) = target else {
+            return;
+        };
+        let frame = {
+            let mut input = self.ivars().input.borrow_mut();
+            match input.as_mut() {
+                Some(input) => input.set_mode(mode),
+                None => return,
+            }
+        };
+        if let Some(client) = self.current_client() {
+            self.apply_frame(&frame, &client);
+        }
+    }
+
+    /// 现在这个输入框在哪个应用、哪个窗口（问不到窗口号时只看应用）。
+    fn focus_key(&self) -> Option<String> {
+        let client = self.current_client()?;
+        let bundle: Option<Retained<NSString>> = unsafe { msg_send![&*client, bundleIdentifier] };
+        let app = bundle.map(|value| value.to_string()).unwrap_or_default();
+        let window: Option<Retained<AnyObject>> = unsafe { msg_send![&*client, window] };
+        let number: Option<isize> =
+            window.map(|window| unsafe { msg_send![&*window, windowNumber] });
+        Some(WindowFocus::key(&app, number))
+    }
+
     /// 语音键（修饰键）：flagsChanged 里看按下 / 松开；是语音键就吃了，别当成普通 Shift 处理。
     fn voice_modifier_changed(&self, event: &NSEvent) -> bool {
         let Some(key) = self.ivars().voice_key.get() else {
