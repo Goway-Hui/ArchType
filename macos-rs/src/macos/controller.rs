@@ -1,20 +1,20 @@
 //! IMK 输入控制器：每个输入框一个。按键翻成核心的 `Key` 交给会话，结果写回输入框和候选框。
 
-use std::cell::{Cell, RefCell};
+use std::cell::RefCell;
 
 use objc2::rc::Retained;
 use objc2::runtime::{AnyObject, Bool};
-use objc2::{define_class, msg_send, sel, MainThreadMarker};
+use objc2::{define_class, msg_send, sel, DefinedClass, MainThreadMarker};
 use objc2_app_kit::{
-    NSAlert, NSApplication, NSEvent, NSEventModifierFlags, NSEventType, NSMenu, NSMenuItem,
-    NSPoint, NSRect, NSSize,
+    NSAlert, NSEvent, NSEventModifierFlags, NSEventType, NSMenu, NSMenuItem, NSPoint, NSRect,
+    NSSize,
 };
 use objc2_foundation::{NSNotFound, NSObjectProtocol, NSRange, NSString};
 use objc2_input_method_kit::IMKInputController;
 
 use crate::config::Config;
 use crate::input::{make_key, Input};
-use crate::keys::{keysym, virtual_key, KeyInput, Modifiers};
+use crate::keys::{keysym, virtual_key};
 use crate::macos::app::{self, BUNDLE_ID};
 use crate::macos::panel::{CandidatePanel, Page};
 
@@ -35,6 +35,7 @@ define_class!(
 
     impl Controller {
         #[unsafe(method(initWithServer:delegate:client:))]
+        #[unsafe(method_family = init)]
         fn init_with_server(
             this: objc2::rc::Allocated<Self>,
             server: Option<&objc2_input_method_kit::IMKServer>,
@@ -74,7 +75,9 @@ define_class!(
         #[unsafe(method(activateServer:))]
         fn activate(&self, client: Option<&AnyObject>) {
             *self.ivars().last_marked.borrow_mut() = (String::new(), 0);
-            self.prepare(client);
+            if let Some(client) = client {
+                self.prepare(client);
+            }
         }
 
         #[unsafe(method(deactivateServer:))]
@@ -95,7 +98,9 @@ define_class!(
 
         #[unsafe(method_id(menu))]
         fn menu(&self) -> Option<Retained<NSMenu>> {
-            let mtm = MainThreadMarker::new()?;
+            let Some(mtm) = MainThreadMarker::new() else {
+                return None;
+            };
             let menu = NSMenu::initWithTitle(mtm.alloc(), &NSString::from_str("ArchType"));
             let settings = unsafe {
                 NSMenuItem::initWithTitle_action_keyEquivalent(
@@ -139,7 +144,7 @@ impl Controller {
     }
 
     /// 引擎就绪了就把会话建好（第一次按键、激活时可能还没载入完）。
-    fn prepare(&self, client: Option<&AnyObject>) -> bool {
+    fn prepare(&self, client: &AnyObject) -> bool {
         let shared = app::start();
         let Some(engine) = shared.engine() else {
             return false;
@@ -185,7 +190,7 @@ impl Controller {
             let mut input = self.ivars().input.borrow_mut();
             if let Some(input) = input.as_mut() {
                 if input.composing() {
-                    return true;
+                    return Bool::YES;
                 }
             }
             return false;
@@ -402,7 +407,6 @@ fn show_about_panel() {
     let text = format!("版本 {}（{}）", app::version(), BUNDLE_ID);
     alert.setInformativeText(&NSString::from_str(&text));
     alert.runModal();
-    let _ = NSApplication::sharedApplication(mtm);
 }
 
 /// 给 `mod.rs` 用：当前进程的输入控制器类名要和 Info.plist 一致。

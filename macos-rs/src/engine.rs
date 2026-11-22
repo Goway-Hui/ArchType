@@ -19,6 +19,11 @@ pub struct EngineStore {
     ptr: *mut Engine,
 }
 
+// SAFETY: EngineStore 只在输入法进程里主线程上读写（配置变了、载入学习数据）；
+// 后台线程只把它放进 OnceLock，之后不再碰引擎。
+unsafe impl Send for EngineStore {}
+unsafe impl Sync for EngineStore {}
+
 impl EngineStore {
     pub fn new(engine: Engine) -> Self {
         Self {

@@ -7,7 +7,6 @@ mod app;
 mod controller;
 mod panel;
 
-use objc2::rc::Retained;
 use objc2::{AnyThread, MainThreadMarker};
 use objc2_app_kit::{NSApplication, NSWorkspace};
 use objc2_foundation::{NSString, NSURL};
@@ -62,8 +61,8 @@ fn run_input_method() {
         );
     }
 
-    let application = unsafe { NSApplication::sharedApplication(mtm) };
-    unsafe { application.run() };
+    let application = NSApplication::sharedApplication(mtm);
+    application.run();
     std::mem::forget(server);
 }
 

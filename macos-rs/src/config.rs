@@ -991,6 +991,74 @@ mod tests {
         assert!(checked > 40, "只核对了 {checked} 项，spec 没读全");
     }
 
+    fn spec() -> serde_json::Value {
+        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../spec/config.json");
+        let text = std::fs::read_to_string(path).expect("读 spec/config.json");
+        serde_json::from_str(&text).expect("spec 是 JSON")
+    }
+
+    #[test]
+    fn keys_are_exactly_the_macos_settings_in_the_spec() {
+        let spec = spec();
+        let settings = spec["settings"].as_array().expect("settings 是数组");
+        let macos: Vec<&str> = settings
+            .iter()
+            .filter(|item| {
+                item["platforms"]
+                    .as_array()
+                    .map(|p| p.iter().any(|x| x == "macos"))
+                    .unwrap_or(false)
+            })
+            .filter_map(|item| item["key"].as_str())
+            .collect();
+        assert_eq!(
+            KEYS.len(),
+            macos.len(),
+            "认识的键和 spec 的 macOS 项数量对不上"
+        );
+        for key in KEYS {
+            assert!(
+                macos.contains(&key),
+                "外壳认识的 {key} 不在 spec 的 macOS 项里"
+            );
+        }
+    }
+
+    #[test]
+    fn shortcut_presets_match_the_spec() {
+        let spec = spec();
+        let settings = spec["settings"].as_array().expect("settings 是数组");
+        let preset = |key: &str| -> Vec<String> {
+            let item = settings
+                .iter()
+                .find(|item| item["key"] == key)
+                .unwrap_or_else(|| panic!("spec 里没有 {key}"));
+            item["presets"]["macos"]
+                .as_array()
+                .unwrap_or_else(|| panic!("{key} 没有 macOS 预设"))
+                .iter()
+                .map(|v| v.as_str().unwrap_or_default().to_string())
+                .collect()
+        };
+        assert_eq!(
+            preset("ToggleKey"),
+            Shortcut::TOGGLE_KEY_PRESETS.map(String::from)
+        );
+        assert_eq!(
+            preset("TranslateModeKey"),
+            Shortcut::TRANSLATE_MODE_KEY_PRESETS.map(String::from)
+        );
+        // 每个预设都能解析（空串除外，表示不用）
+        for name in Shortcut::TOGGLE_KEY_PRESETS
+            .into_iter()
+            .chain(Shortcut::TRANSLATE_MODE_KEY_PRESETS)
+        {
+            if !name.is_empty() {
+                assert!(Shortcut::parse(name).is_some(), "预设 {name} 解析不了");
+            }
+        }
+    }
+
     #[test]
     fn parse_ignores_groups_comments_and_unknown_keys() {
         let config = Config::parse(

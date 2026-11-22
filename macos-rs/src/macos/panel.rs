@@ -6,7 +6,7 @@ use std::cell::RefCell;
 
 use objc2::rc::Retained;
 use objc2::runtime::AnyObject;
-use objc2::{define_class, msg_send, MainThreadMarker};
+use objc2::{define_class, msg_send, DefinedClass, MainThreadMarker};
 use objc2_app_kit::{
     NSBackingStoreType, NSBezierPath, NSColor, NSFloatingWindowLevel, NSFont, NSFontAttributeName,
     NSForegroundColorAttributeName, NSPanel, NSStringDrawing, NSView, NSWindowStyleMask,
@@ -47,14 +47,6 @@ define_class!(
     struct CandidateView;
 
     impl CandidateView {
-        #[unsafe(method(initWithFrame:))]
-        fn init_with_frame(this: objc2::rc::Allocated<Self>, frame: NSRect) -> Retained<Self> {
-            let this = this.set_ivars(ViewIvars {
-                page: RefCell::new(Page::default()),
-            });
-            unsafe { msg_send![super(this), initWithFrame: frame] }
-        }
-
         #[unsafe(method(isFlipped))]
         fn is_flipped(&self) -> bool {
             // 从上往下画（和候选列表的顺序一致）
@@ -70,6 +62,14 @@ define_class!(
 );
 
 impl CandidateView {
+    /// 建一个自绘视图（父类是 NSView，用它的 initWithFrame）。
+    fn make(mtm: MainThreadMarker, frame: NSRect) -> Retained<Self> {
+        let this = mtm.alloc::<Self>().set_ivars(ViewIvars {
+            page: RefCell::new(Page::default()),
+        });
+        unsafe { msg_send![super(this), initWithFrame: frame] }
+    }
+
     fn set_page(&self, page: Page) {
         *self.ivars().page.borrow_mut() = page;
         self.setNeedsDisplay(true);
@@ -77,7 +77,7 @@ impl CandidateView {
 
     fn page_size(&self) -> NSSize {
         let page = self.ivars().page.borrow();
-        measure(&page)._1
+        measure(&page).1
     }
 }
 
@@ -91,7 +91,7 @@ fn attributes(
     let font_obj: &AnyObject = unsafe { &*(font as *const NSFont as *const AnyObject) };
     let color_obj: &AnyObject = unsafe { &*(color as *const NSColor as *const AnyObject) };
     NSDictionary::from_slices(
-        &[*NSFontAttributeName, *NSForegroundColorAttributeName],
+        &[NSFontAttributeName, NSForegroundColorAttributeName],
         &[font_obj, color_obj],
     )
 }
@@ -295,7 +295,7 @@ impl CandidatePanel {
         window.setLevel(NSFloatingWindowLevel);
         window.setIgnoresMouseEvents(true);
 
-        let view = CandidateView::init_with_frame(mtm.alloc::<CandidateView>(), frame);
+        let view = CandidateView::make(mtm, frame);
         window.setContentView(Some(&view));
         Self { window, view }
     }
