@@ -7,7 +7,7 @@ use objc2::runtime::{AnyObject, Bool};
 use objc2::{define_class, msg_send, sel, DefinedClass, MainThreadMarker};
 use objc2_app_kit::{
     NSAlert, NSAlertFirstButtonReturn, NSEvent, NSEventMask, NSEventModifierFlags, NSEventType,
-    NSMenu, NSMenuItem, NSPasteboard, NSPasteboardTypeString,
+    NSMenu, NSMenuItem, NSPasteboard, NSPasteboardTypeString, NSTextField,
 };
 use objc2_foundation::{
     NSNotFound, NSObjectProtocol, NSPoint, NSRange, NSRect, NSSize, NSString, NSTimer,
@@ -205,6 +205,17 @@ define_class!(
             (|| -> Option<Retained<NSMenu>> {
             let mtm = MainThreadMarker::new()?;
             let menu = NSMenu::initWithTitle(mtm.alloc(), &NSString::from_str("ArchType"));
+            let version = unsafe {
+                NSMenuItem::initWithTitle_action_keyEquivalent(
+                    mtm.alloc(),
+                    &NSString::from_str(&format!("ArchType {}", app::version())),
+                    None,
+                    &NSString::from_str(""),
+                )
+            };
+            version.setEnabled(false);
+            menu.addItem(&version);
+            menu.addItem(&NSMenuItem::separatorItem(mtm));
             let settings = unsafe {
                 NSMenuItem::initWithTitle_action_keyEquivalent(
                     mtm.alloc(),
@@ -225,6 +236,22 @@ define_class!(
             };
             unsafe { check.setTarget(Some(self.as_any())) };
             menu.addItem(&check);
+            for (title, action) in [
+                ("自定义词…", sel!(openCustomWords:)),
+                ("设置互译 API Key…", sel!(editTranslateKey:)),
+                ("打开数据目录", sel!(openDataFolder:)),
+            ] {
+                let item = unsafe {
+                    NSMenuItem::initWithTitle_action_keyEquivalent(
+                        mtm.alloc(),
+                        &NSString::from_str(title),
+                        Some(action),
+                        &NSString::from_str(""),
+                    )
+                };
+                unsafe { item.setTarget(Some(self.as_any())) };
+                menu.addItem(&item);
+            }
             let about = unsafe {
                 NSMenuItem::initWithTitle_action_keyEquivalent(
                     mtm.alloc(),
@@ -306,6 +333,68 @@ define_class!(
             match crate::update::download_and_install(&latest, &base, &layout) {
                 Ok(()) => show_message("检查更新", "装好了。下次切到 ArchType 就是新版。"),
                 Err(error) => show_message("检查更新", &format!("没装好：{error}")),
+            }
+        }
+
+        /// 菜单「自定义词…」：用默认程序打开 custom.tsv（没有就先建一个空的）。
+        #[unsafe(method(openCustomWords:))]
+        fn open_custom_words(&self, _sender: Option<&AnyObject>) {
+            let layout = &app::start().layout;
+            let path = layout.custom_words_path();
+            if !path.exists() {
+                let _ = std::fs::create_dir_all(&layout.support_dir);
+                let _ = std::fs::write(&path, "");
+            }
+            let _ = std::process::Command::new("/usr/bin/open")
+                .arg("-t")
+                .arg(&path)
+                .status();
+        }
+
+        /// 菜单「打开数据目录」。
+        #[unsafe(method(openDataFolder:))]
+        fn open_data_folder(&self, _sender: Option<&AnyObject>) {
+            let layout = &app::start().layout;
+            let _ = std::fs::create_dir_all(&layout.support_dir);
+            let _ = std::process::Command::new("/usr/bin/open")
+                .arg(&layout.support_dir)
+                .status();
+        }
+
+        /// 菜单「设置互译 API Key…」：一个输入框，写 translate.key（0600；空串删掉）。
+        #[unsafe(method(editTranslateKey:))]
+        fn edit_translate_key(&self, _sender: Option<&AnyObject>) {
+            let Some(mtm) = MainThreadMarker::new() else {
+                return;
+            };
+            let layout = &app::start().layout;
+            let key_path = layout.support_dir.join("translate.key");
+            let current = std::fs::read_to_string(&key_path).unwrap_or_default();
+            let alert = NSAlert::new(mtm);
+            alert.setMessageText(&NSString::from_str("互译 API Key"));
+            alert.setInformativeText(&NSString::from_str(
+                "只保存在这台电脑上（translate.key，只有你能读）。留空表示不用 Key（本地模型、哔哩哔哩）。",
+            ));
+            let field = NSTextField::initWithFrame(
+                mtm.alloc(),
+                NSRect::new(NSPoint::new(0.0, 0.0), NSSize::new(360.0, 24.0)),
+            );
+            field.setStringValue(&NSString::from_str(current.trim()));
+            alert.setAccessoryView(Some(&field));
+            alert.addButtonWithTitle(&NSString::from_str("保存"));
+            alert.addButtonWithTitle(&NSString::from_str("取消"));
+            if alert.runModal() != NSAlertFirstButtonReturn {
+                return;
+            }
+            let value = field.stringValue().to_string();
+            let _ = std::fs::create_dir_all(&layout.support_dir);
+            if value.trim().is_empty() {
+                let _ = std::fs::remove_file(&key_path);
+            } else if std::fs::write(&key_path, format!("{}
+", value.trim())).is_ok() {
+                use std::os::unix::fs::PermissionsExt;
+                let _ =
+                    std::fs::set_permissions(&key_path, std::fs::Permissions::from_mode(0o600));
             }
         }
 
