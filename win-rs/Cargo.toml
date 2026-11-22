@@ -1,0 +1,31 @@
+[package]
+name = "archtype-tsf"
+version = "0.8.0"
+edition = "2021"
+publish = false
+description = "ArchType 的 Windows 输入法外壳：TSF 文本服务（COM in-proc DLL）+ ArchType.exe"
+
+# 独立 workspace：只在 Windows 上编（windows crate 的类型只对 Windows 目标有意义），
+# 逻辑尽量留在 archtype-shell（Linux 上也能测）。
+[workspace]
+
+[lib]
+name = "archtype_tsf"
+crate-type = ["cdylib", "rlib"]
+
+[[bin]]
+name = "archtype"
+path = "src/main.rs"
+
+[dependencies]
+archtype-shell = { path = "../shell" }
+archtype-core = { path = "../core", default-features = false, features = ["voice"] }
+windows = { version = "0.58", features = [
+    "Win32_Foundation",
+    "Win32_System_Com",
+    "Win32_System_LibraryLoader",
+    "Win32_System_Registry",
+    "Win32_System_Threading",
+    "Win32_UI_Input_KeyboardAndMouse",
+    "Win32_UI_TextServices",
+] }

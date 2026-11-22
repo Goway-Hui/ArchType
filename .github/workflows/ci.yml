@@ -673,6 +673,46 @@ jobs:
             dist/macos/*.pkg
           retention-days: 7
 
+  windows:
+    # Windows 输入法（TSF）：编译 COM DLL + archtype.exe，自检词库，注册/卸载注册表。
+    name: Windows 输入法
+    timeout-minutes: 30
+    needs: [data]
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v5
+      - run: rustup toolchain install stable --profile minimal && rustup default stable
+      - uses: actions/download-artifact@v5
+        with:
+          name: data
+          path: dist/data
+      - name: 编译（TSF DLL + archtype.exe）
+        run: cargo build --release --manifest-path win-rs/Cargo.toml
+      - name: 自检（载入词库打 nihao）
+        shell: pwsh
+        run: |
+          $env:ARCHTYPE_DATA_DIR = Join-Path $env:RUNNER_TEMP 'archtype-data'
+          $env:ARCHTYPE_RESOURCE_DIR = Join-Path $PWD 'dist\data'
+          if ($LASTEXITCODE) { exit 1 }
+          & .\win-rs\target\release\archtype.exe --selftest
+          if ($LASTEXITCODE -ne 0) { throw '自检失败' }
+      - name: 注册与卸载（runner 是管理员）
+        shell: pwsh
+        run: |
+          $exe = '.\win-rs\target\release\archtype.exe'
+          $clsid = 'HKCR\CLSID\{6F2D3C1A-7B4E-4C2D-9E31-2A5B8F0C7D11}'
+          $tip = 'HKLM\SOFTWARE\Microsoft\CTF\TIP\{6F2D3C1A-7B4E-4C2D-9E31-2A5B8F0C7D11}'
+          & $exe --register
+          if ($LASTEXITCODE -ne 0) { throw '注册失败' }
+          reg query "$clsid\InprocServer32"
+          if ($LASTEXITCODE -ne 0) { throw 'CLSID 没写进去' }
+          reg query $tip
+          if ($LASTEXITCODE -ne 0) { throw 'CTF TIP 没写进去' }
+          & $exe --unregister
+          if ($LASTEXITCODE -ne 0) { throw '卸载失败' }
+          reg query $clsid 2>$null
+          if ($LASTEXITCODE -eq 0) { throw '卸载后 CLSID 还在' }
+
   release:
     name: 发布
     timeout-minutes: 20
