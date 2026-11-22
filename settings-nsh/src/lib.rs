@@ -6,6 +6,16 @@ use std::fs;
 use std::path::Path;
 use std::sync::{LazyLock, Mutex};
 
+/// 用系统默认程序打开文件或链接（macOS 是 `open`，Linux 是 `xdg-open`）。
+fn open_with_system(target: &str) -> bool {
+    let program = if on_macos() { "open" } else { "xdg-open" };
+    std::process::Command::new(program)
+        .arg(target)
+        .status()
+        .map(|status| status.success())
+        .unwrap_or(false)
+}
+
 /// 应用自己的 UI 集合。
 #[native_module("archtype/native")]
 fn native(registry: &mut Registry) {
@@ -1210,8 +1220,12 @@ impl Config {
         read(&format!("{}/custom.tsv", Config::data_dir()))
     }
 
-    /// 录音设备（ALSA PCM 名，cpal 用的就是 `arecord -L` 里这些）：JSON 字符串数组。
+    /// 录音设备（Linux 是 ALSA PCM 名，cpal 用的就是 `arecord -L` 里这些）：JSON 字符串数组。
+    /// macOS 没有这一项设置（spec 的 MicDevice 只给 Linux），始终用系统默认输入。
     pub fn voice_devices() -> String {
+        if on_macos() {
+            return "[]".to_string();
+        }
         let Ok(output) = std::process::Command::new("arecord").arg("-L").output() else {
             return "[]".to_string();
         };
@@ -1702,11 +1716,7 @@ impl Config {
             let _ = fs::create_dir_all(&dir);
             let _ = fs::write(&path, "");
         }
-        std::process::Command::new("xdg-open")
-            .arg(&path)
-            .status()
-            .map(|status| status.success())
-            .unwrap_or(false)
+        open_with_system(&path)
     }
 
     /// 恢复默认设置：删掉 archtype.conf 里的键，只留翻译服务和词库（与旧版同口径），
@@ -2203,11 +2213,7 @@ impl Config {
 
     /// 用系统默认程序打开链接。
     pub fn open_url(url: String) -> bool {
-        std::process::Command::new("xdg-open")
-            .arg(&url)
-            .status()
-            .map(|status| status.success())
-            .unwrap_or(false)
+        open_with_system(&url)
     }
 }
 
