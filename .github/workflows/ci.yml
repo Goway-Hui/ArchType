@@ -638,7 +638,8 @@ jobs:
           codesign --verify --strict "$app"
           [[ -d "$app/Contents/Resources/ArchType 设置.app" ]] || { echo "包没带设置 app"; exit 1; }
           unzip -l dist/macos/*.zip
-          if unzip -l dist/macos/*.zip | grep -Ei 'wtlocal|nnlm|gguf|HY-MT|wetype'; then
+          # 微信输入法的模型（nlrgpt2_nnlm.bin、wtlocal）不许带；nnlm.bin 是 ArchType 自己训的，可以带（build.sh 只放它进来）
+          if unzip -l dist/macos/*.zip | grep -Ei 'wtlocal|nlrgpt2|gguf|HY-MT|wetype'; then
             echo "安装包里有不能分发的模型"; exit 1
           fi
       - name: 自检（载入安装包里的词库打 nihao）
@@ -649,7 +650,7 @@ jobs:
         run: |
           pkg=$(ls dist/macos/ArchType-*-macos.pkg)
           pkgutil --payload-files "$pkg" | grep -qx './ArchType.app/Contents/MacOS/ArchType'
-          if pkgutil --payload-files "$pkg" | grep -Ei 'wtlocal|nnlm|gguf|HY-MT|wetype'; then
+          if pkgutil --payload-files "$pkg" | grep -Ei 'wtlocal|nlrgpt2|gguf|HY-MT|wetype'; then
             echo "pkg 里有不能分发的模型"; exit 1
           fi
           xattr -w com.apple.quarantine "0083;00000000;Safari;" "$pkg"
