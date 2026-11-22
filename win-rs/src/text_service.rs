@@ -244,7 +244,7 @@ impl ITfEditSession_Impl for InsertText {
             let insert: ITfInsertAtSelection = self.context.cast()?;
             let mut start = 0i32;
             let mut end = 0i32;
-            let mut change = TS_TEXTCHANGE::default();
+            let mut change: TS_TEXTCHANGE = unsafe { std::mem::zeroed() };
             insert.InsertTextAtSelection(
                 TF_IAS_NOQUERY.0,
                 &self.text,
@@ -284,12 +284,12 @@ fn key_characters(vk: u16, lparam: LPARAM) -> Option<String> {
     let mut state = [0u8; 256];
     let mut buf = [0u16; 8];
     unsafe {
-        if !GetKeyboardState(&mut state).as_bool() {
+        if GetKeyboardState(&mut state).is_err() {
             return None;
         }
         let layout = GetKeyboardLayout(0);
         let scan = ((lparam.0 >> 16) & 0xff) as u32;
-        let count = ToUnicodeEx(vk as u32, scan, state.as_ptr(), &mut buf, 0, layout);
+        let count = ToUnicodeEx(vk as u32, scan, &state, &mut buf, 0, layout);
         if count <= 0 {
             return None;
         }
