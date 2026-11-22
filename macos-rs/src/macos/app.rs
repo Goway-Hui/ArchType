@@ -19,7 +19,7 @@ pub struct Shared {
     /// 进程里共用的翻译器（本地 llama-server 也只起一个）
     translator: TranslatorStore,
     /// 打字统计（进程共用；统计关着时它自己什么都不记）
-    stats: OnceLock<Stats>,
+    stats: Stats,
     /// 载入失败的原因（菜单里显示、自检打印）
     engine_error: Mutex<Option<String>>,
 }
@@ -60,7 +60,7 @@ impl Shared {
             config_stamp: Mutex::new(stamp),
             engine: OnceLock::new(),
             translator,
-            stats: OnceLock::new(),
+            stats,
             engine_error: Mutex::new(None),
         }
     }
@@ -91,12 +91,8 @@ impl Shared {
     }
 
     /// 打字统计（统计关着也建，开着时才开始记）。
-    pub fn stats(&self) -> &'static Stats {
-        self.stats.get_or_init(|| {
-            let path = crate::stats::stats_path(&self.layout.support_dir);
-            let enabled = self.config().typing_stats;
-            Stats::new(&path, enabled).expect("建统计记录器")
-        })
+    pub fn stats(&self) -> &Stats {
+        &self.stats
     }
 
     pub fn engine_error(&self) -> Option<String> {

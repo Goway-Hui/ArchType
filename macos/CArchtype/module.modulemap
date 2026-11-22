@@ -1,4 +1,0 @@
-module CArchtype [system] {
-    header "../../core/include/archtype_core.h"
-    export *
-}

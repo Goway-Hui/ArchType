@@ -349,15 +349,13 @@ impl CandidatePanel {
     pub fn new(mtm: MainThreadMarker) -> Self {
         let style = NSWindowStyleMask::Borderless | NSWindowStyleMask::NonactivatingPanel;
         let frame = NSRect::new(NSPoint::new(0.0, 0.0), NSSize::new(1.0, 1.0));
-        let window = unsafe {
-            NSPanel::initWithContentRect_styleMask_backing_defer(
-                mtm.alloc::<NSPanel>(),
-                frame,
-                style,
-                NSBackingStoreType::Buffered,
-                false,
-            )
-        };
+        let window = NSPanel::initWithContentRect_styleMask_backing_defer(
+            mtm.alloc::<NSPanel>(),
+            frame,
+            style,
+            NSBackingStoreType::Buffered,
+            false,
+        );
         window.setOpaque(false);
         window.setHasShadow(true);
         window.setBackgroundColor(Some(&NSColor::clearColor()));
