@@ -53,7 +53,7 @@ dbus-send --session --type=signal /io/github/gowayhui/ArchType \
     uint32:1 string:"正在听…" int32:50 int32:0 int32:0 int32:0 int32:0 boolean:false double:1.0
 sleep 0.8
 grim "$shot"
-echo "截图：$shot（对照桌面看四角是否透明）"
+echo "截图：${shot}（对照桌面看四角是否透明）"
 python3 - "$shot" <<'PY2' || true
 import sys
 try:
