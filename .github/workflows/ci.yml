@@ -712,8 +712,10 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'CTF TIP 没写进去' }
           & $exe --unregister
           if ($LASTEXITCODE -ne 0) { throw '卸载失败' }
-          reg query $clsid 2>$null
+          reg query $clsid *> $null
           if ($LASTEXITCODE -eq 0) { throw '卸载后 CLSID 还在' }
+          # 最后一条 reg query 的失败码别带出这个步骤（GitHub Actions 的 pwsh 会 exit $LASTEXITCODE）
+          exit 0
 
   release:
     name: 发布
