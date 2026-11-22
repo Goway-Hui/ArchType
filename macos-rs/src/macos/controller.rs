@@ -35,6 +35,8 @@ struct Ivars {
     initial_mode_done: Cell<bool>,
     /// 上一次的应用 / 窗口（WindowMode）
     focus: RefCell<WindowFocus>,
+    /// 面板现在显示的是语音提示（不是候选）
+    voice_panel: Cell<bool>,
 }
 
 define_class!(
@@ -63,6 +65,7 @@ define_class!(
                 voice_timer: RefCell::new(None),
                 initial_mode_done: Cell::new(false),
                 focus: RefCell::new(WindowFocus::new()),
+                voice_panel: Cell::new(false),
             });
             unsafe {
                 msg_send![super(this), initWithServer: server, delegate: delegate, client: client]
@@ -120,6 +123,21 @@ define_class!(
                     None => return,
                 }
             };
+            if state == voice::VOICE_LISTENING {
+                let level = self
+                    .ivars()
+                    .voice
+                    .borrow()
+                    .as_ref()
+                    .map(|voice| voice.level())
+                    .unwrap_or(0);
+                self.show_voice_hint(&format!("正在听… {}", crate::keys::voice_wave(&[level])));
+            } else if state == voice::VOICE_RECOGNIZING {
+                self.show_voice_hint("识别中…");
+            } else if state == voice::VOICE_IDLE && self.ivars().voice_panel.get() {
+                self.ivars().voice_panel.set(false);
+                self.hide_panel();
+            }
             if state == voice::VOICE_RESULT {
                 let text = self
                     .ivars()
@@ -137,10 +155,14 @@ define_class!(
                 if let Some(voice) = self.ivars().voice.borrow().as_ref() {
                     voice.cancel();
                 }
+                self.ivars().voice_panel.set(false);
+                self.hide_panel();
             } else if state == voice::VOICE_ERROR {
                 if let Some(voice) = self.ivars().voice.borrow().as_ref() {
                     voice.cancel();
                 }
+                self.ivars().voice_panel.set(false);
+                self.hide_panel();
             }
         }
 
@@ -245,6 +267,38 @@ define_class!(
 );
 
 impl Controller {
+    /// 语音提示：在光标下面画一行（正在听 + 波形、识别中）。
+    fn show_voice_hint(&self, text: &str) {
+        let Some(client) = self.current_client() else {
+            return;
+        };
+        let font_size = app::start().config().candidate_font_size;
+        let page = Page {
+            texts: Vec::new(),
+            comments: Vec::new(),
+            cursor: None,
+            has_prev: false,
+            has_next: false,
+            vertical: false,
+            columns: None,
+            aux_top: Some(text.to_string()),
+            aux_bottom: None,
+            labels: false,
+            font_size,
+        };
+        let mut panel = self.ivars().panel.borrow_mut();
+        if panel.is_none() {
+            let Some(mtm) = MainThreadMarker::new() else {
+                return;
+            };
+            *panel = Some(CandidatePanel::new(mtm));
+        }
+        if let Some(panel) = panel.as_ref() {
+            panel.show(&page, caret_rect(&client));
+            self.ivars().voice_panel.set(true);
+        }
+    }
+
     /// 输入框启用了：进程里第一次按 InitialMode 定中 / 英；换了应用 / 窗口按 WindowMode 定一次。
     fn apply_modes_on_activate(&self, _client: &AnyObject) {
         let shared = app::start();
