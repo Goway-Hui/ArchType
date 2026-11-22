@@ -27,6 +27,7 @@ done
 
 work=$(mktemp -d)
 trap 'rm -rf "$work"' EXIT
+# 输入法是 Rust 写的（macos-rs，和 Linux 插件共用一套引擎和会话），两个架构各编一次再 lipo 合起来。
 bins=()
 for arch in $ARCHS; do
   case $arch in
@@ -34,13 +35,9 @@ for arch in $ARCHS; do
     x86_64) rust=x86_64-apple-darwin ;;
     *) echo "不认识的架构 $arch" >&2; exit 1 ;;
   esac
-  cargo build --release --locked -q -p archtype-core --target "$rust" --target-dir "$TARGET_DIR"
-  swiftc -O -target "$arch-apple-macos$MACOSX_DEPLOYMENT_TARGET" -module-name ArchType -I macos/CArchtype \
-    macos/Sources/Shared/*.swift macos/Sources/App/*.swift \
-    "$TARGET_DIR/$rust/release/libarchtype_core.a" \
-    -framework Cocoa -framework InputMethodKit -framework Carbon \
-    -framework AVFoundation -framework AudioUnit -framework CoreAudio \
-    -liconv -o "$work/ArchType-$arch"
+  cargo build --release --locked -q --manifest-path macos-rs/Cargo.toml \
+    --target "$rust" --target-dir "$TARGET_DIR/rust"
+  cp "$TARGET_DIR/rust/$rust/release/archtype-macos" "$work/ArchType-$arch"
   bins+=("$work/ArchType-$arch")
 done
 

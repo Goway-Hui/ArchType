@@ -1,75 +1,145 @@
-//! macOS 输入法的 Rust 外壳 POC：验证 `objc2-input-method-kit` 能不能替代 Swift 外壳。
+//! macOS 输入法外壳的入口：`ArchType`（输入法）、`--settings`、`--selftest`、`--version`。
 //!
-//! 目标链路：系统按 Info.plist 的 `InputMethodServerControllerClass = ArchTypeController`
-//! 实例化下面的控制器 → `handleEvent:client:` 收到按键 → 直接上屏。
-//! 跑通以后再接 `archtype-core`（引擎/会话），把候选框、语音、菜单逐步搬过来。
-//!
-//! 构建（只能在 macOS 上）：`cargo build --release --manifest-path macos-rs/Cargo.toml`
-//! 打包：需要把可执行文件放进 `.app/Contents/MacOS/`，Info.plist 的
-//! `InputMethodConnectionName` / `InputMethodServerControllerClass` 指到本进程和 `ArchTypeController`。
+//! 引擎、会话、设置都在平台无关的模块里（`crate::input`、`crate::config`、`crate::engine`）；
+//! 这里只接 InputMethodKit / AppKit。
 
-use objc2::msg_send;
+mod app;
+mod controller;
+mod panel;
+
 use objc2::rc::Retained;
-use objc2::runtime::{AnyObject, Bool};
-use objc2::{define_class, AnyThread, MainThreadMarker};
-use objc2_app_kit::{NSApplication, NSEvent, NSMenu};
-use objc2_foundation::{NSNotFound, NSObjectProtocol, NSRange, NSString};
+use objc2::{AnyThread, MainThreadMarker};
+use objc2_app_kit::{NSApplication, NSWorkspace};
+use objc2_foundation::{NSString, NSURL};
+use objc2_input_method_kit::IMKServer;
 
-struct Ivars;
-
-define_class!(
-    #[unsafe(super(objc2_input_method_kit::IMKInputController))]
-    #[name = "ArchTypeController"]
-    #[ivars = Ivars]
-    struct ArchTypeController;
-
-    unsafe impl NSObjectProtocol for ArchTypeController {}
-
-    impl ArchTypeController {
-        /// POC：普通字符直接交给应用上屏；功能键/组合键原样放行。
-        #[unsafe(method(handleEvent:client:))]
-        fn handle_event(&self, event: Option<&NSEvent>, client: Option<&AnyObject>) -> Bool {
-            let (Some(event), Some(client)) = (event, client) else {
-                return Bool::NO;
-            };
-            let Some(chars) = (unsafe { event.characters() }) else {
-                return Bool::NO;
-            };
-            let len = unsafe { chars.length() };
-            if len == 0 {
-                return Bool::NO;
-            }
-            unsafe {
-                let _: () = msg_send![client, insertText: &*chars,
-                                       replacementRange: NSRange::new(NSNotFound as usize, 0)];
-            }
-            Bool::YES
-        }
-
-        /// 输入法菜单：先交系统默认（设置界面由 NSH app 提供，后续在这里挂「设置…」）。
-        #[unsafe(method_id(menu))]
-        fn menu(&self) -> Option<Retained<NSMenu>> {
-            None
-        }
-    }
-);
+use crate::config::Config;
+use crate::engine::Layout;
+use crate::input::Input;
 
 pub fn run() {
+    let args: Vec<String> = std::env::args().skip(1).collect();
+    match args.first().map(String::as_str) {
+        Some("--version") => println!("ArchType {}", app::version()),
+        Some("--selftest") => {
+            let ok = selftest();
+            std::process::exit(if ok { 0 } else { 1 });
+        }
+        Some("--settings") => open_settings(args.get(1).map(String::as_str)),
+        Some("--help") | Some("-h") => usage(),
+        Some(other) => {
+            eprintln!("不认识的参数：{other}");
+            usage();
+            std::process::exit(2);
+        }
+        None => run_input_method(),
+    }
+}
+
+fn usage() {
+    println!(
+        "用法：ArchType [--version | --selftest | --settings [页面] | --help]\n\
+         \n\
+         不带参数时是 fcitx5 那样的输入法进程（系统按 Info.plist 把它拉起来）。\n\
+         设置界面是「ArchType 设置.app」（随安装包带的跨平台 app）。"
+    );
+}
+
+fn run_input_method() {
     let mtm = MainThreadMarker::new().expect("输入法外壳必须跑在主线程");
+    // 后台载入词库和引擎；输入控制器在引擎就绪前不接按键
+    app::start();
 
-    // 名字要和 Info.plist 的 InputMethodConnectionName 一致；bundle id 用本产品的。
-    let name = NSString::from_str("ArchType_Connection");
-    let bundle = NSString::from_str("io.github.gloridust.inputmethod.ArchType");
+    let name = NSString::from_str(app::CONNECTION_NAME);
+    let bundle = NSString::from_str(app::BUNDLE_ID);
     let server = unsafe {
-        objc2_input_method_kit::IMKServer::initWithName_bundleIdentifier(
-            objc2_input_method_kit::IMKServer::alloc(),
-            Some(&name),
-            Some(&bundle),
-        )
+        IMKServer::initWithName_bundleIdentifier(IMKServer::alloc(), Some(&name), Some(&bundle))
     };
+    if server.is_none() {
+        eprintln!(
+            "ArchType: IMKServer 起不来（连接名 {}）",
+            app::CONNECTION_NAME
+        );
+    }
 
-    let app = unsafe { NSApplication::sharedApplication(mtm) };
-    unsafe { app.run() };
-
+    let application = unsafe { NSApplication::sharedApplication(mtm) };
+    unsafe { application.run() };
     std::mem::forget(server);
+}
+
+/// 打开设置窗口：另起一个进程（输入法进程里开窗口会和输入框抢焦点）。
+fn open_settings(page: Option<&str>) {
+    let settings_app = app::resource_dir().join("ArchType 设置.app");
+    if settings_app.exists() {
+        let url = NSURL::fileURLWithPath(&NSString::from_str(&settings_app.to_string_lossy()));
+        if NSWorkspace::sharedWorkspace().openURL(&url) {
+            return;
+        }
+    }
+    // 开发目录里没有打包的 NSH app：直接跑 nsh 的产物
+    if let Ok(exe) = std::env::current_exe() {
+        let candidate = exe.with_file_name("ArchType 设置");
+        if candidate.exists() {
+            let mut command = std::process::Command::new(candidate);
+            if let Some(page) = page {
+                command.arg("--page").arg(page);
+            }
+            let _ = command.spawn();
+            return;
+        }
+    }
+    eprintln!("ArchType: 安装包里没有「ArchType 设置.app」");
+}
+
+/// CI 的自检：载入安装包里的词库，打 nihao 看第一个候选和上屏。
+fn selftest() -> bool {
+    let layout = Layout::new(app::resource_dir(), Layout::support_dir_standard());
+    println!("资源目录 {}", layout.resource_dir.display());
+    println!("数据目录 {}", layout.support_dir.display());
+    println!("配置文件 {}", layout.config_path().display());
+    let config = Config::load(&layout.config_path().to_string_lossy());
+    let mut input = match Input::load(layout.clone(), config) {
+        Ok(input) => input,
+        Err(error) => {
+            println!("FAIL {error}");
+            return false;
+        }
+    };
+    for name in [
+        "lexicon.tsv",
+        "english.txt",
+        "words.lm",
+        "s2t.tsv",
+        "wubi86.tsv",
+        "nnlm.bin",
+    ] {
+        println!(
+            "  {name}：{}",
+            if layout.resource(name).is_some() {
+                "有"
+            } else {
+                "没有"
+            }
+        );
+    }
+
+    let keys: &[char] = &['n', 'i', 'h', 'a', 'o'];
+    let mut frame = input.frame(false);
+    for c in keys {
+        frame = input.key(&crate::input::make_key(
+            *c as u32, 0, false, None, None, 0, 0, false, 0,
+        ));
+    }
+    let first = input
+        .shown()
+        .first()
+        .map(|c| c.text.clone())
+        .unwrap_or_default();
+    println!("nihao → 第一个候选「{first}」，编辑区「{}」", frame.preedit);
+    let frame = input.key(&crate::input::make_key(
+        0x20, 0, false, None, None, 0, 0, false, 0,
+    ));
+    let committed = frame.commit.unwrap_or_default();
+    println!("nihao 空格 → 上屏「{committed}」");
+    committed == "你好"
 }
