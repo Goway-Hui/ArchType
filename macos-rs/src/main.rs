@@ -1,17 +1,7 @@
 //! ArchType 的 macOS 输入法外壳。
 //!
-//! 平台无关的模块（按键翻译、设置、引擎加载、会话驱动）在 Linux 上也能编、能测；
-//! 只有 `macos` 模块依赖 objc2 / AppKit / InputMethodKit（见 Cargo.toml 的 target 依赖）。
-
-pub mod config;
-pub mod engine;
-pub mod input;
-pub mod keys;
-pub mod stats;
-pub mod translate;
-pub mod update;
-pub mod voice;
-pub mod window_mode;
+//! 平台无关的部分（按键、设置、引擎装载、会话驱动、统计、翻译、更新、语音）在
+//! `archtype-shell` crate 里，macOS 与 Windows 共用；这里只有 InputMethodKit / AppKit 绑定。
 
 #[cfg(target_os = "macos")]
 mod macos;
@@ -23,9 +13,6 @@ fn main() {
 
 #[cfg(not(target_os = "macos"))]
 fn main() {
-    eprintln!(
-        "archtype-macos 是 macOS 输入法外壳，只能在 macOS 上运行；\
-         平台无关的模块用 `cargo test` 测。"
-    );
+    eprintln!("archtype-macos 是 macOS 输入法外壳，只能在 macOS 上运行；共用逻辑的测试在 archtype-shell。");
     std::process::exit(1);
 }

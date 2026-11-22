@@ -1,0 +1,14 @@
+[package]
+name = "archtype-shell"
+version.workspace = true
+edition = "2021"
+description = "输入法外壳的共用逻辑：按键、设置、引擎装载、会话驱动、统计、翻译、更新、语音；平台绑定在 macos-rs / win-rs"
+license.workspace = true
+publish = false
+
+[dependencies]
+archtype-core = { path = "../core", default-features = false, features = ["voice"] }
+archtype-net = { path = "../net" }
+
+[dev-dependencies]
+serde_json = "1"

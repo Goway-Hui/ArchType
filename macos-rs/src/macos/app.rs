@@ -7,10 +7,10 @@ use std::time::{Duration, SystemTime};
 
 use objc2_foundation::{ns_string, NSBundle, NSString};
 
-use crate::config::Config;
-use crate::engine::{load_engine, EngineStore, Layout};
-use crate::stats::Stats;
-use crate::translate::{translate_config, TranslatorStore};
+use archtype_shell::config::Config;
+use archtype_shell::engine::{load_engine, EngineStore, Layout};
+use archtype_shell::stats::Stats;
+use archtype_shell::translate::{translate_config, TranslatorStore};
 
 pub struct Shared {
     pub layout: Layout,
@@ -63,6 +63,20 @@ pub fn resource_dir() -> PathBuf {
         .unwrap_or_else(|| PathBuf::from("."))
 }
 
+/// 用户数据目录：`ARCHTYPE_DATA_DIR` > `~/Library/Application Support/ArchType`。
+pub fn support_dir_standard() -> PathBuf {
+    if let Ok(dir) = std::env::var("ARCHTYPE_DATA_DIR") {
+        if !dir.is_empty() {
+            return PathBuf::from(dir);
+        }
+    }
+    let home = std::env::var("HOME").unwrap_or_else(|_| "/tmp".to_string());
+    PathBuf::from(home)
+        .join("Library")
+        .join("Application Support")
+        .join("ArchType")
+}
+
 /// 进程启动时调一次：读设置，后台载入引擎。
 pub fn start() -> &'static Shared {
     let shared = &SHARED;
@@ -72,7 +86,7 @@ pub fn start() -> &'static Shared {
 
 impl Shared {
     fn new() -> Self {
-        let layout = Layout::new(resource_dir(), Layout::support_dir_standard());
+        let layout = Layout::new(resource_dir(), support_dir_standard());
         let config = Config::load(&layout.config_path().to_string_lossy());
         let stamp = modified(&layout.config_path());
         let translator = TranslatorStore::new();
@@ -80,7 +94,7 @@ impl Shared {
             .get()
             .configure(translate_config(&config, &layout));
         let stats = Stats::new(
-            &crate::stats::stats_path(&layout.support_dir),
+            &archtype_shell::stats::stats_path(&layout.support_dir),
             config.typing_stats,
         )
         .expect("建统计记录器");
@@ -123,7 +137,7 @@ impl Shared {
         self.engine.get().copied()
     }
 
-    pub fn translator(&self) -> &'static crate::translate::Translator {
+    pub fn translator(&self) -> &'static archtype_shell::translate::Translator {
         self.translator.get()
     }
 
@@ -152,7 +166,7 @@ impl Shared {
         let config = Config::load(&path.to_string_lossy());
         self.translator
             .get()
-            .configure(crate::translate::translate_config(&config, &self.layout));
+            .configure(archtype_shell::translate::translate_config(&config, &self.layout));
         self.stats().set_enabled(config.typing_stats);
         *self.config.lock().unwrap() = config.clone();
         Some(config)

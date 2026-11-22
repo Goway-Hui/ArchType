@@ -3,8 +3,6 @@
 //! 平台无关：Linux 上也能编、能测。macOS 层只负责把 NSEvent 翻成 [`Key`]，
 //! 再把 [`Frame`] 画到候选框 / 交给输入框。
 
-use std::path::PathBuf;
-
 use archtype_core::session::{Candidate, Frame, Key, Mode, Session};
 use archtype_core::Engine;
 
@@ -285,10 +283,11 @@ mod tests {
     use super::*;
     use crate::keys::{KeyInput, Modifiers};
     use archtype_core::session::{key_hints, keysym, Mode};
+    use std::path::PathBuf;
 
     fn temp_dir(name: &str) -> PathBuf {
         let dir = std::env::temp_dir().join(format!(
-            "archtype-macos-input-{name}-{}",
+            "archtype-shell-input-{name}-{}",
             std::process::id()
         ));
         let _ = std::fs::remove_dir_all(&dir);

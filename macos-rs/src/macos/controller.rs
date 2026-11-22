@@ -16,13 +16,13 @@ use objc2_input_method_kit::IMKInputController;
 
 use archtype_core::session::Mode;
 
-use crate::config::{InitialMode, WindowMode};
-use crate::input::{make_key, Input};
-use crate::keys::{keysym, virtual_key, VoiceKey};
+use archtype_shell::config::{InitialMode, WindowMode};
+use archtype_shell::input::{make_key, Input};
+use archtype_shell::keys::{keysym, virtual_key, VoiceKey};
 use crate::macos::app::{self};
 use crate::macos::panel::{CandidatePanel, Page};
-use crate::voice::{self, Voice};
-use crate::window_mode::WindowFocus;
+use archtype_shell::voice::{self, Voice};
+use archtype_shell::window_mode::WindowFocus;
 
 struct Ivars {
     input: RefCell<Option<Input>>,
@@ -135,7 +135,7 @@ define_class!(
                     .as_ref()
                     .map(|voice| voice.level())
                     .unwrap_or(0);
-                self.show_voice_hint(&format!("正在听… {}", crate::keys::voice_wave(&[level])));
+                self.show_voice_hint(&format!("正在听… {}", archtype_shell::keys::voice_wave(&[level])));
             } else if state == voice::VOICE_RECOGNIZING {
                 self.show_voice_hint("识别中…");
             } else if state == voice::VOICE_IDLE && self.ivars().voice_panel.get() {
@@ -305,11 +305,11 @@ define_class!(
         #[unsafe(method(checkUpdate:))]
         fn check_update(&self, _sender: Option<&AnyObject>) {
             let current = app::version();
-            let Some(latest) = crate::update::latest_version() else {
+            let Some(latest) = archtype_shell::update::latest_version() else {
                 show_message("检查更新", "连不上发布页，过一会儿再试。");
                 return;
             };
-            if !crate::update::is_newer(&latest, &current) {
+            if !archtype_shell::update::is_newer(&latest, &current) {
                 show_message("检查更新", &format!("已经是最新版（{current}）。"));
                 return;
             }
@@ -330,7 +330,7 @@ define_class!(
             let base = format!(
                 "https://github.com/Goway-Hui/ArchType/releases/download/v{latest}"
             );
-            match crate::update::download_and_install(&latest, &base, &layout) {
+            match super::update::install(&latest, &base, &layout) {
                 Ok(()) => show_message("检查更新", "装好了。下次切到 ArchType 就是新版。"),
                 Err(error) => show_message("检查更新", &format!("没装好：{error}")),
             }
@@ -682,7 +682,7 @@ impl Controller {
         let mut config_changed = false;
         if let Some(config) = shared.reload_config_if_changed() {
             if let Some(input) = input.as_mut() {
-                let available = crate::translate::translate_available(&config, &shared.layout);
+                let available = archtype_shell::translate::translate_available(&config, &shared.layout);
                 let can_edit = self.can_edit_around_caret();
                 let problems = input.apply_config(&config, available, can_edit);
                 for problem in problems {
@@ -707,7 +707,7 @@ impl Controller {
         let characters = event.characters().map(|s| s.to_string());
         let ignoring = event.charactersIgnoringModifiers().map(|s| s.to_string());
         let flags = event.modifierFlags().0 as u64;
-        let Some(translated) = crate::keys::translate_key_down(
+        let Some(translated) = archtype_shell::keys::translate_key_down(
             key_code,
             characters.as_deref(),
             ignoring.as_deref(),

@@ -586,7 +586,8 @@ ARCHTYPE_VOICE_WAV=说的话.wav ARCHTYPE_VOICE_EXPECT=期望的字 scripts/addo
 | `voice-daemon/` | 不依赖输入法的语音守护进程（X11，实验性，没进安装包） |
 | `cli/` | `archtype-config` 命令行（诊断、自检、词库包、更新检查） |
 | `settings-nsh/` | 跨平台设置界面（Rust + NSH；Linux 用 GTK 4，macOS 打包成 .app，两端共用一份） |
-| `net/` | 下载与校验（curl + SHA256SUMS），命令行、设置界面、macOS 外壳共用 |
+| `shell/` | 外壳的共用逻辑（按键、设置、引擎装载、会话驱动、统计、翻译、更新、语音），macOS 与 Windows 共用 |
+| `net/` | 下载与校验（curl + SHA256SUMS），命令行、设置界面、外壳共用 |
 | `lexicon/` | 万象词库包的下载、校验、安装与切换，命令行与 macOS 外壳共用 |
 | `macos-rs/` | macOS 输入法外壳（Rust：InputMethodKit 控制器、候选框、语音浮条、更新、TIS 登记） |
 | `macos/` | macOS 安装形态：`Info.plist`、pkg 脚本、`build.sh`（不含代码） |

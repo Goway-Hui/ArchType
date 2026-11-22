@@ -61,15 +61,13 @@ dependencies = [
 name = "archtype-macos"
 version = "0.1.0"
 dependencies = [
- "archtype-core",
  "archtype-lexicon",
- "archtype-net",
+ "archtype-shell",
  "objc2",
  "objc2-app-kit",
  "objc2-core-foundation",
  "objc2-foundation",
  "objc2-input-method-kit",
- "serde_json",
 ]
 
 [[package]]
@@ -77,6 +75,14 @@ name = "archtype-net"
 version = "0.8.0"
 dependencies = [
  "sha2",
+]
+
+[[package]]
+name = "archtype-shell"
+version = "0.8.0"
+dependencies = [
+ "archtype-core",
+ "archtype-net",
 ]
 
 [[package]]

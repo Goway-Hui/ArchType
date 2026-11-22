@@ -5,8 +5,6 @@
 
 use archtype_net::{download, expected_digest, fetch, latest_release_tag, sha256};
 
-use crate::engine::Layout;
-
 /// 新版本的 tag（不带 v），比如 `0.8.1`。
 pub fn latest_version() -> Option<String> {
     latest_release_tag()
@@ -39,39 +37,26 @@ fn parse_version(text: &str) -> Option<Vec<u64>> {
     Some(parts)
 }
 
-/// 这一版 macOS 安装包的文件名。
-pub fn package_name(version: &str) -> String {
-    format!("ArchType-{}-macos.pkg", version.trim_start_matches('v'))
-}
-
-/// 下载并装新版 pkg（只装给当前用户，不要管理员密码）。
+/// 下载一个发布资产并按 SHA256SUMS 校验，返回本地路径。安装动作由平台做。
 ///
-/// `base_url` 一般是 `https://github.com/Goway-Hui/ArchType/releases/download/v<版本>`。
-pub fn download_and_install(version: &str, base_url: &str, layout: &Layout) -> Result<(), String> {
-    let name = package_name(version);
+/// `base_url` 一般是 `https://github.com/<owner>/<repo>/releases/download/v<版本>`。
+pub fn download_verified(
+    name: &str,
+    base_url: &str,
+    dir: &std::path::Path,
+) -> Result<std::path::PathBuf, String> {
     let sums = fetch(&format!("{base_url}/SHA256SUMS"))?;
     let expected =
-        expected_digest(&sums, &name).ok_or_else(|| format!("SHA256SUMS 里没有 {name}"))?;
-    let dir = layout.support_dir.join("updates").join(version);
-    std::fs::create_dir_all(&dir).map_err(|e| format!("建目录失败：{e}"))?;
-    let path = dir.join(&name);
+        expected_digest(&sums, name).ok_or_else(|| format!("SHA256SUMS 里没有 {name}"))?;
+    std::fs::create_dir_all(dir).map_err(|e| format!("建目录失败：{e}"))?;
+    let path = dir.join(name);
     download(&format!("{base_url}/{name}"), &path.to_string_lossy())?;
     let actual = sha256(&path.to_string_lossy())?;
     if actual.to_lowercase() != expected.to_lowercase() {
         let _ = std::fs::remove_file(&path);
         return Err(format!("{name} 校验和对不上，请重新下载"));
     }
-    let status = std::process::Command::new("/usr/sbin/installer")
-        .arg("-pkg")
-        .arg(&path)
-        .arg("-target")
-        .arg("CurrentUserHomeDirectory")
-        .status()
-        .map_err(|e| format!("跑不了 installer：{e}"))?;
-    if !status.success() {
-        return Err("安装失败（installer 返回非 0）".to_string());
-    }
-    Ok(())
+    Ok(path)
 }
 
 #[cfg(test)]
@@ -92,9 +77,4 @@ mod tests {
         assert!(is_newer("0.8.1-beta1", "0.8.0"));
     }
 
-    #[test]
-    fn package_name_has_no_v() {
-        assert_eq!(package_name("v0.8.1"), "ArchType-0.8.1-macos.pkg");
-        assert_eq!(package_name("0.8.1"), "ArchType-0.8.1-macos.pkg");
-    }
 }

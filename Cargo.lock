@@ -75,6 +75,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "archtype-shell"
+version = "0.8.0"
+dependencies = [
+ "archtype-core",
+ "archtype-net",
+ "serde_json",
+]
+
+[[package]]
 name = "archtype-voice"
 version = "0.8.0"
 dependencies = [

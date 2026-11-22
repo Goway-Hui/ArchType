@@ -10,8 +10,9 @@
 - 引擎：Rust，`core/`，提供 C ABI
 - 插件：C++，`fcitx5-addon/`，调 C ABI
 - 语音：Rust，`voice/` + `voice-daemon/`（X11 热键 + 麦克风 + 识别器）；内置微信离线识别（`voice/src/wtlocal/`），约 100MB 的模型由用户在设置的「语音」页下载（插件不自己下载）
+- 外壳共用逻辑：Rust，`shell/`（按键、设置、引擎装载、会话驱动、统计、翻译、更新、语音），macOS 与将来的 Windows 共用
 - macOS：Rust 外壳 `macos-rs/`（InputMethodKit 控制器、候选框、语音浮条、TIS 登记、更新、词库包命令），
-  引擎/会话/翻译/统计/语音直接用 `core`、`voice`、`net`、`lexicon`；只装包这一层在 `macos/`（Info.plist、pkg、build.sh）
+  只装包这一层在 `macos/`（Info.plist、pkg、build.sh）
 - 设置界面：跨平台 NSH app，Rust，`settings-nsh/`（Linux 和 macOS 共用一份，按平台读写各自的配置路径）
 - 数据：开源词库（rime-ice），仓库自带简繁表
 

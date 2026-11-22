@@ -1,6 +1,6 @@
 //! macOS 输入法外壳的入口：`ArchType`（输入法）、`--settings`、`--selftest`、`--version`。
 //!
-//! 引擎、会话、设置都在平台无关的模块里（`crate::input`、`crate::config`、`crate::engine`）；
+//! 引擎、会话、设置都在平台无关的模块里（`archtype_shell::input`、`archtype_shell::config`、`archtype_shell::engine`）；
 //! 这里只接 InputMethodKit / AppKit。
 
 mod app;
@@ -8,6 +8,7 @@ mod controller;
 mod external;
 mod installer;
 mod panel;
+mod update;
 
 use objc2::{AnyThread, MainThreadMarker};
 use objc2_app_kit::{
@@ -16,9 +17,9 @@ use objc2_app_kit::{
 use objc2_foundation::{NSArray, NSString, NSURL};
 use objc2_input_method_kit::IMKServer;
 
-use crate::config::Config;
-use crate::engine::Layout;
-use crate::input::Input;
+use archtype_shell::config::Config;
+use archtype_shell::engine::Layout;
+use archtype_shell::input::Input;
 
 pub fn run() {
     let args: Vec<String> = std::env::args().skip(1).collect();
@@ -66,7 +67,7 @@ pub fn run() {
 /// 词库命令用的路径与配置读写：macOS 上数据在 Application Support，配置是 archtype.conf。
 /// 输入法自己盯着配置文件，写完就算生效（reload 返回 true）。
 struct LexiconEnv<'a> {
-    layout: &'a crate::engine::Layout,
+    layout: &'a archtype_shell::engine::Layout,
 }
 
 impl archtype_lexicon::Env for LexiconEnv<'_> {
@@ -184,7 +185,7 @@ fn open_settings(page: Option<&str>) {
 
 /// CI 的自检：载入安装包里的词库，打 nihao 看第一个候选和上屏。
 fn selftest() -> bool {
-    let layout = Layout::new(app::resource_dir(), Layout::support_dir_standard());
+    let layout = Layout::new(app::resource_dir(), app::support_dir_standard());
     println!("资源目录 {}", layout.resource_dir.display());
     println!("数据目录 {}", layout.support_dir.display());
     println!("配置文件 {}", layout.config_path().display());
@@ -217,7 +218,7 @@ fn selftest() -> bool {
     let keys: &[char] = &['n', 'i', 'h', 'a', 'o'];
     let mut frame = input.frame(false);
     for c in keys {
-        frame = input.key(&crate::input::make_key(
+        frame = input.key(&archtype_shell::input::make_key(
             *c as u32, 0, false, None, None, 0, 0, false, 0,
         ));
     }
@@ -227,7 +228,7 @@ fn selftest() -> bool {
         .map(|c| c.text.clone())
         .unwrap_or_default();
     println!("nihao → 第一个候选「{first}」，编辑区「{}」", frame.preedit);
-    let frame = input.key(&crate::input::make_key(
+    let frame = input.key(&archtype_shell::input::make_key(
         0x20, 0, false, None, None, 0, 0, false, 0,
     ));
     let committed = frame.commit.unwrap_or_default();

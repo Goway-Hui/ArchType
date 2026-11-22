@@ -54,20 +54,6 @@ pub struct Layout {
 }
 
 impl Layout {
-    /// 用户数据目录：`ARCHTYPE_DATA_DIR` > `~/Library/Application Support/ArchType`。
-    pub fn support_dir_standard() -> PathBuf {
-        if let Ok(dir) = std::env::var("ARCHTYPE_DATA_DIR") {
-            if !dir.is_empty() {
-                return PathBuf::from(dir);
-            }
-        }
-        let home = std::env::var("HOME").unwrap_or_else(|_| "/tmp".to_string());
-        PathBuf::from(home)
-            .join("Library")
-            .join("Application Support")
-            .join("ArchType")
-    }
-
     pub fn new(resource_dir: impl Into<PathBuf>, support_dir: impl Into<PathBuf>) -> Self {
         Self {
             resource_dir: resource_dir.into(),
