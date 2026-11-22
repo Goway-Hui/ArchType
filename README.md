@@ -608,6 +608,9 @@ ARCHTYPE_VOICE_WAV=说的话.wav ARCHTYPE_VOICE_EXPECT=期望的字 scripts/addo
 
 ## 致谢
 
+- [WowType](https://github.com/Gloridust/WowType)：本仓库的上游项目。ArchType 的引擎、fcitx5 插件、语音、
+  设置界面都从它派生；本仓库在此基础上去掉 macOS 的 Swift 外壳（改为 Rust）、把设置界面换成跨平台的 NSH app，
+  并改名为 ArchType
 - [雾凇拼音 rime-ice](https://github.com/iDvel/rime-ice)：词库和英文词表（GPL-3.0，随安装包一起分发，许可证见 `/usr/share/doc/archtype/copyright`）
 - [Rime 五笔字型 rime-wubi](https://github.com/rime/rime-wubi)：五笔 86 码表（LGPL-3.0，随安装包一起分发；作者见 `WUBI-AUTHORS`，来源和钉死的提交见 `WUBI-SOURCE.txt`）
 - [Tatoeba](https://tatoeba.org)：中文句子统计出的词频（`data/tatoeba-freq.tsv`，只有词频、不含句子），融进安装包的词库；句子许可证 CC BY 2.0 FR，Tatoeba contributors
