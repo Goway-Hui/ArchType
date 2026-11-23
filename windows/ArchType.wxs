@@ -24,7 +24,7 @@
 
         <!-- 32 位应用的输入法（WOW6432Node 注册由 32 位组件自动重定向） -->
         <Component Id="InputMethod32" Guid="B71E4D08-3C6A-4F92-A05D-8E2B7A1C9F43" Bitness="always32">
-          <File Id="tsf_dll32" Source="$(var.X86Dir)\archtype_tsf.dll" KeyPath="yes" />
+          <File Id="tsf_dll32" Source="$(var.X86Dir)\archtype_tsf.dll" Name="archtype_tsf32.dll" KeyPath="yes" />
         </Component>
 
         <?if $(var.SettingsExe) != "" ?>
@@ -51,7 +51,7 @@
           <RegistryKey Root="HKCR" Key="CLSID\{6F2D3C1A-7B4E-4C2D-9E31-2A5B8F0C7D11}">
             <RegistryValue Type="string" Value="ArchType 拼音" KeyPath="yes" />
             <RegistryKey Key="InprocServer32">
-              <RegistryValue Type="string" Value="[INSTALLDIR]archtype_tsf.dll" />
+              <RegistryValue Type="string" Value="[INSTALLDIR]archtype_tsf32.dll" />
               <RegistryValue Name="ThreadingModel" Type="string" Value="Apartment" />
             </RegistryKey>
           </RegistryKey>
