@@ -8,12 +8,15 @@ use std::sync::{LazyLock, Mutex};
 
 /// 用系统默认程序打开文件或链接（macOS 是 `open`，Linux 是 `xdg-open`）。
 fn open_with_system(target: &str) -> bool {
-    let program = if on_macos() { "open" } else { "xdg-open" };
-    std::process::Command::new(program)
-        .arg(target)
-        .status()
-        .map(|status| status.success())
-        .unwrap_or(false)
+    let status = if on_windows() {
+        std::process::Command::new("cmd")
+            .args(["/C", "start", "", target])
+            .status()
+    } else {
+        let program = if on_macos() { "open" } else { "xdg-open" };
+        std::process::Command::new(program).arg(target).status()
+    };
+    status.map(|status| status.success()).unwrap_or(false)
 }
 
 /// 应用自己的 UI 集合。
@@ -23,29 +26,55 @@ fn native(registry: &mut Registry) {
 }
 
 fn home() -> String {
-    std::env::var("HOME").unwrap_or_default()
+    if on_windows() {
+        std::env::var("USERPROFILE").unwrap_or_default()
+    } else {
+        std::env::var("HOME").unwrap_or_default()
+    }
 }
 
 fn config_home() -> String {
-    std::env::var("XDG_CONFIG_HOME").unwrap_or_else(|_| format!("{}/.config", home()))
+    if on_windows() {
+        std::env::var("APPDATA").unwrap_or_else(|_| format!("{}\AppData\Roaming", home()))
+    } else {
+        std::env::var("XDG_CONFIG_HOME").unwrap_or_else(|_| format!("{}/.config", home()))
+    }
 }
 
 fn data_home() -> String {
-    std::env::var("XDG_DATA_HOME").unwrap_or_else(|_| format!("{}/.local/share", home()))
+    if on_windows() {
+        std::env::var("LOCALAPPDATA").unwrap_or_else(|_| format!("{}\AppData\Local", home()))
+    } else {
+        std::env::var("XDG_DATA_HOME").unwrap_or_else(|_| format!("{}/.local/share", home()))
+    }
 }
 
 fn state_home() -> String {
-    std::env::var("XDG_STATE_HOME").unwrap_or_else(|_| format!("{}/.local/state", home()))
+    if on_windows() {
+        std::env::var("LOCALAPPDATA").unwrap_or_else(|_| format!("{}\AppData\Local", home()))
+    } else {
+        std::env::var("XDG_STATE_HOME").unwrap_or_else(|_| format!("{}/.local/state", home()))
+    }
 }
 
-/// macOS 上输入法的数据目录（和输入法进程一致：`~/Library/Application Support/ArchType`）。
+/// 输入法的数据目录（和输入法进程一致）。
 fn support_dir() -> String {
-    format!("{}/Library/Application Support/ArchType", home())
+    if on_windows() {
+        format!("{}\ArchType", std::env::var("APPDATA").unwrap_or_default())
+    } else if on_macos() {
+        format!("{}/Library/Application Support/ArchType", home())
+    } else {
+        format!("{}/archtype", data_home())
+    }
 }
 
-/// 设置界面跑在哪：macOS 的路径、重载方式都和 Linux 不一样。
+/// 设置界面跑在哪：路径、重载方式随平台不同。
 pub fn on_macos() -> bool {
     cfg!(target_os = "macos")
+}
+
+pub fn on_windows() -> bool {
+    cfg!(target_os = "windows")
 }
 
 fn read(path: &str) -> String {
@@ -135,7 +164,7 @@ fn classicui_path() -> String {
 }
 
 fn state_path() -> String {
-    if on_macos() {
+    if on_macos() || on_windows() {
         format!("{}/state.json", support_dir())
     } else {
         format!("{}/archtype/state.json", state_home())
@@ -143,7 +172,7 @@ fn state_path() -> String {
 }
 
 fn translate_key_path() -> String {
-    if on_macos() {
+    if on_macos() || on_windows() {
         format!("{}/translate.key", support_dir())
     } else {
         format!("{}/archtype/translate.key", config_home())
@@ -1100,8 +1129,9 @@ impl Config {
     /// 走 fcitx5 的 ReloadAddonConfig（旧版设置界面每次保存都调）；`fcitx5-remote -r`
     /// 只重载输入法配置，插件不会重新读。
     pub fn reload_config() -> bool {
-        // macOS 的输入法自己盯着 archtype.conf 的修改时间，改完就重读，不用通知
-        if on_macos() {
+        // macOS 的输入法自己盯着 archtype.conf 的修改时间；Windows 没 fcitx5，
+        // 输入法进程内也是盯文件修改时间，不用通知
+        if on_macos() || on_windows() {
             return true;
         }
         std::process::Command::new("gdbus")
@@ -1123,8 +1153,8 @@ impl Config {
 
     /// 重启 fcitx5（换字体、换主题这类要整个进程重来的地方）。
     pub fn restart_fcitx() -> bool {
-        // macOS 上没有 fcitx5 可以重启；设置改完输入法立刻按新设置走，这里什么也不用做。
-        if on_macos() {
+        // macOS / Windows 上没有 fcitx5 可以重启；设置改完输入法按新设置走，这里什么也不用做。
+        if on_macos() || on_windows() {
             return true;
         }
         std::process::Command::new("gdbus")
