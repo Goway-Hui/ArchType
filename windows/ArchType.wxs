@@ -16,11 +16,23 @@
 
     <StandardDirectory Id="ProgramFiles64Folder">
       <Directory Id="INSTALLDIR" Name="ArchType">
-        <!-- 输入法本体：TSF COM 服务 + 命令行工具 -->
+        <!-- 输入法本体：TSF COM 服务 + 命令行工具（64 位） -->
         <Component Id="InputMethod" Guid="3A6F1C2D-8B4E-4A79-9C31-5E2F7D0B6A18">
           <File Id="tsf_dll" Source="$(var.SourceDir)\archtype_tsf.dll" KeyPath="yes" />
           <File Id="archtype_exe" Source="$(var.SourceDir)\archtype.exe" />
         </Component>
+
+        <!-- 32 位应用的输入法（WOW6432Node 注册由 32 位组件自动重定向） -->
+        <Component Id="InputMethod32" Guid="B71E4D08-3C6A-4F92-A05D-8E2B7A1C9F43" Bitness="always32">
+          <File Id="tsf_dll32" Source="$(var.X86Dir)\archtype_tsf.dll" KeyPath="yes" />
+        </Component>
+
+        <?if $(var.SettingsExe) != "" ?>
+        <!-- 跨平台设置界面（nsh 打的 Windows 版） -->
+        <Component Id="Settings" Guid="C92A5E17-4D8B-4A26-B7C3-0F6E1D8B4A59">
+          <File Id="settings_exe" Source="$(var.SettingsExe)" Name="ArchType 设置.exe" KeyPath="yes" />
+        </Component>
+        <?endif?>
 
         <!-- 词库与语言模型（和 Linux/macOS 安装包同一份数据） -->
         <Component Id="DataFiles" Guid="5D8B2A41-6C3F-4E9D-A128-7B4F0C6E3D92">
@@ -34,6 +46,20 @@
         </Component>
 
         <!-- COM 注册 + CTF TIP + 安装目录（DLL 在宿主进程里，靠它找资源） -->
+        <!-- 32 位视图的 COM 与 CTF 注册 -->
+        <Component Id="Registration32" Guid="D35F8A26-5E9C-4B17-A8D4-1B7C2E6F9A03" Bitness="always32">
+          <RegistryKey Root="HKCR" Key="CLSID\{6F2D3C1A-7B4E-4C2D-9E31-2A5B8F0C7D11}">
+            <RegistryValue Type="string" Value="ArchType 拼音" KeyPath="yes" />
+            <RegistryKey Key="InprocServer32">
+              <RegistryValue Type="string" Value="[INSTALLDIR]archtype_tsf.dll" />
+              <RegistryValue Name="ThreadingModel" Type="string" Value="Apartment" />
+            </RegistryKey>
+          </RegistryKey>
+          <RegistryKey Root="HKLM" Key="SOFTWARE\Microsoft\CTF\TIP\{6F2D3C1A-7B4E-4C2D-9E31-2A5B8F0C7D11}">
+            <RegistryValue Name="Enable" Type="integer" Value="1" />
+          </RegistryKey>
+        </Component>
+
         <Component Id="Registration" Guid="9E4C7B15-2D6A-4F38-B05C-1A8E6F3D2C74">
           <RegistryKey Root="HKLM" Key="SOFTWARE\ArchType">
             <RegistryValue Name="InstallDir" Type="string" Value="[INSTALLDIR]" KeyPath="yes" />
@@ -61,6 +87,9 @@
       <ComponentRef Id="InputMethod" />
       <ComponentRef Id="DataFiles" />
       <ComponentRef Id="Registration" />
+      <ComponentRef Id="InputMethod32" />
+      <ComponentRef Id="Registration32" />
+      <?if $(var.SettingsExe) != "" ?><ComponentRef Id="Settings" /><?endif?>
     </Feature>
   </Package>
 </Wix>

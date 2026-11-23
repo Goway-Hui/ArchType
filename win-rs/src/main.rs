@@ -13,6 +13,14 @@ fn main() {
         "--unregister" => finish(archtype_tsf::unregister()),
         "--version" | "-V" => println!("ArchType {}", env!("CARGO_PKG_VERSION")),
         "--selftest" => std::process::exit(if selftest() { 0 } else { 1 }),
+        "--mode" => {
+            let mode = std::env::args().nth(2).unwrap_or_else(|| "toggle".into());
+            let path = archtype_tsf::paths::support_dir().join("mode-request");
+            if let Some(dir) = path.parent() {
+                let _ = std::fs::create_dir_all(dir);
+            }
+            std::process::exit(if std::fs::write(&path, mode).is_ok() { 0 } else { 1 });
+        }
         "--install-lexicon" | "--use-lexicon" => {
             let layout = archtype_tsf::paths::layout();
             let env = LexiconEnv { layout };

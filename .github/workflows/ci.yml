@@ -686,8 +686,11 @@ jobs:
         with:
           name: data
           path: dist/data
-      - name: 编译（TSF DLL + archtype.exe）
-        run: cargo build --release --manifest-path win-rs/Cargo.toml
+      - name: 编译（TSF DLL + archtype.exe，64 位 + 32 位）
+        run: |
+          rustup target add i686-pc-windows-msvc
+          cargo build --release --manifest-path win-rs/Cargo.toml
+          cargo build --release --target i686-pc-windows-msvc --manifest-path win-rs/Cargo.toml
       - name: 自检（载入词库打 nihao）
         shell: pwsh
         run: |
@@ -752,7 +755,12 @@ jobs:
         run: |
           $version = (Select-String -Path Cargo.toml -Pattern '^version = "(.+)"').Matches[0].Groups[1].Value
           $env:Path = "$env:USERPROFILE\.dotnet\tools;$env:Path"
-          ./scripts/package-msi.ps1 -Version $version -DataDir "dist/data" -OutDir "dist/windows"
+          $settings = Get-ChildItem -Path "settings-nsh/.nsh/out" -Recurse -Filter *.exe -ErrorAction SilentlyContinue |
+            Where-Object { $_.Name -notmatch 'nsh' } | Select-Object -First 1
+          if (-not $settings) { throw "nsh 没产出设置界面 exe（settings-nsh/.nsh/out）" }
+          ./scripts/package-msi.ps1 -Version $version -DataDir "dist/data" `
+            -X86Dir "win-rs/target/i686-pc-windows-msvc/release" `
+            -SettingsExe $settings.FullName -OutDir "dist/windows"
 
       - name: 装一遍 MSI 再卸掉（runner 是管理员）
         shell: pwsh
@@ -765,10 +773,13 @@ jobs:
           foreach ($f in @("archtype_tsf.dll", "archtype.exe", "lexicon.tsv", "words.lm")) {
             if (-not (Test-Path "C:\Program Files\ArchType\$f")) { throw "$f 没装进去" }
           }
+          if (-not (Test-Path "C:\Program Files\ArchType\ArchType 设置.exe")) { throw "设置界面没装进去" }
           reg query "HKCR\CLSID\{6F2D3C1A-7B4E-4C2D-9E31-2A5B8F0C7D11}\InprocServer32"
           if ($LASTEXITCODE -ne 0) { throw "COM 注册没写进去" }
           reg query "HKLM\SOFTWARE\Microsoft\CTF\TIP\{6F2D3C1A-7B4E-4C2D-9E31-2A5B8F0C7D11}"
           if ($LASTEXITCODE -ne 0) { throw "CTF TIP 没写进去" }
+          reg query "HKCR\CLSID\{6F2D3C1A-7B4E-4C2D-9E31-2A5B8F0C7D11}\InprocServer32" /reg:32
+          if ($LASTEXITCODE -ne 0) { throw "32 位 COM 注册没写进去" }
           $p = Start-Process msiexec.exe -ArgumentList @("/x", "`"$($msi.FullName)`"", "/qn", "/norestart") -Wait -PassThru
           if ($p.ExitCode -ne 0) { throw "msiexec 卸载失败：$($p.ExitCode)" }
           if (Test-Path "C:\Program Files\ArchType\archtype_tsf.dll") { throw "卸载后 DLL 还在" }

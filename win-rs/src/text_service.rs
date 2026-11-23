@@ -9,7 +9,7 @@ use std::collections::HashMap;
 use std::rc::Rc;
 use std::sync::{LazyLock, Once};
 
-use archtype_core::session::{Frame, Key};
+use archtype_core::session::{Frame, Key, Mode};
 use archtype_shell::input::Input;
 use archtype_shell::keys::win::VoiceKey;
 use archtype_shell::panel::Page;
@@ -21,7 +21,10 @@ use archtype_shell::keys::{translate_key_down, Modifiers};
 use archtype_shell::runtime::Runtime;
 use windows::core::{implement, Interface, Result};
 use windows::Win32::Foundation::{BOOL, FALSE, HWND, LPARAM, RECT, TRUE, WPARAM};
-use windows::Win32::UI::WindowsAndMessaging::{KillTimer, SetTimer};
+use windows::Win32::UI::WindowsAndMessaging::{
+    CallNextHookEx, KillTimer, SetTimer, SetWindowsHookExW, UnhookWindowsHookEx, HHOOK,
+    KBDLLHOOKSTRUCT, WH_KEYBOARD_LL, WM_KEYDOWN, WM_KEYUP, WM_SYSKEYDOWN, WM_SYSKEYUP,
+};
 use windows::Win32::UI::Input::KeyboardAndMouse::{
     GetKeyboardLayout, GetKeyboardState, GetKeyState, ToUnicodeEx,
 };
@@ -67,6 +70,8 @@ pub struct State {
     last_caret: Cell<RECT>,
     /// 候选窗口现在显示的是不是语音提示
     hint_shown: Cell<bool>,
+    /// 全局语音热键钩子（WH_KEYBOARD_LL）；0 表示没装
+    hook: Cell<isize>,
 }
 
 impl State {
@@ -83,6 +88,7 @@ impl State {
             last_context: RefCell::new(None),
             last_caret: Cell::new(RECT::default()),
             hint_shown: Cell::new(false),
+            hook: Cell::new(0),
         }
     }
 }
@@ -119,6 +125,22 @@ impl TextService {
         unsafe {
             SetTimer(None, 0, 50, Some(voice_timer));
         }
+        // 全局语音热键：输入法在后台时也能按（低级键盘钩子，只在自己的消息线程里回调）
+        if self.state.hook.get() == 0 {
+            if let Ok(module) = windows::Win32::System::LibraryLoader::GetModuleHandleW(PCWSTR::null()) {
+                if let Ok(hook) = unsafe {
+                    SetWindowsHookExW(
+                        WH_KEYBOARD_LL,
+                        Some(keyboard_hook),
+                        windows::Win32::Foundation::HINSTANCE(module.0),
+                        0,
+                    )
+                } {
+                    self.state.hook.set(hook.0 as isize);
+                }
+            }
+        }
+        VOICE_STATE.with(|slot| *slot.borrow_mut() = Some(Rc::clone(&self.state)));
         Ok(())
     }
 
@@ -133,6 +155,12 @@ impl TextService {
         *self.state.thread_mgr.borrow_mut() = None;
         unsafe {
             let _ = KillTimer(None, 0);
+        }
+        let hook = self.state.hook.replace(0);
+        if hook != 0 {
+            unsafe {
+                let _ = UnhookWindowsHookEx(HHOOK(hook));
+            }
         }
         // 切走应用时把学到的词和统计异步落盘（不阻塞宿主，别用 save_wait）
         let runtime = runtime();
@@ -514,6 +542,41 @@ fn start_composition(
     }
 }
 
+fn mode_request_path() -> std::path::PathBuf {
+    crate::paths::support_dir().join("mode-request")
+}
+
+/// 低级键盘钩子：匹配语音键时按/松交给语音句柄，并吃掉这个键。
+unsafe extern "system" fn keyboard_hook(code: i32, wparam: WPARAM, lparam: LPARAM) -> LRESULT {
+    if code >= 0 {
+        let info = &*(lparam.0 as *const KBDLLHOOKSTRUCT);
+        let down = wparam.0 == WM_KEYDOWN as usize || wparam.0 == WM_SYSKEYDOWN as usize;
+        let up = wparam.0 == WM_KEYUP as usize || wparam.0 == WM_SYSKEYUP as usize;
+        if down || up {
+            let config = runtime().config();
+            if config.voice {
+                if let Some(key) = VoiceKey::parse(&config.voice_key) {
+                    if info.vkCode as u16 == key.vk {
+                        VOICE_STATE.with(|slot| {
+                            if let Some(state) = slot.borrow().as_ref() {
+                                if let Some(voice) = state.voice.borrow().as_ref() {
+                                    if down {
+                                        voice.key_down();
+                                    } else {
+                                        voice.key_up();
+                                    }
+                                }
+                            }
+                        });
+                        return LRESULT(1);
+                    }
+                }
+            }
+        }
+    }
+    CallNextHookEx(None, code, wparam, lparam)
+}
+
 /// 第一次按语音键时建句柄（模型在 `%APPDATA%\ArchType\wtlocal`）。
 fn ensure_voice(state: &State) {
     if state.voice.borrow().is_some() {
@@ -531,6 +594,41 @@ unsafe extern "system" fn voice_timer(_hwnd: HWND, _msg: u32, _id: usize, _time:
     let Some(state) = VOICE_STATE.with(|slot| slot.borrow().clone()) else {
         return;
     };
+    // 命令行 `archtype --mode zh|en|translate|toggle`：读一次请求文件就删
+    if let Ok(text) = std::fs::read_to_string(mode_request_path()) {
+        let _ = std::fs::remove_file(mode_request_path());
+        let current = state.input.borrow().as_ref().map(|input| input.mode());
+        let target = match text.trim() {
+            "zh" => Some(Mode::Chinese),
+            "en" => Some(Mode::English),
+            "translate" => Some(Mode::Translate),
+            "toggle" => Some(match current {
+                Some(Mode::Chinese) => Mode::English,
+                Some(Mode::English) => Mode::Chinese,
+                _ => Mode::Chinese,
+            }),
+            _ => None,
+        };
+        if let Some(target) = target {
+            if let Some(context) = state.last_context.borrow().clone() {
+                let (frame, page) = {
+                    let mut input = state.input.borrow_mut();
+                    match input.as_mut() {
+                        Some(input) => {
+                            let frame = input.set_mode(target);
+                            let config = input.config().clone();
+                            let page = page_from_frame(&frame, input.shown(), &config);
+                            (frame, page)
+                        }
+                        None => return,
+                    }
+                };
+                let page = (!page.is_empty()).then_some(page);
+                let key = Interface::as_raw(&context) as isize;
+                apply_frame(&context, state.tid.get(), Rc::clone(&state), key, &frame, page);
+            }
+        }
+    }
     let phase = {
         let voice = state.voice.borrow();
         match voice.as_ref() {
