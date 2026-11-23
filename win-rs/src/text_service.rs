@@ -11,6 +11,8 @@ use std::sync::{LazyLock, Once};
 
 use archtype_core::session::{Frame, Key};
 use archtype_shell::input::Input;
+use archtype_shell::panel::Page;
+use archtype_shell::view::page_from_frame;
 use archtype_shell::keys::{translate_key_down, Modifiers};
 use archtype_shell::runtime::Runtime;
 use windows::core::{implement, Interface, Result};
@@ -21,7 +23,7 @@ use windows::Win32::UI::Input::KeyboardAndMouse::{
 use windows::Win32::UI::TextServices::{
     ITfComposition, ITfCompositionSink, ITfCompositionSink_Impl, ITfContext,
     ITfContextComposition, ITfEditSession, ITfEditSession_Impl, ITfInsertAtSelection,
-    ITfKeyEventSink, ITfKeyEventSink_Impl, ITfKeystrokeMgr,
+    ITfKeyEventSink, ITfKeyEventSink_Impl, ITfKeystrokeMgr, ITfRangeACP,
     ITfTextInputProcessorEx, ITfTextInputProcessorEx_Impl, ITfTextInputProcessor_Impl,
     ITfThreadMgr, TF_CONTEXT_EDIT_CONTEXT_FLAGS, TF_ES_READWRITE, TF_ES_SYNC, TF_IAS_NOQUERY,
     TF_SELECTION,
@@ -144,7 +146,7 @@ impl KeySink {
         else {
             return Ok(FALSE);
         };
-        let frame = {
+        let (frame, page) = {
             let mut input = self.state.input.borrow_mut();
             let Some(input) = input.as_mut() else {
                 return Ok(FALSE);
@@ -152,8 +154,12 @@ impl KeySink {
             let mut key = Key::default();
             key.keysym = translated.keysym;
             key.modifiers = translated.modifiers.0;
-            input.key(&key)
+            let frame = input.key(&key);
+            let config = input.config().clone();
+            let page = page_from_frame(&frame, input.shown(), &config);
+            (frame, page)
         };
+        let page = (!page.is_empty()).then_some(page);
         let context_key = unsafe { Interface::as_raw(pic) as isize };
         apply_frame(
             pic,
@@ -161,6 +167,7 @@ impl KeySink {
             Rc::clone(&self.state),
             context_key,
             &frame,
+            page,
         );
         Ok(BOOL::from(frame.handled))
     }
@@ -240,7 +247,14 @@ enum EditKind {
 }
 
 /// 把一帧排到 TSF 的 edit session 里执行（TSF 只允许在 edit session 里改文本）。
-fn apply_frame(context: &ITfContext, tid: u32, state: Rc<State>, key: isize, frame: &Frame) {
+fn apply_frame(
+    context: &ITfContext,
+    tid: u32,
+    state: Rc<State>,
+    key: isize,
+    frame: &Frame,
+    page: Option<Page>,
+) {
     let kind = if let Some(commit) = &frame.commit {
         if commit.is_empty() {
             return;
@@ -248,16 +262,16 @@ fn apply_frame(context: &ITfContext, tid: u32, state: Rc<State>, key: isize, fra
         EditKind::Commit(commit.encode_utf16().collect())
     } else if !frame.preedit.is_empty() {
         EditKind::Preedit(frame.preedit.encode_utf16().collect())
-    } else if frame.handled {
-        EditKind::Cancel
     } else {
-        return;
+        EditKind::Cancel
     };
     let session: ITfEditSession = FrameEditSession {
         context: context.clone(),
         state,
         key,
         kind,
+        page,
+        tid,
     }
     .into();
     let flags = TF_CONTEXT_EDIT_CONTEXT_FLAGS(TF_ES_SYNC.0 | TF_ES_READWRITE.0);
@@ -272,6 +286,8 @@ struct FrameEditSession {
     state: Rc<State>,
     key: isize,
     kind: EditKind,
+    page: Option<Page>,
+    tid: u32,
 }
 
 impl ITfEditSession_Impl for FrameEditSession_Impl {
@@ -325,7 +341,60 @@ impl ITfEditSession_Impl for FrameEditSession_Impl {
                 }
             }
         }
+        match &this.page {
+            Some(page) => {
+                if let Ok(caret) = caret_rect(&this.context, ec) {
+                    let state = Rc::clone(&this.state);
+                    let context = this.context.clone();
+                    let tid = this.tid;
+                    let key = this.key;
+                    let on_click: Box<dyn Fn(usize)> = Box::new(move |index| {
+                        click_candidate(&state, &context, tid, key, index);
+                    });
+                    crate::candidate_window::show(page, caret, on_click);
+                }
+            }
+            None => crate::candidate_window::hide(),
+        }
         Ok(())
+    }
+}
+
+/// 点候选：选词后重新应用一帧（上屏或更新候选）。
+fn click_candidate(state: &Rc<State>, context: &ITfContext, tid: u32, key: isize, index: usize) {
+    let (frame, page) = {
+        let mut input = state.input.borrow_mut();
+        let Some(input) = input.as_mut() else {
+            return;
+        };
+        let frame = input.select(index);
+        let config = input.config().clone();
+        let page = page_from_frame(&frame, input.shown(), &config);
+        (frame, page)
+    };
+    let page = (!page.is_empty()).then_some(page);
+    apply_frame(context, tid, Rc::clone(state), key, &frame, page);
+}
+
+/// 光标在屏幕上的矩形（物理像素），候选窗口按它定位。
+fn caret_rect(context: &ITfContext, ec: u32) -> Result<windows::Win32::Foundation::RECT> {
+    unsafe {
+        let mut selection: [TF_SELECTION; 1] = std::mem::zeroed();
+        let mut fetched = 0u32;
+        context.GetSelection(ec, 0, &mut selection, &mut fetched)?;
+        let range = selection[0]
+            .range
+            .as_ref()
+            .ok_or_else(|| windows::core::Error::from_hresult(windows::Win32::Foundation::E_FAIL))?;
+        let acp: ITfRangeACP = range.cast()?;
+        let mut anchor = 0i32;
+        let mut length = 0i32;
+        acp.GetExtent(&mut anchor, &mut length)?;
+        let view = context.GetActiveView()?;
+        let mut rect = windows::Win32::Foundation::RECT::default();
+        let mut clipped = windows::Win32::Foundation::BOOL::default();
+        view.GetTextExt(ec, anchor, anchor + length, &mut rect, &mut clipped)?;
+        Ok(rect)
     }
 }
 

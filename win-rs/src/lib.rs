@@ -6,6 +6,7 @@
 #![cfg(windows)]
 
 pub mod paths;
+mod candidate_window;
 pub mod register;
 mod text_service;
 
