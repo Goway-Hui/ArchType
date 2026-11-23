@@ -21,10 +21,10 @@ use windows::Win32::UI::Input::KeyboardAndMouse::{
 use windows::Win32::UI::TextServices::{
     ITfComposition, ITfCompositionSink, ITfCompositionSink_Impl, ITfContext,
     ITfContextComposition, ITfEditSession, ITfEditSession_Impl, ITfInsertAtSelection,
-    ITfKeyEventSink, ITfKeyEventSink_Impl, ITfKeystrokeMgr, ITfRange, ITfRangeACP,
+    ITfKeyEventSink, ITfKeyEventSink_Impl, ITfKeystrokeMgr,
     ITfTextInputProcessorEx, ITfTextInputProcessorEx_Impl, ITfTextInputProcessor_Impl,
     ITfThreadMgr, TF_CONTEXT_EDIT_CONTEXT_FLAGS, TF_ES_READWRITE, TF_ES_SYNC, TF_IAS_NOQUERY,
-    TS_SELECTION_ACP,
+    TF_SELECTION,
 };
 
 /// 进程级：配置、引擎、翻译器、统计（DLL 在每个宿主进程里各一份，和 fcitx5 插件一样）。
@@ -337,12 +337,14 @@ fn start_composition(
     ec: u32,
 ) -> Result<ITfComposition> {
     unsafe {
-        let mut selection: [TS_SELECTION_ACP; 1] = [TS_SELECTION_ACP::default()];
+        // 当前选区的 range 就是光标处（空选区时是插入点）
+        let mut selection: [TF_SELECTION; 1] = std::mem::zeroed();
         let mut fetched = 0u32;
-        context.GetSelection(0, &mut selection, &mut fetched)?;
-        let start: ITfRange = context.GetStart(ec)?;
-        let extent: ITfRangeACP = start.cast()?;
-        extent.SetExtent(selection[0].acpStart, 0)?;
+        context.GetSelection(ec, 0, &mut selection, &mut fetched)?;
+        let range = selection[0]
+            .range
+            .as_ref()
+            .ok_or_else(|| windows::core::Error::from_hresult(windows::Win32::Foundation::E_FAIL))?;
 
         let sink: ITfCompositionSink = CompositionSink {
             state: Rc::clone(state),
@@ -354,7 +356,7 @@ fn start_composition(
             .borrow_mut()
             .insert(key, sink.clone());
         let context_composition: ITfContextComposition = context.cast()?;
-        context_composition.StartComposition(ec, &start, &sink)
+        context_composition.StartComposition(ec, range, &sink)
     }
 }
 
