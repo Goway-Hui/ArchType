@@ -718,6 +718,28 @@ jobs:
           exit 0
 
       # WiX v6/v7 要求接受 OSMF 的付费 EULA；v5 没有这个门槛，模板语法与 v4 相同
+      - name: nsh（Windows 设置界面构建器）
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          Invoke-WebRequest "https://github.com/longbridge/nsh/releases/download/v0.6.0/install.ps1" -OutFile "$env:RUNNER_TEMP\nsh-install.ps1"
+          & "$env:RUNNER_TEMP\nsh-install.ps1"
+          $nsh = Get-ChildItem "$env:USERPROFILE\.nsh" -Recurse -Filter nsh.exe -ErrorAction SilentlyContinue | Select-Object -First 1
+          if (-not $nsh) { throw "nsh.exe 没装上" }
+          Write-Output "nsh: $($nsh.FullName)"
+          & $nsh.FullName --version
+
+      - name: 构建设置界面（Windows）
+        shell: pwsh
+        run: |
+          $nsh = (Get-ChildItem "$env:USERPROFILE\.nsh" -Recurse -Filter nsh.exe -ErrorAction SilentlyContinue | Select-Object -First 1).FullName
+          $version = (Select-String -Path Cargo.toml -Pattern '^version = "(.+)"').Matches[0].Groups[1].Value
+          Push-Location settings-nsh
+          & $nsh package --target windows --app-version $version -o .nsh/out
+          if ($LASTEXITCODE -ne 0) { throw "nsh package 失败" }
+          Get-ChildItem .nsh/out -Recurse | Select-Object FullName, Length | Format-Table -AutoSize
+          Pop-Location
+
       - name: WiX v5
         run: dotnet tool install --global wix --version 5.*
 
