@@ -35,7 +35,7 @@ fn home() -> String {
 
 fn config_home() -> String {
     if on_windows() {
-        std::env::var("APPDATA").unwrap_or_else(|_| format!("{}\AppData\Roaming", home()))
+        std::env::var("APPDATA").unwrap_or_else(|_| format!(r"{}\AppData\Roaming", home()))
     } else {
         std::env::var("XDG_CONFIG_HOME").unwrap_or_else(|_| format!("{}/.config", home()))
     }
@@ -43,7 +43,7 @@ fn config_home() -> String {
 
 fn data_home() -> String {
     if on_windows() {
-        std::env::var("LOCALAPPDATA").unwrap_or_else(|_| format!("{}\AppData\Local", home()))
+        std::env::var("LOCALAPPDATA").unwrap_or_else(|_| format!(r"{}\AppData\Local", home()))
     } else {
         std::env::var("XDG_DATA_HOME").unwrap_or_else(|_| format!("{}/.local/share", home()))
     }
@@ -51,7 +51,7 @@ fn data_home() -> String {
 
 fn state_home() -> String {
     if on_windows() {
-        std::env::var("LOCALAPPDATA").unwrap_or_else(|_| format!("{}\AppData\Local", home()))
+        std::env::var("LOCALAPPDATA").unwrap_or_else(|_| format!(r"{}\AppData\Local", home()))
     } else {
         std::env::var("XDG_STATE_HOME").unwrap_or_else(|_| format!("{}/.local/state", home()))
     }
@@ -60,7 +60,7 @@ fn state_home() -> String {
 /// 输入法的数据目录（和输入法进程一致）。
 fn support_dir() -> String {
     if on_windows() {
-        format!("{}\ArchType", std::env::var("APPDATA").unwrap_or_default())
+        format!(r"{}\ArchType", std::env::var("APPDATA").unwrap_or_default())
     } else if on_macos() {
         format!("{}/Library/Application Support/ArchType", home())
     } else {
