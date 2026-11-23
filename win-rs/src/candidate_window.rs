@@ -12,9 +12,9 @@ use windows::core::{w, PCWSTR};
 use windows::Win32::Foundation::{BOOL, COLORREF, HWND, LPARAM, LRESULT, RECT, WPARAM};
 use windows::Win32::Graphics::Gdi::{
     BeginPaint, BitBlt, CreateCompatibleBitmap, CreateCompatibleDC, CreateFontW, CreatePen,
-    CreateSolidBrush, DeleteDC, DeleteObject, EndPaint, GetStockObject, GetTextExtentPoint32W,
+    CreateSolidBrush, DeleteDC, DeleteObject, EndPaint, GetTextExtentPoint32W,
     SelectObject, SetBkMode, SetTextAlign, SetTextColor, TextOutW, RoundRect, CLEARTYPE_QUALITY,
-    DEFAULT_CHARSET, DEFAULT_PITCH, FF_DONTCARE, FW_NORMAL, HDC, HFONT, HGDIOBJ, NULL_BRUSH,
+    DEFAULT_CHARSET, DEFAULT_PITCH, FF_DONTCARE, FW_NORMAL, HDC, HFONT, HGDIOBJ,
     OUT_DEFAULT_PRECIS, PAINTSTRUCT, PS_SOLID, SRCCOPY, TA_LEFT, TA_TOP, TRANSPARENT,
 };
 use windows::Win32::UI::HiDpi::GetDpiForWindow;

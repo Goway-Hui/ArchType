@@ -3,6 +3,7 @@
 #![cfg(windows)]
 
 use archtype_shell::config::Config;
+use archtype_shell::engine::Layout;
 use archtype_shell::input::{make_key, Input};
 
 fn main() {

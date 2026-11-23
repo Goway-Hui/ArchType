@@ -3,8 +3,6 @@
 //! 安装程序（或 `archtype --register`）以管理员身份调用；没有管理员权限时
 //! `HKLM` 写入会失败，返回具体错误码。
 
-use std::ffi::c_void;
-
 use windows::core::PCWSTR;
 use windows::Win32::Foundation::{ERROR_SUCCESS, WIN32_ERROR};
 use windows::Win32::System::LibraryLoader::{GetModuleFileNameW, GetModuleHandleW};
