@@ -23,7 +23,7 @@ use windows::Win32::UI::Input::KeyboardAndMouse::{
 use windows::Win32::UI::TextServices::{
     ITfComposition, ITfCompositionSink, ITfCompositionSink_Impl, ITfContext,
     ITfContextComposition, ITfEditSession, ITfEditSession_Impl, ITfInsertAtSelection,
-    ITfKeyEventSink, ITfKeyEventSink_Impl, ITfKeystrokeMgr, ITfRangeACP,
+    ITfKeyEventSink, ITfKeyEventSink_Impl, ITfKeystrokeMgr,
     ITfTextInputProcessorEx, ITfTextInputProcessorEx_Impl, ITfTextInputProcessor_Impl,
     ITfThreadMgr, TF_CONTEXT_EDIT_CONTEXT_FLAGS, TF_ES_READWRITE, TF_ES_SYNC, TF_IAS_NOQUERY,
     TF_SELECTION,
@@ -386,14 +386,10 @@ fn caret_rect(context: &ITfContext, ec: u32) -> Result<windows::Win32::Foundatio
             .range
             .as_ref()
             .ok_or_else(|| windows::core::Error::from_hresult(windows::Win32::Foundation::E_FAIL))?;
-        let acp: ITfRangeACP = range.cast()?;
-        let mut anchor = 0i32;
-        let mut length = 0i32;
-        acp.GetExtent(&mut anchor, &mut length)?;
         let view = context.GetActiveView()?;
         let mut rect = windows::Win32::Foundation::RECT::default();
         let mut clipped = windows::Win32::Foundation::BOOL::default();
-        view.GetTextExt(ec, anchor, anchor + length, &mut rect, &mut clipped)?;
+        view.GetTextExt(ec, range, &mut rect, &mut clipped)?;
         Ok(rect)
     }
 }

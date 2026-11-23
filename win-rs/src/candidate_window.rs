@@ -195,19 +195,19 @@ fn paint(window: &CandidateWindow) {
         // 双缓冲，避免闪烁
         let mem = CreateCompatibleDC(hdc);
         let bitmap = CreateCompatibleBitmap(hdc, width, height);
-        let old_bitmap = SelectObject(mem, bitmap.into());
-        SetBkMode(mem, TRANSPARENT as i32);
+        let old_bitmap = SelectObject(mem, HGDIOBJ(bitmap.0));
+        SetBkMode(mem, TRANSPARENT);
 
         let radius = (RADIUS * window.scale) as i32;
         let white = CreateSolidBrush(COLORREF(0x00ff_ffff));
         let border = CreatePen(PS_SOLID, 1, COLORREF(0x00df_e3dc));
-        let old_pen = SelectObject(mem, border.into());
-        let old_brush = SelectObject(mem, white.into());
+        let old_pen = SelectObject(mem, HGDIOBJ(border.0));
+        let old_brush = SelectObject(mem, HGDIOBJ(white.0));
         let _ = RoundRect(mem, 0, 0, width, height, radius * 2, radius * 2);
         let _ = SelectObject(mem, old_pen);
         let _ = SelectObject(mem, old_brush);
-        let _ = DeleteObject(white.into());
-        let _ = DeleteObject(border.into());
+        let _ = DeleteObject(HGDIOBJ(white.0));
+        let _ = DeleteObject(HGDIOBJ(border.0));
 
         let scale = window.scale;
         let font_size = window.page.font_size;
@@ -224,7 +224,7 @@ fn paint(window: &CandidateWindow) {
             let selected = window.page.cursor == Some(index);
             if selected {
                 let brush = CreateSolidBrush(COLORREF(0x00ed_6f2f));
-                let old = SelectObject(mem, brush.into());
+                let old = SelectObject(mem, HGDIOBJ(brush.0));
                 let r = (RADIUS * scale) as i32;
                 let _ = RoundRect(
                     mem,
@@ -236,7 +236,7 @@ fn paint(window: &CandidateWindow) {
                     r * 2,
                 );
                 let _ = SelectObject(mem, old);
-                let _ = DeleteObject(brush.into());
+                let _ = DeleteObject(HGDIOBJ(brush.0));
                 let _ = SetTextColor(mem, COLORREF(0x00ff_ffff));
             } else {
                 let _ = SetTextColor(mem, COLORREF(0x0027_1f1f));
@@ -245,19 +245,19 @@ fn paint(window: &CandidateWindow) {
             let mut x = left;
             if window.page.labels {
                 let label = format!("{}.", index + 1);
-                let old = SelectObject(mem, label_font.into());
+                let old = SelectObject(mem, HGDIOBJ(label_font.0));
                 let _ = TextOutW(mem, x as i32, top as i32, &utf16(&label));
                 let _ = SelectObject(mem, old);
                 let (w, _) = measure_with(mem, label_font, &label);
                 x += w;
             }
-            let old = SelectObject(mem, main_font.into());
+            let old = SelectObject(mem, HGDIOBJ(main_font.0));
             let _ = TextOutW(mem, x as i32, top as i32, &utf16(text));
             let _ = SelectObject(mem, old);
             if let Some(comment) = window.page.comments.get(index) {
                 if !comment.is_empty() {
                     let (w, _) = measure_with(mem, main_font, text);
-                    let old = SelectObject(mem, label_font.into());
+                    let old = SelectObject(mem, HGDIOBJ(label_font.0));
                     let _ = SetTextColor(mem, COLORREF(0x0060_7570));
                     let _ = TextOutW(mem, (x + w + 4.0 * scale) as i32, top as i32, &utf16(comment));
                     let _ = SelectObject(mem, old);
@@ -269,27 +269,27 @@ fn paint(window: &CandidateWindow) {
         let label_size = font_size * LABEL_SCALE * scale;
         if let Some(text) = &window.page.aux_top {
             let font = font_for(label_size, FW_NORMAL.0 as i32);
-            let old = SelectObject(mem, font.into());
+            let old = SelectObject(mem, HGDIOBJ(font.0));
             let _ = SetTextColor(mem, COLORREF(0x0060_7570));
             let _ = TextOutW(mem, (PADDING_X * scale) as i32, (PADDING_Y * scale) as i32, &utf16(text));
             let _ = SelectObject(mem, old);
-            let _ = DeleteObject(font.into());
+            let _ = DeleteObject(HGDIOBJ(font.0));
         }
         if let Some(text) = &window.page.aux_bottom {
             let font = font_for(label_size, FW_NORMAL.0 as i32);
-            let old = SelectObject(mem, font.into());
+            let old = SelectObject(mem, HGDIOBJ(font.0));
             let _ = SetTextColor(mem, COLORREF(0x0060_7570));
             let y = ((height as f64 / scale) - PADDING_Y - font_size * LABEL_SCALE) * scale;
             let _ = TextOutW(mem, (PADDING_X * scale) as i32, y as i32, &utf16(text));
             let _ = SelectObject(mem, old);
-            let _ = DeleteObject(font.into());
+            let _ = DeleteObject(HGDIOBJ(font.0));
         }
 
-        let _ = DeleteObject(main_font.into());
-        let _ = DeleteObject(label_font.into());
+        let _ = DeleteObject(HGDIOBJ(main_font.0));
+        let _ = DeleteObject(HGDIOBJ(label_font.0));
         let _ = BitBlt(hdc, 0, 0, width, height, mem, 0, 0, SRCCOPY);
         let _ = SelectObject(mem, old_bitmap);
-        let _ = DeleteObject(bitmap.into());
+        let _ = DeleteObject(HGDIOBJ(bitmap.0));
         let _ = DeleteDC(mem);
         let _ = EndPaint(window.hwnd, &ps);
     }
@@ -307,10 +307,10 @@ impl TextMeasurer for GdiMeasurer {
                 return (text.chars().count() as f64 * font_size, font_size);
             }
             let font = font_for(font_size * self.scale, FW_NORMAL.0 as i32);
-            let old = SelectObject(hdc, font.into());
+            let old = SelectObject(hdc, HGDIOBJ(font.0));
             let (width, height) = measure_with(hdc, font, text);
             let _ = SelectObject(hdc, old);
-            let _ = DeleteObject(font.into());
+            let _ = DeleteObject(HGDIOBJ(font.0));
             let _ = ReleaseDC(None, hdc);
             (width / self.scale, height / self.scale)
         }
