@@ -2199,16 +2199,18 @@ impl Config {
         if let Some(parent) = Path::new(&path).parent() {
             let _ = fs::create_dir_all(parent);
         }
-        // 先建同目录临时文件（create_new + 0600），再 rename：不留「先 0644 再 chmod」的空窗
+        // 先建同目录临时文件（create_new + 0600，Windows 没有权限位就跳过），再 rename：
+        // 不留「先 0644 再 chmod」的空窗
         use std::io::Write;
-        use std::os::unix::fs::OpenOptionsExt;
         let tmp = format!("{path}.tmp");
-        let Ok(mut file) = fs::OpenOptions::new()
-            .write(true)
-            .create_new(true)
-            .mode(0o600)
-            .open(&tmp)
-        else {
+        let mut options = fs::OpenOptions::new();
+        options.write(true).create_new(true);
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::OpenOptionsExt;
+            options.mode(0o600);
+        }
+        let Ok(mut file) = options.open(&tmp) else {
             return false;
         };
         let written = writeln!(file, "{}", key.trim()).is_ok();
@@ -2639,10 +2641,13 @@ fn install_llama() -> Result<(), String> {
         return Err("解压 llama-server 失败".to_string());
     }
     let server = llama_server_path();
-    use std::os::unix::fs::PermissionsExt;
-    let mut perms = fs::metadata(&server).map_err(|e| e.to_string())?.permissions();
-    perms.set_mode(0o755);
-    fs::set_permissions(&server, perms).map_err(|e| e.to_string())?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let mut perms = fs::metadata(&server).map_err(|e| e.to_string())?.permissions();
+        perms.set_mode(0o755);
+        fs::set_permissions(&server, perms).map_err(|e| e.to_string())?;
+    }
     Ok(())
 }
 
