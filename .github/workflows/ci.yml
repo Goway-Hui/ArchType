@@ -717,8 +717,9 @@ jobs:
           # 最后一条 reg query 的失败码别带出这个步骤（GitHub Actions 的 pwsh 会 exit $LASTEXITCODE）
           exit 0
 
-      - name: WiX v4
-        run: dotnet tool install --global wix
+      # WiX v6/v7 要求接受 OSMF 的付费 EULA；v5 没有这个门槛，模板语法与 v4 相同
+      - name: WiX v5
+        run: dotnet tool install --global wix --version 5.*
 
       - name: 打包 MSI
         shell: pwsh

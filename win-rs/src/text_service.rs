@@ -213,7 +213,7 @@ impl KeySink {
             (frame, page)
         };
         let page = (!page.is_empty()).then_some(page);
-        let context_key = unsafe { Interface::as_raw(pic) as isize };
+        let context_key = Interface::as_raw(pic) as isize;
         apply_frame(
             pic,
             self.state.tid.get(),
@@ -577,7 +577,7 @@ fn commit_voice(state: &Rc<State>, text: &str) {
     let Some(context) = context else {
         return;
     };
-    let key = unsafe { Interface::as_raw(&context) as isize };
+    let key = Interface::as_raw(&context) as isize;
     let frame = Frame {
         commit: Some(text.to_string()),
         handled: true,
