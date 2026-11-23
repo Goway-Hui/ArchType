@@ -7,6 +7,7 @@
 **在 Linux 和 macOS 上打字，像微信输入法一样顺手。**
 
 一个 fcitx5 / macOS 拼音输入法：长句一次打完、打一半就有词、按错键也能认出来，越用越懂你。
+（Windows 版的 TSF 输入法骨架在 `win-rs/`：编译、注册、自检与 CI 都通了，还没有安装包和真机验收。）
 
 [![CI](https://github.com/Goway-Hui/ArchType/actions/workflows/ci.yml/badge.svg)](https://github.com/Goway-Hui/ArchType/actions/workflows/ci.yml)
 [![Release](https://img.shields.io/github/v/release/Goway-Hui/ArchType?include_prereleases&label=release)](https://github.com/Goway-Hui/ArchType/releases)

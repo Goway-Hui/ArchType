@@ -105,6 +105,15 @@ impl TextService {
         }
         *self.state.sink.borrow_mut() = None;
         *self.state.thread_mgr.borrow_mut() = None;
+        // 切走应用时把学到的词和统计异步落盘（不阻塞宿主，别用 save_wait）
+        let runtime = runtime();
+        if let Some(engine) = runtime.engine() {
+            let engine = engine.get();
+            let layout = &runtime.layout;
+            let _ = engine.save_user_dict_async(layout.user_dict_path());
+            let _ = engine.save_history_async(layout.history_path());
+        }
+        runtime.stats().flush();
         Ok(())
     }
 }

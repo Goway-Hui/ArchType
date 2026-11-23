@@ -222,20 +222,27 @@ TSF 没有 run loop API；建一个 `HWND_MESSAGE` 隐藏窗口，`SetTimer(50ms
 |---|---|---|
 | M0 | 抽 `shell` crate，macOS 回归全绿（测试迁移） | ✅ 已完成 |
 | M0.5 | 抽 `runtime`、拆 `keys`（`keys/{mod,macos,win}`）、抽 `panel`/`view` | ✅ 已完成 |
-| M1 | `win-rs` 骨架：COM DLL、注册表注册、TSF 激活、按键 → 上屏（无编辑区/候选） | 🟡 骨架已落地（`win-rs/`，CI 编译 + 注册/卸载 + 自检）；编辑区在 M2 |
+| M1 | `win-rs` 骨架：COM DLL、注册表注册、TSF 激活、按键 → 上屏 | ✅ 已落地（CI 编译 + 注册/卸载 + 自检） |
+| M2a | TSF composition：编辑区显示拼音、上屏替换、外部终止清理 | ✅ 已落地 |
+| M2b | 候选窗口：GDI 自绘、点击选词、DPI 缩放、光标上方/下方定位 | ✅ 已落地（真机验收待做） |
 | M2 | TSF composition（编辑区）、候选窗口（自绘、翻页、点击、DPI/多屏） | 10–12 人日 |
 | M3 | 设置界面 Windows 路径、配置热重载、`--selftest` | 3–4 人日 |
 | M4 | 语音（cpal + 全局钩子）、互译、统计、更新、词库包、`--mode` | 8–10 人日 |
 | M5 | MSI 打包、CI、文档（README/INSTALL） | 4–5 人日 |
 | 合计 | | **35–44 人日** |
 
-### M1 现状（已落地部分）
+### M1–M2b 现状（已落地部分）
 
 - `win-rs/`：COM in-proc DLL（`archtype-tsf.dll`）+ `archtype.exe`，独立 workspace，CI 的 `windows-latest` 任务编译。
 - 已实现：`DllGetClassObject` / `DllRegisterServer` / `DllUnregisterServer`；TSF 激活/停用与
   `ITfKeyEventSink` 注册；`ToUnicodeEx` + VK 取字符；`archtype-shell` 的 `Input` 驱动会话；
   `ITfInsertAtSelection` 在 edit session 里上屏（只提交整词，没有编辑区）。
-- 还没做：composition（编辑区/候选框）、密码框判定、学习数据保存、语音钩子、MSI。
+- M2a：`ITfContextComposition` 在光标处开组合，`SetText` 更新编辑区；上屏时替换组合并结束；`ITfCompositionSink`
+  在 TSF 外部终止组合时清状态；`Esc`/切走结束并清空。
+- M2b：Win32 弹出窗口（`WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE`）+ GDI 双缓冲自绘；布局与命中复用
+  `archtype_shell::panel`；点击 → `Input::select` → 重新应用一帧；`GetDpiForWindow` 缩放；放不下时画在光标上方。
+- 切走应用（`Deactivate`）时异步保存用户词库/历史并 flush 统计。
+- 还没做：密码框判定、语音热键（`WH_KEYBOARD_LL`）、MSI 安装包、真机交互验收。
 
 ## 8. 风险清单
 
