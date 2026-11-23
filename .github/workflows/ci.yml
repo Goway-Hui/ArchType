@@ -797,7 +797,7 @@ jobs:
     name: 发布
     timeout-minutes: 20
     if: startsWith(github.ref, 'refs/tags/v')
-    needs: [installer, core, data, data-wanxiang, ranking-eval, addon, arch, fedora, opensuse, nix, macos-app]
+    needs: [installer, core, data, data-wanxiang, ranking-eval, addon, arch, fedora, opensuse, nix, macos-app, windows]
     runs-on: ubuntu-24.04
     permissions:
       contents: write
@@ -837,6 +837,10 @@ jobs:
           pattern: settings-nsh-*
           path: dist/settings
           merge-multiple: true
+      - uses: actions/download-artifact@v5
+        with:
+          name: msi-windows
+          path: dist/windows
       - name: 校验和
         run: |
           cd dist
@@ -846,6 +850,7 @@ jobs:
           ((${#files[@]})) || { echo "没有可发布的包" >&2; exit 1; }
           sha256sum -- "${files[@]}" > SHA256SUMS
           (cd settings && files=(*.tar.gz) && ((${#files[@]})) && sha256sum -- "${files[@]}") >> SHA256SUMS
+          (cd windows && files=(*.msi) && ((${#files[@]})) && sha256sum -- "${files[@]}") >> SHA256SUMS
           cat SHA256SUMS
       - name: 发布到 GitHub Release
         env:
@@ -902,7 +907,7 @@ jobs:
           gh release create "$GITHUB_REF_NAME" \
             dist/*.deb dist/*.rpm dist/*.pkg.tar.zst dist/*.tar.gz dist/SHA256SUMS \
             dist/*.zip dist/*.pkg \
-            dist/settings/*.tar.gz dist/RELEASE-NOTES.md \
+            dist/settings/*.tar.gz dist/windows/*.msi dist/RELEASE-NOTES.md \
             --repo "$GITHUB_REPOSITORY" --verify-tag \
             --title "ArchType $GITHUB_REF_NAME" \
             --notes-file notes.md --generate-notes "${extra[@]}"
