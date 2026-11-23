@@ -414,7 +414,7 @@ static void activate(GtkApplication *app, gpointer data) {
         ".archtype-voice-wave { margin-left: 18px; }");
     gtk_style_context_add_provider_for_display(gtk_widget_get_display(GTK_WIDGET(o->win)),
                                                GTK_STYLE_PROVIDER(css),
-                                               GTK_STYLE_PROVIDER_PRIORITY_APPLICATION);
+                                               GTK_STYLE_PROVIDER_PRIORITY_USER);
 
     // 指针穿透：只显示，不接收点击
     GdkSurface *surface = gtk_native_get_surface(GTK_NATIVE(o->win));
