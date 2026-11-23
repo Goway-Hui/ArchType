@@ -32,7 +32,7 @@ let
   # 手动改的话 hash 在发布页 SHA256SUMS 里，nix hash convert --hash-algo sha256 <十六进制> 转成 SRI 格式。
   dataVersion = "2026.11.11.8";
   data = fetchurl {
-    url = "https://github.com/Goway-Hui/ArchType-standalone/releases/download/v0.6.2/archtype-data-rime-ice-${dataVersion}.tar.gz";
+    url = "https://github.com/Goway-Hui/ArchType/releases/download/v0.6.2/archtype-data-rime-ice-${dataVersion}.tar.gz";
     hash = "sha256-hCYHF2XmmQji+RuZ8kWyl8lsgm/b+/kdZ+GPukTX84w=";
   };
 
@@ -42,11 +42,11 @@ let
   settingsVersion = "0.7.7";
   settingsAssets = {
     x86_64-linux = {
-      url = "https://github.com/Goway-Hui/ArchType-standalone/releases/download/v${settingsVersion}/archtype-settings-nsh-${settingsVersion}-linux-x86_64.tar.gz";
+      url = "https://github.com/Goway-Hui/ArchType/releases/download/v${settingsVersion}/archtype-settings-nsh-${settingsVersion}-linux-x86_64.tar.gz";
       hash = "sha256-eueBQRSYHWK9OzZe/eJS+R0NKKgr2OS3qHUZfVkIrM8=";
     };
     aarch64-linux = {
-      url = "https://github.com/Goway-Hui/ArchType-standalone/releases/download/v${settingsVersion}/archtype-settings-nsh-${settingsVersion}-linux-aarch64.tar.gz";
+      url = "https://github.com/Goway-Hui/ArchType/releases/download/v${settingsVersion}/archtype-settings-nsh-${settingsVersion}-linux-aarch64.tar.gz";
       hash = "sha256-Tzi4GyiVBO+tQmCPj/6Kdvo5JgpVBltz5+UnPVb3IUE=";
     };
   };
@@ -181,7 +181,7 @@ EOF
 
   meta = {
     description = "WeChat-style pinyin input method for fcitx5, with bundled dictionaries and language model";
-    homepage = "https://github.com/Goway-Hui/ArchType-standalone";
+    homepage = "https://github.com/Goway-Hui/ArchType";
     license = with lib.licenses; [
       mit
       asl20

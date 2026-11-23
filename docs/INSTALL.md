@@ -23,7 +23,7 @@ ArchType 是 Fcitx 5 的输入法插件。安装时需要让插件、Fcitx 5 和
 | NixOS / Home Manager | flake | x86_64、aarch64；与系统共用 nixpkgs，注册到 Fcitx 插件列表 |
 | Fedora Atomic | 宿主 `rpm-ostree` 分层 | 普通 dnf 安装脚本会给出手动说明 |
 
-[Releases](https://github.com/Goway-Hui/ArchType-standalone/releases) 中存在对应资产后才能使用二进制安装。
+[Releases](https://github.com/Goway-Hui/ArchType/releases) 中存在对应资产后才能使用二进制安装。
 没有发布包、其他 CPU 架构或其他发行版，先使用下面的源码构建方法。
 Alpine 使用 musl，需要单独完成构建与运行验证；这里不把 glibc 安装包用于 Alpine。
 openSUSE Leap、RHEL / Rocky / AlmaLinux 也需要先核对 Fcitx 5 和 libadwaita 的可用版本。
@@ -33,7 +33,7 @@ openSUSE Leap、RHEL / Rocky / AlmaLinux 也需要先核对 Fcitx 5 和 libadwai
 用普通用户运行；脚本会在安装软件包时调用 sudo：
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/Goway-Hui/ArchType-standalone/main/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/Goway-Hui/ArchType/main/install.sh | bash
 ```
 
 下载目标来自当前仓库，按系统和 CPU 架构选择 `.deb`、`.pkg.tar.zst` 或 `.rpm`，每个文件都校验 SHA256。
@@ -43,7 +43,7 @@ Arch 不会替你升级整个系统；提示依赖不满足时，先运行 `sudo
 查看安装目标、固定版本或保留当前桌面设置：
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/Goway-Hui/ArchType-standalone/main/install.sh -o install.sh
+curl -fsSL https://raw.githubusercontent.com/Goway-Hui/ArchType/main/install.sh -o install.sh
 bash install.sh --help
 bash install.sh --print-plan
 ARCHTYPE_VERSION=v0.3.8 bash install.sh
@@ -117,7 +117,7 @@ WebKitGTK / libsoup 的 -devel 包名会随 Tumbleweed 调整；改设置界面�
 ### 2. 获取源码与词库
 
 ```bash
-git clone https://github.com/Goway-Hui/ArchType-standalone.git
+git clone https://github.com/Goway-Hui/ArchType.git
 cd ArchType
 scripts/make-data.sh "" dist/data
 scripts/make-wubi.sh "" dist/data
@@ -263,8 +263,8 @@ fcitx5-diagnose
 构建或检查 flake：
 
 ```bash
-nix build github:Goway-Hui/ArchType-standalone
-nix flake check github:Goway-Hui/ArchType-standalone
+nix build github:Goway-Hui/ArchType
+nix flake check github:Goway-Hui/ArchType
 ```
 
 系统 flake 配置：
@@ -272,7 +272,7 @@ nix flake check github:Goway-Hui/ArchType-standalone
 ```nix
 # flake.nix 的 inputs
 archtype = {
-  url = "github:Goway-Hui/ArchType-standalone/release";
+  url = "github:Goway-Hui/ArchType/release";
   inputs.nixpkgs.follows = "nixpkgs";
 };
 
@@ -294,9 +294,9 @@ flake 输入选哪个：
 
 | 写法 | 拿到的是 |
 |---|---|
-| `github:Goway-Hui/ArchType-standalone/release` | 最新正式版（推荐）；每次发版时 CI 把 `release` 分支移到新版本的标签 |
-| `github:Goway-Hui/ArchType-standalone/v0.3.10` | 锁定这一版，升级时手动改版本号 |
-| `github:Goway-Hui/ArchType-standalone` | main 分支最新提交，可能包含还没发布的改动 |
+| `github:Goway-Hui/ArchType/release` | 最新正式版（推荐）；每次发版时 CI 把 `release` 分支移到新版本的标签 |
+| `github:Goway-Hui/ArchType/v0.3.10` | 锁定这一版，升级时手动改版本号 |
+| `github:Goway-Hui/ArchType` | main 分支最新提交，可能包含还没发布的改动 |
 
 更新时先在自己的 flake 中执行 `nix flake update archtype`，再重建系统或 Home Manager 配置。
 CI 在 nixos-unstable（x86_64、aarch64）和当前稳定版 nixos-26.05（x86_64）上构建并自检，
@@ -329,12 +329,12 @@ fcitx5 其他全局快捷键（`EnumerateForwardKeys` 等）里也不要放单�
 自己测时指定版本装（Release 说明的开头有这条命令）：
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/Goway-Hui/ArchType-standalone/pre-release/install.sh | ARCHTYPE_VERSION=v<版本> bash
+curl -fsSL https://raw.githubusercontent.com/Goway-Hui/ArchType/pre-release/install.sh | ARCHTYPE_VERSION=v<版本> bash
 ```
 
 测完转正：把 pre-release 合进 main，运行 `gh release edit v<版本> --prerelease=false --latest`，
 再照下面一节手动更新 `release` 分支；这一版换了词库时，下载这一版 Release 里的 `archtype-data-rime-ice-*.tar.gz`，
-在本机运行 `GITHUB_REPOSITORY=Goway-Hui/ArchType-standalone GITHUB_REF_NAME=v<版本> GH_TOKEN=$(gh auth token) .github/scripts/nix-data-pr.sh <那个文件>`
+在本机运行 `GITHUB_REPOSITORY=Goway-Hui/ArchType GITHUB_REF_NAME=v<版本> GH_TOKEN=$(gh auth token) .github/scripts/nix-data-pr.sh <那个文件>`
 开 Nix 词库的 PR。
 要改代码就打下一个版本号，别挪已经发出去的 tag。
 

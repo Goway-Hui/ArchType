@@ -52,7 +52,7 @@ fi
 
 # 各部分的许可证（和 deb 包的 copyright 内容一致）
 cat > "$src/packaging/COPYRIGHT" <<'EOF'
-ArchType — https://github.com/Goway-Hui/ArchType-standalone
+ArchType — https://github.com/Goway-Hui/ArchType
 
 程序（fcitx5 插件、设置界面、archtype-check、archtype-show、主题、图标）：
   MIT 或 Apache-2.0，二选一。
@@ -107,7 +107,7 @@ Version:        %{wt_version}
 Release:        1%{?dist}
 Summary:        WeChat-style pinyin input method for fcitx5
 License:        (MIT OR Apache-2.0) AND Apache-2.0 AND Unicode-3.0 AND GPL-3.0-only AND CC-BY-SA-4.0 AND LGPL-3.0-only
-URL:            https://github.com/Goway-Hui/ArchType-standalone
+URL:            https://github.com/Goway-Hui/ArchType
 Source0:        archtype-src.tar.gz
 ExclusiveArch:  x86_64 aarch64
 

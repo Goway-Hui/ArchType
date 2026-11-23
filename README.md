@@ -9,8 +9,8 @@
 一个 fcitx5 / macOS 拼音输入法：长句一次打完、打一半就有词、按错键也能认出来，越用越懂你。
 （Windows 版的 TSF 输入法骨架在 `win-rs/`：编译、注册、自检与 CI 都通了，还没有安装包和真机验收。）
 
-[![CI](https://github.com/Goway-Hui/ArchType-standalone/actions/workflows/ci.yml/badge.svg)](https://github.com/Goway-Hui/ArchType-standalone/actions/workflows/ci.yml)
-[![Release](https://img.shields.io/github/v/release/Goway-Hui/ArchType-standalone?include_prereleases&label=release)](https://github.com/Goway-Hui/ArchType-standalone/releases)
+[![CI](https://github.com/Goway-Hui/ArchType/actions/workflows/ci.yml/badge.svg)](https://github.com/Goway-Hui/ArchType/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/github/v/release/Goway-Hui/ArchType?include_prereleases&label=release)](https://github.com/Goway-Hui/ArchType/releases)
 ![fcitx5](https://img.shields.io/badge/fcitx5-%E2%89%A5%205.0-blue)
 ![License](https://img.shields.io/badge/license-MIT%20%2F%20Apache--2.0-green)
 
@@ -105,7 +105,7 @@
 
 ### macOS
 
-到 [Releases](https://github.com/Goway-Hui/ArchType-standalone/releases) 下载 `ArchType-<版本>-macos.pkg`，双击安装：
+到 [Releases](https://github.com/Goway-Hui/ArchType/releases) 下载 `ArchType-<版本>-macos.pkg`，双击安装：
 装到 `~/Library/Input Methods`，只装给当前用户、不要管理员密码，装完自动登记并切到 ArchType。安装包没有 Apple
 开发者签名，第一次打开要去「系统设置 → 隐私与安全性」点「仍要打开」。
 
@@ -125,7 +125,7 @@
 Ubuntu 24.04 / 26.04、Debian 13、deepin 25、Arch Linux（及衍生版）、Fedora 上，在终端里运行：
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/Goway-Hui/ArchType-standalone/main/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/Goway-Hui/ArchType/main/install.sh | bash
 ```
 
 它会：
@@ -164,7 +164,7 @@ im-config -n fcitx5
 
 ##### 方式一：安装包
 
-到 [Releases](https://github.com/Goway-Hui/ArchType-standalone/releases) 页面下载和你系统对应的那**一个**文件
+到 [Releases](https://github.com/Goway-Hui/ArchType/releases) 页面下载和你系统对应的那**一个**文件
 `archtype_<版本>_<发行版>_<架构>.deb`（发行版是 `ubuntu24.04`、`ubuntu26.04`、`debian13`、`deepin25`，架构是 `amd64` 或 `arm64`，deepin 只有 `amd64`），词库已经包含在里面。
 不知道自己是哪个发行版、哪种架构：
 
@@ -188,7 +188,7 @@ sudo apt install ./archtype_*.deb
 
 ###### Fedora
 
-到 [Releases](https://github.com/Goway-Hui/ArchType-standalone/releases) 下载 `archtype-<版本>-1.fc<Fedora 版本>.<架构>.rpm`（架构是 `x86_64` 或 `aarch64`，词库已经在包里），然后：
+到 [Releases](https://github.com/Goway-Hui/ArchType/releases) 下载 `archtype-<版本>-1.fc<Fedora 版本>.<架构>.rpm`（架构是 `x86_64` 或 `aarch64`，词库已经在包里），然后：
 
 ```bash
 sudo dnf install ./archtype-*.rpm
@@ -205,7 +205,7 @@ archtype-config --setup             # 把 ArchType 加进 fcitx5 的输入法列
 ```nix
 # flake.nix
 inputs.archtype = {
-  url = "github:Goway-Hui/ArchType-standalone/release";   # 跟正式版；想锁某一版写 github:Goway-Hui/ArchType-standalone/v0.3.10
+  url = "github:Goway-Hui/ArchType/release";   # 跟正式版；想锁某一版写 github:Goway-Hui/ArchType/v0.3.10
   inputs.nixpkgs.follows = "nixpkgs";         # 和系统用同一份 fcitx5
 };
 
@@ -551,7 +551,7 @@ ArchType 默认用自己的蓝色主题：选中的词是图标里的那种蓝�
 
 ArchType 自己的日志在 `~/.local/state/archtype/archtype.log`（满 512 KB 换一个，旧的留一份 `.1`）。
 
-问题没解决，欢迎[提 issue](https://github.com/Goway-Hui/ArchType-standalone/issues)，把导出的日志拖进去。
+问题没解决，欢迎[提 issue](https://github.com/Goway-Hui/ArchType/issues)，把导出的日志拖进去。
 
 ## 工作原理
 

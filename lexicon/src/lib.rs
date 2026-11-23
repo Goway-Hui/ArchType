@@ -5,7 +5,7 @@
 use archtype_net as net;
 use std::process::Command;
 
-const RELEASE_API: &str = "https://api.github.com/repos/Goway-Hui/ArchType-standalone/releases/latest";
+const RELEASE_API: &str = "https://api.github.com/repos/Goway-Hui/ArchType/releases/latest";
 
 /// 外壳提供的路径与配置读写（Linux 是 XDG + fcitx5 配置，macOS 是数据目录 + archtype.conf）。
 pub trait Env {
