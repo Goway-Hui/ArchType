@@ -152,6 +152,8 @@ cp "$RIME/LICENSE" "$OUT/LICENSE"
 # 插件和设置界面按标记里的版本认用户目录里的旧副本，不用再往 kOfficialLmSizes（data_files.h）、
 # OFFICIAL_LM_SIZES（archtype-config）里加字节数：那两张表只为认出加标记以前发布的 lm-2026.11.09
 # （它不会重新生成），以后不动。没有标记的新模型会在下面写清单时报错。
+# 语言模型和整句增强模型仍放在上游 WowType 的发布页（数据资产，不是代码）。
+# 要让本仓库完全独立，先把这两个文件上传到本仓库的 Release，再改下面的 URL。
 LM_URL=https://github.com/Gloridust/WowType/releases/download/lm-2026.11.09/words.lm.xz
 LM_SHA256=42cb7c4a7cededa29b1a9ff105530085529fefff96535cc051341ebd51605dbe
 if [[ -n "${ARCHTYPE_LM_FILE:-}" ]]; then

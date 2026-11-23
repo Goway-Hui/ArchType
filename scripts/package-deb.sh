@@ -20,7 +20,7 @@ ARG=${2:?缺少参数}
 OUT=$(realpath -m "${3:-dist}")
 mkdir -p "$OUT"
 HOMEPAGE=https://github.com/Goway-Hui/ArchType
-MAINTAINER="Gloridust <gloridust@users.noreply.github.com>"
+MAINTAINER="ArchType <goway-hui@users.noreply.github.com>"
 
 work=$(mktemp -d)
 trap 'rm -rf "$work"' EXIT

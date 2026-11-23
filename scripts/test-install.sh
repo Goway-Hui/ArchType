@@ -332,6 +332,6 @@ asset archtype-0.3.8-1-x86_64.pkg.tar.zst
 test_version=
 run > "$work/output" 2>&1 || fail 'Latest release resolution failed'
 grep -Fq 'https://github.com/Goway-Hui/ArchType/releases/latest' "$work/fetches" || fail 'Wrong release repository'
-pass 'Latest release uses the upstream repository'
+pass 'Latest release uses this repository'
 
 printf '%s installer checks passed\n' "$count"
