@@ -141,8 +141,9 @@ usage() {
 默认下载、校验并安装匹配当前发行版的 ArchType 包。
 --print-plan  只显示发行版、包管理器和包名，不联网、不安装、不更改配置。
 
-支持 Ubuntu 24.04 / 26.04、Debian 13 及有明确兼容基线的衍生版、deepin 25，
+支持 Ubuntu 24.04 / 26.04、Debian 13 及有明确兼容基线的衍生版、deepin 25、UOS V25，
 Arch Linux / EndeavourOS / Garuda / CachyOS，Fedora；预编译包有 x86_64，
+UOS V25 用 deepin 25 的包（同一套 fcitx5 / deepin-im）。
 Ubuntu、Debian 的 deb 和 rpm 另有 arm64（aarch64）。
 Manjaro 请在本机用 scripts/package-arch.sh 构建；NixOS 使用 flake。
 Fedora Atomic 桌面使用 rpm-ostree。其他发行版见 docs/INSTALL.md 的源码构建。
@@ -196,12 +197,16 @@ select_platform() {
   local family=" $ID $ID_LIKE " codename
   # deepin 25 的磐石系统基于 OSTree，但 apt-get install 照常能用（系统转给 deepin-immutable-ctl），
   # 所以要在下面「不可变系统」那条之前认出来。deepin 20 的 ID 是大写的 Deepin。
-  if [[ "$ID" == deepin || "$ID" == Deepin ]]; then
-    case "$VERSION_CODENAME:$VERSION_ID" in
-      crimson:*|*:25|*:25.*) distro=deepin25 ;;
-      *) source_install "deepin ${VERSION_ID:-$VERSION_CODENAME} 没有匹配的预编译包（只提供 deepin 25 的；23 及更早、UOS 20 不再支持）" ;;
+  # 统信 UOS 的 ID 是 uos：V25 和 deepin 25 同源（同样的 fcitx5、deepin-im），用 deepin 25 的包；
+  # UOS 20 和 deepin 20 一样没有 GTK 4。
+  if [[ "$ID" == deepin || "$ID" == Deepin || "$ID" == uos || "$ID" == UOS ]]; then
+    local name=deepin
+    [[ "$ID" == uos || "$ID" == UOS ]] && name=UOS
+    case "$name:$VERSION_CODENAME:$VERSION_ID" in
+      deepin:crimson:*|*:25|*:25.*|UOS:*:25[0-9][0-9]) distro=deepin25 ;;
+      *) source_install "$name ${VERSION_ID:-$VERSION_CODENAME} 没有匹配的预编译包（只提供 deepin 25 和 UOS V25 的；更早版本、UOS 20 不再支持）" ;;
     esac
-    [[ "$deb_arch" == amd64 ]] || source_install "deepin 的预编译包只有 x86_64；$machine 请从源码构建"
+    [[ "$deb_arch" == amd64 ]] || source_install "$name 的预编译包只有 x86_64；$machine 请从源码构建"
     manager=apt-get
     return
   fi
