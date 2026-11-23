@@ -333,7 +333,6 @@ impl Drop for TempFile {
 /// Key 通过 `-H @文件` 传入：直接写命令行的话，同机其他用户能从 `ps` / `/proc/<pid>/cmdline` 读到。
 fn curl(url: &str, key: &str, body: Option<&str>, timeout: u32) -> Result<String, String> {
     use std::io::Write;
-    use std::os::unix::fs::OpenOptionsExt;
     let mut command = std::process::Command::new("curl");
     command
         .arg("-sSL")
@@ -352,10 +351,14 @@ fn curl(url: &str, key: &str, body: Option<&str>, timeout: u32) -> Result<String
             "archtype-curl-{}-{nanos}.hdr",
             std::process::id()
         ));
-        let mut file = fs::OpenOptions::new()
-            .write(true)
-            .create_new(true)
-            .mode(0o600)
+        let mut options = fs::OpenOptions::new();
+        options.write(true).create_new(true);
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::OpenOptionsExt;
+            options.mode(0o600);
+        }
+        let mut file = options
             .open(&path)
             .map_err(|error| format!("建不了临时文件：{error}"))?;
         writeln!(file, "Authorization: Bearer {key}")
@@ -2640,6 +2643,7 @@ fn install_llama() -> Result<(), String> {
     if !status.success() {
         return Err("解压 llama-server 失败".to_string());
     }
+    #[cfg(unix)]
     let server = llama_server_path();
     #[cfg(unix)]
     {
