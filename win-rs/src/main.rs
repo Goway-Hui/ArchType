@@ -15,7 +15,7 @@ fn main() {
         "--selftest" => std::process::exit(if selftest() { 0 } else { 1 }),
         "--install-lexicon" | "--use-lexicon" => {
             let layout = archtype_tsf::paths::layout();
-            let env = LexiconEnv { layout: &layout };
+            let env = LexiconEnv { layout };
             let argument = std::env::args().nth(2).unwrap_or_default();
             let code = if command == "--use-lexicon" {
                 archtype_lexicon::use_lexicon(&env, &argument)
