@@ -18,14 +18,17 @@ if ($LASTEXITCODE -ne 0) { throw "win-rs 编译失败" }
 
 $source = (Resolve-Path "win-rs/target/release").Path
 $data = (Resolve-Path $DataDir).Path
+$repo = (Get-Location).Path
 $msi = Join-Path (Resolve-Path $OutDir).Path "ArchType-$Version-x64.msi"
 
-wix build -arch x64 -o $msi `
-    -d Version=$Version `
-    -d SourceDir=$source `
-    -d DataDir=$data `
-    -d RepoDir=(Get-Location).Path `
-    windows/ArchType.wxs
+# 每个 -d 的值都要单独引用：路径里有空格、或者写成 (Get-Location).Path 时，
+# PowerShell 会把括号当字面量传给 wix，wix 就把它当成输入文件了
+wix build -arch x64 -o "$msi" `
+    -d "Version=$Version" `
+    -d "SourceDir=$source" `
+    -d "DataDir=$data" `
+    -d "RepoDir=$repo" `
+    "windows/ArchType.wxs"
 if ($LASTEXITCODE -ne 0) { throw "wix build 失败" }
 
 Write-Output "MSI: $msi"
