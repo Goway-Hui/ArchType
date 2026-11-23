@@ -18,7 +18,7 @@
 | LTR 重排 | 🟡 **线性版** | `core/src/rank.rs`：23 维特征 + 可训练线性权重 + `LtrModel` 接口。没有神经网络模型，`head_word_nnlm` 恒为 0 |
 | MixRank 融合 | ❌ **未实现** | WeType 的 MixRank 是 NNLM + LM + LR 三路融合；我们只有 `path.score + rank_score` 的线性加权，没有独立实现 |
 | 蒸馏对齐排序 | ❌ **未做** | 训练器 `archtype-train` 能从标注数据拟合权重，但没有教师模型的输出可供蒸馏 |
-| Windows 输入法（TSF） | 🟡 **骨架可用** | `win-rs/`：COM DLL + 注册表 + 激活 + 键事件 + composition（编辑区）+ 候选窗口（GDI 自绘）；CI 的 `windows-latest` 编译、自检（词库打 `nihao`）、注册/卸载都通过。没做：密码框判定、语音钩子、MSI、真机交互验收 |
+| Windows 输入法（TSF） | 🟡 **功能齐、待真机** | `win-rs/`：COM DLL + 注册表 + 激活 + 键事件 + composition（编辑区）+ 候选窗口（GDI 自绘，含互译/工具栏/表情的共享 Page）+ 语音（激活时与全局钩子）+ 统计 + 配置热重载 + `--mode` + 词库包；MSI（x64 + x86 DLL、设置界面、COM/CTF 双视图）。CI：编译、自检、注册/卸载、MSI 安装/卸载。没做：密码框判定、更新检查、真机交互验收 |
 | 产出可在 Ubuntu 日常使用的输入法 | 🟡 **待实机** | 引擎与插件代码完整，插件 API 已逐项核对；**离线语音引擎已用真实语音验证通过**（TTS 5/5 正确），插件已在 Ubuntu 26.04 + fcitx5 5.1.19 上编译并通过按键测试；Linux 的 X11 热键、麦克风采集、日常实际打字仍未验证 |
 
 ## 文字输入：实测能力

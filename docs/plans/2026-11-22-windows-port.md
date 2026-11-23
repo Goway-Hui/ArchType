@@ -226,9 +226,9 @@ TSF 没有 run loop API；建一个 `HWND_MESSAGE` 隐藏窗口，`SetTimer(50ms
 | M2a | TSF composition：编辑区显示拼音、上屏替换、外部终止清理 | ✅ 已落地 |
 | M2b | 候选窗口：GDI 自绘、点击选词、DPI 缩放、光标上方/下方定位 | ✅ 已落地（真机验收待做） |
 | M2 | TSF composition（编辑区）、候选窗口（自绘、翻页、点击、DPI/多屏） | 10–12 人日 |
-| M3 | 设置界面 Windows 路径、配置热重载、`--selftest` | 3–4 人日 |
-| M4 | 语音（cpal + 全局钩子）、互译、统计、更新、词库包、`--mode` | 8–10 人日 |
-| M5 | MSI 打包、CI、文档（README/INSTALL） | 4–5 人日 |
+| M3 | 设置界面 Windows 路径、配置热重载、`--selftest` | ✅ 路径/热重载/自检；设置界面进 MSI |
+| M4 | 语音（cpal + 全局钩子）、互译、统计、更新、词库包、`--mode` | 🟡 语音（含全局钩子）、统计、互译（共享 Page）、词库包、`--mode` 已落地；更新检查未做 |
+| M5 | MSI 打包、CI、文档（README/INSTALL） | 🟡 x64 + x86 DLL、设置界面、COM/CTF 双视图注册、安装/卸载 CI |
 | 合计 | | **35–44 人日** |
 
 ### M1–M2b 现状（已落地部分）
@@ -242,7 +242,11 @@ TSF 没有 run loop API；建一个 `HWND_MESSAGE` 隐藏窗口，`SetTimer(50ms
 - M2b：Win32 弹出窗口（`WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE`）+ GDI 双缓冲自绘；布局与命中复用
   `archtype_shell::panel`；点击 → `Input::select` → 重新应用一帧；`GetDpiForWindow` 缩放；放不下时画在光标上方。
 - 切走应用（`Deactivate`）时异步保存用户词库/历史并 flush 统计。
-- 还没做：密码框判定、语音热键（`WH_KEYBOARD_LL`）、MSI 安装包、真机交互验收。
+- 全局语音热键：`WH_KEYBOARD_LL`（激活过的输入法进程里，后台也能按语音键）。
+- `archtype --mode zh|en|translate|toggle`：写 `%APPDATA%\ArchType\mode-request`，输入法 50ms 轮询切换。
+- MSI：`archtype_tsf.dll`（x64）+ `archtype_tsf.dll`（x86，`Bitness="always32"`，注册到 WOW6432Node）+ `archtype.exe` +
+  `ArchType 设置.exe` + 词库/语言模型；CI 装一遍再卸掉。
+- 还没做：密码框判定（`GUID_PROP_INPUTSCOPE`/`IS_PASSWORD`）、更新检查（MSI）、真机交互验收。
 
 ## 8. 风险清单
 
