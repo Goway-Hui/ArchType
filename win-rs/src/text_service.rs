@@ -177,7 +177,22 @@ impl KeySink {
         if runtime().engine().is_none() {
             return Ok(FALSE);
         }
+        // 设置窗口改了 archtype.conf：输入法这边跟着重读（不用重启宿主）
+        if let Some(config) = runtime().reload_config_if_changed() {
+            let available =
+                archtype_shell::translate::translate_available(&config, &runtime().layout);
+            if let Some(input) = self.state.input.borrow_mut().as_mut() {
+                for problem in input.apply_config(&config, available, false) {
+                    eprintln!("ArchType: {problem}");
+                }
+            }
+            crate::candidate_window::hide();
+        }
         let vk = (wparam.0 & 0xffff) as u16;
+        // 自动重复不算按键统计
+        if lparam.0 & (1 << 30) == 0 {
+            runtime().stats().record_key(vk, false);
+        }
         // 语音键：按下即开始录，和 macOS / fcitx5 插件一致（只在输入法激活时）
         let config = runtime().config();
         if config.voice {
@@ -208,6 +223,15 @@ impl KeySink {
             key.keysym = translated.keysym;
             key.modifiers = translated.modifiers.0;
             let frame = input.key(&key);
+            if let Some(text) = &frame.commit {
+                runtime().stats().record_commit(
+                    text,
+                    input.commit_source(),
+                    &input.commit_scheme(),
+                    input.last_choice_index(),
+                    false,
+                );
+            }
             let config = input.config().clone();
             let page = page_from_frame(&frame, input.shown(), &config);
             (frame, page)
