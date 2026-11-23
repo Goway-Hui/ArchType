@@ -152,9 +152,7 @@ cp "$RIME/LICENSE" "$OUT/LICENSE"
 # 插件和设置界面按标记里的版本认用户目录里的旧副本，不用再往 kOfficialLmSizes（data_files.h）、
 # OFFICIAL_LM_SIZES（archtype-config）里加字节数：那两张表只为认出加标记以前发布的 lm-2026.11.09
 # （它不会重新生成），以后不动。没有标记的新模型会在下面写清单时报错。
-# 语言模型和整句增强模型仍放在上游 WowType 的发布页（数据资产，不是代码）。
-# 要让本仓库完全独立，先把这两个文件上传到本仓库的 Release，再改下面的 URL。
-LM_URL=https://github.com/Gloridust/WowType/releases/download/lm-2026.11.09/words.lm.xz
+LM_URL=https://github.com/Goway-Hui/ArchType/releases/download/lm-2026.11.09/words.lm.xz
 LM_SHA256=42cb7c4a7cededa29b1a9ff105530085529fefff96535cc051341ebd51605dbe
 if [[ -n "${ARCHTYPE_LM_FILE:-}" ]]; then
   cp "$ARCHTYPE_LM_FILE" "$OUT/words.lm"
@@ -178,7 +176,7 @@ fi
 # xz 压缩后上传 Release（nnlm-<日期>）。换模型时改下面的 URL 和 sha256（sha256 是解压后的 nnlm.bin 的；
 # 版本标记 train.py 导出时就写在文件头里了）。下载不到（比如 Release 还没发）时只警告、不带它，
 # 别的文件照常生成；下载到了但 sha256 对不上就报错退出。
-NNLM_URL=https://github.com/Gloridust/WowType/releases/download/nnlm-2026.11.17/nnlm.bin.xz
+NNLM_URL=https://github.com/Goway-Hui/ArchType/releases/download/nnlm-2026.11.17/nnlm.bin.xz
 NNLM_SHA256=d50289dfd10c8a4a0da49fc412bdc61a37c6f63ef1a1cbec4bdb74bf5bb7b52b
 rm -f "$OUT/nnlm.bin"
 if [[ "${ARCHTYPE_NO_NNLM:-}" == "1" ]]; then
