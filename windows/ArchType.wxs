@@ -27,7 +27,8 @@
           <File Id="lexicon" Source="$(var.DataDir)\lexicon.tsv" KeyPath="yes" />
           <File Id="english" Source="$(var.DataDir)\english.txt" />
           <File Id="words_lm" Source="$(var.DataDir)\words.lm" />
-          <File Id="s2t" Source="$(var.DataDir)\s2t.tsv" />
+          <!-- 简繁对照表不在 dist/data 里（data 任务不复制），直接取仓库里的 core/data/s2t.tsv -->
+          <File Id="s2t" Source="$(var.RepoDir)\core\data\s2t.tsv" />
           <File Id="wubi" Source="$(var.DataDir)\wubi86.tsv" />
           <File Id="nnlm" Source="$(var.DataDir)\nnlm.bin" />
         </Component>

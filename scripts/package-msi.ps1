@@ -24,6 +24,7 @@ wix build -arch x64 -o $msi `
     -d Version=$Version `
     -d SourceDir=$source `
     -d DataDir=$data `
+    -d RepoDir=(Get-Location).Path `
     windows/ArchType.wxs
 if ($LASTEXITCODE -ne 0) { throw "wix build 失败" }
 

@@ -81,7 +81,7 @@ pub fn show(page: &Page, caret: RECT, on_click: Box<dyn Fn(usize)>) {
         let width = (window.layout.size.0 * scale).ceil().max(1.0) as i32;
         let height = (window.layout.size.1 * scale).ceil().max(1.0) as i32;
         let gap = (6.0 * scale) as i32;
-        let mut x = caret.left;
+        let x = caret.left;
         let mut y = caret.bottom + gap;
         let screen_bottom = unsafe { GetSystemMetrics(SM_CYVIRTUALSCREEN) };
         if y + height > screen_bottom {
