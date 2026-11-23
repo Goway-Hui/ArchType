@@ -10,7 +10,7 @@ pub fn package_name(version: &str) -> String {
 
 /// 下载、校验并安装（只装给当前用户）。
 ///
-/// `base_url` 一般是 `https://github.com/Goway-Hui/ArchType/releases/download/v<版本>`。
+/// `base_url` 一般是 `https://github.com/Goway-Hui/ArchType-standalone/releases/download/v<版本>`。
 pub fn install(version: &str, base_url: &str, layout: &Layout) -> Result<(), String> {
     let name = package_name(version);
     let dir = layout.support_dir.join("updates").join(version);

@@ -78,7 +78,7 @@ fn install_update() -> i32 {
         println!("已是最新（{current}）");
         return 0;
     }
-    let base = format!("https://github.com/Goway-Hui/ArchType/releases/download/v{latest}");
+    let base = format!("https://github.com/Goway-Hui/ArchType-standalone/releases/download/v{latest}");
     let name = format!("ArchType-{latest}-x64.msi");
     let dir = std::env::temp_dir().join("archtype-update");
     let msi = match archtype_shell::update::download_verified(&name, &base, &dir) {

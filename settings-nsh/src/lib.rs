@@ -464,7 +464,7 @@ fn update_platform() -> (String, String, String, String) {
     family.push(distro.clone());
     let machine = std::env::consts::ARCH.to_string();
     let immutable = Path::new("/run/ostree-booted").exists();
-    let guide = "安装说明：https://github.com/Goway-Hui/ArchType/blob/main/docs/INSTALL.md";
+    let guide = "安装说明：https://github.com/Goway-Hui/ArchType-standalone/blob/main/docs/INSTALL.md";
     let cannot = |reason: String| (String::new(), String::new(), String::new(), reason);
     if family.iter().any(|f| f == "nixos") {
         return cannot(format!(
@@ -696,7 +696,7 @@ fn update_install_work(release: String) {
         .as_str()
         .map(str::to_string)
         .unwrap_or_else(|| {
-            format!("https://github.com/Goway-Hui/ArchType/releases/download/v{version}/SHA256SUMS")
+            format!("https://github.com/Goway-Hui/ArchType-standalone/releases/download/v{version}/SHA256SUMS")
         });
     // 只走网页时资产表是空的：下载前先确认发布页上真有这个包和 SHA256SUMS，
     // 不然缺包时用户只会看到一句笼统的「下载失败」
@@ -1475,7 +1475,7 @@ impl Config {
                 "/dev/null",
                 "-w",
                 "%{url_effective}",
-                "https://github.com/Goway-Hui/ArchType/releases/latest",
+                "https://github.com/Goway-Hui/ArchType-standalone/releases/latest",
             ])
             .output()
             .map_err(|error| format!("跑不了 curl：{error}"))?;
@@ -1501,7 +1501,7 @@ impl Config {
             Ok(tag) => tag,
             Err(error) => return json_error(&error),
         };
-        let base = format!("https://github.com/Goway-Hui/ArchType/releases/download/v{tag}");
+        let base = format!("https://github.com/Goway-Hui/ArchType-standalone/releases/download/v{tag}");
         // 更新说明单独传成 RELEASE-NOTES.md；更早的版本没有这个文件，就没有说明。
         // 超时压到 5 秒：这个接口是同步调的，等满 20 秒时设置界面会一直不响应
         let notes: String = curl(&format!("{base}/RELEASE-NOTES.md"), "", None, 5)
@@ -1512,7 +1512,7 @@ impl Config {
             "current": current,
             "tag": tag,
             "version": tag,
-            "url": format!("https://github.com/Goway-Hui/ArchType/releases/tag/v{tag}"),
+            "url": format!("https://github.com/Goway-Hui/ArchType-standalone/releases/tag/v{tag}"),
             "notes": notes,
             // 不再靠接口给的资产表：包名和下载地址按平台名拼出来（见 update_plan）
             "assets": serde_json::Map::new(),
@@ -1572,7 +1572,7 @@ impl Config {
             _ => format!("archtype-{version}-1.{distro}.{arch}.rpm"),
         };
         // 只走网页时接口没有资产表，按 GitHub 的发布地址拼；下载不通会在安装时报错
-        let base = format!("https://github.com/Goway-Hui/ArchType/releases/download/v{version}");
+        let base = format!("https://github.com/Goway-Hui/ArchType-standalone/releases/download/v{version}");
         let file_url = assets[&name]["url"]
             .as_str()
             .map(str::to_string)
@@ -2678,7 +2678,7 @@ fn local_download_work() -> Result<(), String> {
 }
 
 
-const RELEASE_API: &str = "https://api.github.com/repos/Goway-Hui/ArchType/releases/latest";
+const RELEASE_API: &str = "https://api.github.com/repos/Goway-Hui/ArchType-standalone/releases/latest";
 
 /// 万象词库目录与主文件。
 fn wanxiang_dir() -> std::path::PathBuf {

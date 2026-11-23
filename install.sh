@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # ArchType 一键安装：Ubuntu / Debian、Fedora（x86_64、arm64），Arch Linux、deepin（x86_64）。
 #
-#   curl -fsSL https://raw.githubusercontent.com/Goway-Hui/ArchType/main/install.sh | bash
+#   curl -fsSL https://raw.githubusercontent.com/Goway-Hui/ArchType-standalone/main/install.sh | bash
 #
 # 做这几件事：
 #   1. 从 GitHub Release 下载和你系统对应的最新安装包（词库已经在包里），按 SHA256SUMS 校验
@@ -14,7 +14,7 @@
 #
 # 环境变量：
 #   ARCHTYPE_VERSION=v0.3.8   装指定版本（默认最新）
-#   ARCHTYPE_REPO=owner/repo  指定发布仓库（默认 Goway-Hui/ArchType）
+#   ARCHTYPE_REPO=owner/repo  指定发布仓库（默认 Goway-Hui/ArchType-standalone）
 #   ARCHTYPE_NO_IM_CONFIG=1   不改输入法框架
 #   ARCHTYPE_NO_RESTART=1     不重启 fcitx5（之后自己重启或注销再登录，再到设置里添加 ArchType）
 #   ARCHTYPE_YES=1            不问，直接按默认做
@@ -23,7 +23,7 @@
 #                            （「代理地址 + 完整 GitHub 地址」那种）；SHA256SUMS 先试直连，安装包照样校验
 set -euo pipefail
 
-REPO=${ARCHTYPE_REPO:-Goway-Hui/ArchType}
+REPO=${ARCHTYPE_REPO:-Goway-Hui/ArchType-standalone}
 MIRROR=${ARCHTYPE_GITHUB_MIRROR:-}
 
 say() { printf '\033[1;32m==>\033[0m %s\n' "$*"; }

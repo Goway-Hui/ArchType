@@ -55,7 +55,7 @@ pkgname=archtype
 pkgrel=1
 pkgdesc='WeChat-style pinyin input method for fcitx5, with bundled dictionaries and language model'
 arch=('x86_64')
-url='https://github.com/Goway-Hui/ArchType'
+url='https://github.com/Goway-Hui/ArchType-standalone'
 license=('MIT' 'Apache-2.0' 'GPL-3.0-only' 'CC-BY-SA-4.0' 'Unicode-3.0' 'LGPL-3.0-only')
 # 设置界面（gtk4、webkitgtk-6.0、gstreamer）和 GTK / Qt 程序里打字要的 fcitx5-gtk、fcitx5-qt 都是硬依赖
 depends=('fcitx5' 'fcitx5-gtk' 'fcitx5-qt' 'alsa-lib' 'gcc-libs' 'glibc'

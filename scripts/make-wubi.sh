@@ -86,7 +86,7 @@ wubi86.tsv 由 ArchType 的 tools/wubi2tsv.py 转换，scripts/make-wubi.sh 可�
 第一行是版本标记（# archtype-data: wubi86.tsv ${WUBI_DATE//-/.}.${WUBI_REV} ...），
 之后每行 code<TAB>词<TAB>频次，按码升序、频次降序；去掉了 z 开头的符号码、权重为 0 的扩展区生僻字与部首、
 注释掉的条目和 stem（构词码）列；没有权重的《通用规范汉字表》字频次记 1。
-ArchType 的源代码（含上面两个脚本）：https://github.com/Goway-Hui/ArchType
+ArchType 的源代码（含上面两个脚本）：https://github.com/Goway-Hui/ArchType-standalone
 EOF
 
 # 数据清单：同一目录里 make-data.sh 生成的词库、语言模型一起列上（它们要带版本标记）

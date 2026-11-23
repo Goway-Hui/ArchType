@@ -66,7 +66,7 @@ pub fn latest_release_tag() -> Option<String> {
             "/dev/null",
             "-w",
             "%{url_effective}",
-            "https://github.com/Goway-Hui/ArchType/releases/latest",
+            "https://github.com/Goway-Hui/ArchType-standalone/releases/latest",
         ])
         .output()
         .ok()?;

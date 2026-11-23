@@ -343,7 +343,7 @@ define_class!(
             }
             let layout = app::start().layout.clone();
             let base = format!(
-                "https://github.com/Goway-Hui/ArchType/releases/download/v{latest}"
+                "https://github.com/Goway-Hui/ArchType-standalone/releases/download/v{latest}"
             );
             match super::update::install(&latest, &base, &layout) {
                 Ok(()) => show_message("检查更新", "装好了。下次切到 ArchType 就是新版。"),

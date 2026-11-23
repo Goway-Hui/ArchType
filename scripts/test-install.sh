@@ -24,8 +24,8 @@ case "$name" in
     printf 'curl %s\n' "$url" >> "$FIXTURE_FETCH_LOG"
     case "$url" in
       file://*) cp -- "${url#file://}" "$output" ;;
-      https://github.com/Goway-Hui/ArchType/releases/latest)
-        printf '%s\n' https://github.com/Goway-Hui/ArchType/releases/tag/v0.3.8 ;;
+      https://github.com/Goway-Hui/ArchType-standalone/releases/latest)
+        printf '%s\n' https://github.com/Goway-Hui/ArchType-standalone/releases/tag/v0.3.8 ;;
       *) printf '测试禁止联网：%s\n' "$url" >&2; exit 1 ;;
     esac
     ;;
@@ -76,7 +76,7 @@ run() {
   env -u SUDO_USER PATH="$work/bin:$PATH" \
     FIXTURE_LOG="$work/commands" FIXTURE_FETCH_LOG="$work/fetches" \
     ARCHTYPE_SYSTEM="$test_system" ARCHTYPE_OS_RELEASE="$work/os-release" ARCHTYPE_ARCH="$test_arch" \
-    ARCHTYPE_VERSION="$test_version" ARCHTYPE_REPO=Goway-Hui/ArchType \
+    ARCHTYPE_VERSION="$test_version" ARCHTYPE_REPO=Goway-Hui/ArchType-standalone \
     ARCHTYPE_BASE_URL="file://$work/assets" ARCHTYPE_YES=1 \
     ARCHTYPE_NO_IM_CONFIG="$test_no_switch" ARCHTYPE_NO_RESTART="$test_no_switch" XDG_CURRENT_DESKTOP="$test_desktop" \
     bash "$root/install.sh" "$@"
@@ -331,7 +331,7 @@ reset 'ID=arch'
 asset archtype-0.3.8-1-x86_64.pkg.tar.zst
 test_version=
 run > "$work/output" 2>&1 || fail 'Latest release resolution failed'
-grep -Fq 'https://github.com/Goway-Hui/ArchType/releases/latest' "$work/fetches" || fail 'Wrong release repository'
+grep -Fq 'https://github.com/Goway-Hui/ArchType-standalone/releases/latest' "$work/fetches" || fail 'Wrong release repository'
 pass 'Latest release uses this repository'
 
 printf '%s installer checks passed\n' "$count"
