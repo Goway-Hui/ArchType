@@ -32,8 +32,7 @@ use windows::Win32::System::Com::CoTaskMemFree;
 use windows::Win32::UI::TextServices::{
     InputScope, ITfComposition, ITfCompositionSink, ITfCompositionSink_Impl, ITfContext,
     ITfContextComposition, ITfEditSession, ITfEditSession_Impl, ITfInputScope,
-    ITfInsertAtSelection, ITfKeyEventSink, ITfKeyEventSink_Impl, ITfKeystrokeMgr, ITfProperty,
-    ITfRange, ITfTextInputProcessorEx, ITfTextInputProcessorEx_Impl, ITfTextInputProcessor_Impl,
+    ITfInsertAtSelection, ITfKeyEventSink, ITfKeyEventSink_Impl, ITfKeystrokeMgr, ITfRange, ITfTextInputProcessorEx, ITfTextInputProcessorEx_Impl, ITfTextInputProcessor_Impl,
     ITfThreadMgr, GUID_PROP_INPUTSCOPE, IS_PASSWORD, TF_CONTEXT_EDIT_CONTEXT_FLAGS, TF_ES_READ,
     TF_ES_READWRITE, TF_ES_SYNC, TF_IAS_NOQUERY, TF_SELECTION,
 };
@@ -595,11 +594,13 @@ unsafe fn input_scope_password(context: &ITfContext, ec: u32, range: &ITfRange) 
     let Ok(value) = property.GetValue(ec, range) else {
         return false;
     };
-    let unknown = value.Anonymous.Anonymous.Anonymous.punkVal;
-    if unknown.is_null() {
+    // VARIANT 是 windows-core 的不透明类型：用 TryFrom 拿 IUnknown，再 QI 到 ITfInputScope
+    let Ok(unknown) = windows::core::IUnknown::try_from(&value) else {
         return false;
-    }
-    let scope: ITfInputScope = Interface::from_raw(unknown);
+    };
+    let Ok(scope) = unknown.cast::<ITfInputScope>() else {
+        return false;
+    };
     let mut scopes: *mut InputScope = std::ptr::null_mut();
     let mut count = 0u32;
     if scope.GetInputScopes(&mut scopes, &mut count).is_err() {
