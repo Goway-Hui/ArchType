@@ -12,8 +12,22 @@ fn main() {
         "--unregister" => finish(archtype_tsf::unregister()),
         "--version" | "-V" => println!("ArchType {}", env!("CARGO_PKG_VERSION")),
         "--selftest" => std::process::exit(if selftest() { 0 } else { 1 }),
+        "--install-lexicon" | "--use-lexicon" => {
+            let layout = archtype_tsf::paths::layout();
+            let env = LexiconEnv { layout: &layout };
+            let argument = std::env::args().nth(2).unwrap_or_default();
+            let code = if command == "--use-lexicon" {
+                archtype_lexicon::use_lexicon(&env, &argument)
+            } else {
+                archtype_lexicon::install_lexicon(&env, &argument)
+            };
+            std::process::exit(code);
+        }
         _ => {
-            println!("用法：archtype <--register|--unregister|--selftest|--version>");
+            println!(
+                "用法：archtype <--register|--unregister|--selftest|--version|\
+                 --install-lexicon [wanxiang|文件.tar.gz]|--use-lexicon rime-ice|wanxiang>"
+            );
         }
     }
 }
@@ -25,6 +39,31 @@ fn finish(result: Result<(), String>) {
             eprintln!("{error}");
             std::process::exit(1);
         }
+    }
+}
+
+/// 词库包（万象）安装/切换用的环境：数据目录与 archtype.conf。
+struct LexiconEnv {
+    layout: Layout,
+}
+
+impl archtype_lexicon::Env for LexiconEnv {
+    fn data_dir(&self) -> String {
+        self.layout.support_dir.to_string_lossy().into_owned()
+    }
+
+    fn get(&self, key: &str) -> String {
+        Config::load(&self.layout.config_path().to_string_lossy())
+            .value(key)
+            .unwrap_or_default()
+    }
+
+    fn set(&self, key: &str, value: &str) -> bool {
+        Config::set_key_in_file(&self.layout.config_path(), key, value)
+    }
+
+    fn reload(&self) -> bool {
+        true
     }
 }
 
