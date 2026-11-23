@@ -127,7 +127,7 @@ impl TextService {
         }
         // 全局语音热键：输入法在后台时也能按（低级键盘钩子，只在自己的消息线程里回调）
         if self.state.hook.get() == 0 {
-            if let Ok(module) = windows::Win32::System::LibraryLoader::GetModuleHandleW(PCWSTR::null()) {
+            if let Ok(module) = unsafe { windows::Win32::System::LibraryLoader::GetModuleHandleW(PCWSTR::null()) } {
                 if let Ok(hook) = unsafe {
                     SetWindowsHookExW(
                         WH_KEYBOARD_LL,
