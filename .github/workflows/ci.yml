@@ -724,7 +724,10 @@ jobs:
           $ErrorActionPreference = "Stop"
           Invoke-WebRequest "https://github.com/longbridge/nsh/releases/download/v0.6.0/install.ps1" -OutFile "$env:RUNNER_TEMP\nsh-install.ps1"
           & "$env:RUNNER_TEMP\nsh-install.ps1"
-          $nsh = Get-ChildItem "$env:USERPROFILE\.nsh" -Recurse -Filter nsh.exe -ErrorAction SilentlyContinue | Select-Object -First 1
+          # install.ps1 装到 %LOCALAPPDATA%\nsh，bin 在 PATH 里（当前进程要手动加）
+          $nshDir = Join-Path $env:LOCALAPPDATA "nsh"
+          $env:Path = "$(Join-Path $nshDir 'bin');$env:Path"
+          $nsh = Get-ChildItem $nshDir -Recurse -Filter nsh.exe -ErrorAction SilentlyContinue | Select-Object -First 1
           if (-not $nsh) { throw "nsh.exe 没装上" }
           Write-Output "nsh: $($nsh.FullName)"
           & $nsh.FullName --version
@@ -732,7 +735,8 @@ jobs:
       - name: 构建设置界面（Windows）
         shell: pwsh
         run: |
-          $nsh = (Get-ChildItem "$env:USERPROFILE\.nsh" -Recurse -Filter nsh.exe -ErrorAction SilentlyContinue | Select-Object -First 1).FullName
+          $nshDir = Join-Path $env:LOCALAPPDATA "nsh"
+          $nsh = (Get-ChildItem $nshDir -Recurse -Filter nsh.exe -ErrorAction SilentlyContinue | Select-Object -First 1).FullName
           $version = (Select-String -Path Cargo.toml -Pattern '^version = "(.+)"').Matches[0].Groups[1].Value
           Push-Location settings-nsh
           & $nsh package --target windows --app-version $version -o .nsh/out
