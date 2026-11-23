@@ -11,12 +11,17 @@ use std::sync::{LazyLock, Once};
 
 use archtype_core::session::{Frame, Key};
 use archtype_shell::input::Input;
+use archtype_shell::keys::win::VoiceKey;
 use archtype_shell::panel::Page;
 use archtype_shell::view::page_from_frame;
+use archtype_shell::voice::{
+    Voice, VOICE_ERROR, VOICE_LISTENING, VOICE_RECOGNIZING, VOICE_RESULT,
+};
 use archtype_shell::keys::{translate_key_down, Modifiers};
 use archtype_shell::runtime::Runtime;
 use windows::core::{implement, Interface, Result};
-use windows::Win32::Foundation::{BOOL, FALSE, LPARAM, TRUE, WPARAM};
+use windows::Win32::Foundation::{BOOL, FALSE, HWND, LPARAM, RECT, TRUE, WPARAM};
+use windows::Win32::UI::WindowsAndMessaging::{KillTimer, SetTimer};
 use windows::Win32::UI::Input::KeyboardAndMouse::{
     GetKeyboardLayout, GetKeyboardState, GetKeyState, ToUnicodeEx,
 };
@@ -39,6 +44,11 @@ pub fn runtime() -> &'static Runtime {
     runtime
 }
 
+thread_local! {
+    /// 定时器回调要拿到当前输入法对象（同一个 TSF 线程）
+    static VOICE_STATE: RefCell<Option<Rc<State>>> = RefCell::new(None);
+}
+
 pub struct State {
     thread_mgr: RefCell<Option<ITfThreadMgr>>,
     keystroke: RefCell<Option<ITfKeystrokeMgr>>,
@@ -49,6 +59,14 @@ pub struct State {
     compositions: RefCell<HashMap<isize, ITfComposition>>,
     /// 组合的终止通知（用户点别处时 TSF 会结束组合）
     composition_sinks: RefCell<HashMap<isize, ITfCompositionSink>>,
+    /// 语音输入（第一次按语音键时建）
+    voice: RefCell<Option<Voice>>,
+    /// 最近一次按键时的输入框（语音结果要上屏到这里）
+    last_context: RefCell<Option<ITfContext>>,
+    /// 最近一次拿到的光标矩形（语音提示用）
+    last_caret: Cell<RECT>,
+    /// 候选窗口现在显示的是不是语音提示
+    hint_shown: Cell<bool>,
 }
 
 impl State {
@@ -61,6 +79,10 @@ impl State {
             input: RefCell::new(None),
             compositions: RefCell::new(HashMap::new()),
             composition_sinks: RefCell::new(HashMap::new()),
+            voice: RefCell::new(None),
+            last_context: RefCell::new(None),
+            last_caret: Cell::new(RECT::default()),
+            hint_shown: Cell::new(false),
         }
     }
 }
@@ -93,6 +115,10 @@ impl TextService {
         }
         *self.state.keystroke.borrow_mut() = Some(keystroke);
         *self.state.sink.borrow_mut() = Some(sink);
+        // 50ms 轮询语音状态（听音量、等识别结果）
+        unsafe {
+            SetTimer(None, 0, 50, Some(voice_timer));
+        }
         Ok(())
     }
 
@@ -105,6 +131,9 @@ impl TextService {
         }
         *self.state.sink.borrow_mut() = None;
         *self.state.thread_mgr.borrow_mut() = None;
+        unsafe {
+            let _ = KillTimer(None, 0);
+        }
         // 切走应用时把学到的词和统计异步落盘（不阻塞宿主，别用 save_wait）
         let runtime = runtime();
         if let Some(engine) = runtime.engine() {
@@ -148,8 +177,23 @@ impl KeySink {
         if runtime().engine().is_none() {
             return Ok(FALSE);
         }
-        ensure_input(&self.state);
         let vk = (wparam.0 & 0xffff) as u16;
+        // 语音键：按下即开始录，和 macOS / fcitx5 插件一致（只在输入法激活时）
+        let config = runtime().config();
+        if config.voice {
+            if let Some(voice_key) = VoiceKey::parse(&config.voice_key) {
+                if vk == voice_key.vk {
+                    ensure_voice(&self.state);
+                    if let Some(voice) = self.state.voice.borrow().as_ref() {
+                        voice.key_down();
+                    }
+                    self.state.last_context.borrow_mut().replace(pic.clone());
+                    VOICE_STATE.with(|slot| *slot.borrow_mut() = Some(Rc::clone(&self.state)));
+                    return Ok(TRUE);
+                }
+            }
+        }
+        ensure_input(&self.state);
         let characters = key_characters(vk, lparam);
         let Some(translated) = translate_key_down(vk, characters.as_deref(), current_modifiers())
         else {
@@ -214,9 +258,20 @@ impl ITfKeyEventSink_Impl for KeySink_Impl {
     fn OnKeyUp(
         &self,
         _pic: Option<&ITfContext>,
-        _wparam: WPARAM,
+        wparam: WPARAM,
         _lparam: LPARAM,
     ) -> Result<BOOL> {
+        let config = runtime().config();
+        if config.voice {
+            if let Some(voice_key) = VoiceKey::parse(&config.voice_key) {
+                if (wparam.0 & 0xffff) as u16 == voice_key.vk {
+                    if let Some(voice) = self.state.voice.borrow().as_ref() {
+                        voice.key_up();
+                    }
+                    return Ok(TRUE);
+                }
+            }
+        }
         Ok(FALSE)
     }
 
@@ -353,6 +408,7 @@ impl ITfEditSession_Impl for FrameEditSession_Impl {
         match &this.page {
             Some(page) => {
                 if let Ok(caret) = caret_rect(&this.context, ec) {
+                    this.state.last_caret.set(caret);
                     let state = Rc::clone(&this.state);
                     let context = this.context.clone();
                     let tid = this.tid;
@@ -432,6 +488,102 @@ fn start_composition(
         let context_composition: ITfContextComposition = context.cast()?;
         context_composition.StartComposition(ec, range, &sink)
     }
+}
+
+/// 第一次按语音键时建句柄（模型在 `%APPDATA%\ArchType\wtlocal`）。
+fn ensure_voice(state: &State) {
+    if state.voice.borrow().is_some() {
+        return;
+    }
+    let dir = crate::paths::support_dir().join("wtlocal");
+    if let Some(voice) = Voice::new(&dir) {
+        voice.set_device("");
+        *state.voice.borrow_mut() = Some(voice);
+    }
+}
+
+/// 50ms 定时器：推进语音状态机，显示提示 / 上屏结果。
+unsafe extern "system" fn voice_timer(_hwnd: HWND, _msg: u32, _id: usize, _time: u32) {
+    let Some(state) = VOICE_STATE.with(|slot| slot.borrow().clone()) else {
+        return;
+    };
+    let phase = {
+        let voice = state.voice.borrow();
+        match voice.as_ref() {
+            Some(voice) => voice.poll(),
+            None => return,
+        }
+    };
+    match phase {
+        VOICE_LISTENING => {
+            let level = state
+                .voice
+                .borrow()
+                .as_ref()
+                .map(|voice| voice.level())
+                .unwrap_or(0);
+            let wave = archtype_shell::keys::voice_wave(&[level]);
+            show_hint(&state, &format!("正在听… {wave}"));
+        }
+        VOICE_RECOGNIZING => show_hint(&state, "识别中…"),
+        VOICE_RESULT => {
+            let text = state
+                .voice
+                .borrow()
+                .as_ref()
+                .map(|voice| voice.text())
+                .unwrap_or_default();
+            if let Some(voice) = state.voice.borrow().as_ref() {
+                voice.cancel();
+            }
+            hide_hint(&state);
+            if !text.is_empty() {
+                commit_voice(&state, &text);
+            }
+        }
+        VOICE_ERROR => {
+            let text = state
+                .voice
+                .borrow()
+                .as_ref()
+                .map(|voice| voice.text())
+                .unwrap_or_default();
+            if let Some(voice) = state.voice.borrow().as_ref() {
+                voice.cancel();
+            }
+            show_hint(&state, &text);
+        }
+        _ => {
+            if state.hint_shown.get() {
+                hide_hint(&state);
+            }
+        }
+    }
+}
+
+fn show_hint(state: &State, text: &str) {
+    let page = archtype_shell::view::voice_hint_page(text, runtime().config().candidate_font_size);
+    crate::candidate_window::show(&page, state.last_caret.get(), Box::new(|_| {}));
+    state.hint_shown.set(true);
+}
+
+fn hide_hint(state: &State) {
+    crate::candidate_window::hide();
+    state.hint_shown.set(false);
+}
+
+fn commit_voice(state: &Rc<State>, text: &str) {
+    let context = state.last_context.borrow().clone();
+    let Some(context) = context else {
+        return;
+    };
+    let key = unsafe { Interface::as_raw(&context) as isize };
+    let frame = Frame {
+        commit: Some(text.to_string()),
+        handled: true,
+        ..Default::default()
+    };
+    apply_frame(&context, state.tid.get(), Rc::clone(state), key, &frame, None);
 }
 
 /// 组合被 TSF 结束（用户点别处、切走）：把记着的状态清掉。
