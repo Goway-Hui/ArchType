@@ -717,6 +717,44 @@ jobs:
           # 最后一条 reg query 的失败码别带出这个步骤（GitHub Actions 的 pwsh 会 exit $LASTEXITCODE）
           exit 0
 
+      - name: WiX v4
+        run: dotnet tool install --global wix
+
+      - name: 打包 MSI
+        shell: pwsh
+        run: |
+          $version = (Select-String -Path Cargo.toml -Pattern '^version = "(.+)"').Matches[0].Groups[1].Value
+          $env:Path = "$env:USERPROFILE\.dotnet\tools;$env:Path"
+          ./scripts/package-msi.ps1 -Version $version -DataDir "dist/data" -OutDir "dist/windows"
+
+      - name: 装一遍 MSI 再卸掉（runner 是管理员）
+        shell: pwsh
+        run: |
+          $PSNativeCommandUseErrorActionPreference = $false
+          $msi = Get-ChildItem dist/windows/*.msi | Select-Object -First 1
+          $log = "$env:RUNNER_TEMP\msi-install.log"
+          $p = Start-Process msiexec.exe -ArgumentList @("/i", "`"$($msi.FullName)`"", "/qn", "/norestart", "/l*v", "`"$log`"") -Wait -PassThru
+          if ($p.ExitCode -ne 0) { Get-Content $log -Tail 40; throw "msiexec 安装失败：$($p.ExitCode)" }
+          foreach ($f in @("archtype_tsf.dll", "archtype.exe", "lexicon.tsv", "words.lm")) {
+            if (-not (Test-Path "C:\Program Files\ArchType\$f")) { throw "$f 没装进去" }
+          }
+          reg query "HKCR\CLSID\{6F2D3C1A-7B4E-4C2D-9E31-2A5B8F0C7D11}\InprocServer32"
+          if ($LASTEXITCODE -ne 0) { throw "COM 注册没写进去" }
+          reg query "HKLM\SOFTWARE\Microsoft\CTF\TIP\{6F2D3C1A-7B4E-4C2D-9E31-2A5B8F0C7D11}"
+          if ($LASTEXITCODE -ne 0) { throw "CTF TIP 没写进去" }
+          $p = Start-Process msiexec.exe -ArgumentList @("/x", "`"$($msi.FullName)`"", "/qn", "/norestart") -Wait -PassThru
+          if ($p.ExitCode -ne 0) { throw "msiexec 卸载失败：$($p.ExitCode)" }
+          if (Test-Path "C:\Program Files\ArchType\archtype_tsf.dll") { throw "卸载后 DLL 还在" }
+          reg query "HKCR\CLSID\{6F2D3C1A-7B4E-4C2D-9E31-2A5B8F0C7D11}" *> $null
+          if ($LASTEXITCODE -eq 0) { throw "卸载后 COM 注册还在" }
+          exit 0
+
+      - uses: actions/upload-artifact@v5
+        with:
+          name: msi-windows
+          path: dist/windows/*.msi
+          retention-days: 7
+
   release:
     name: 发布
     timeout-minutes: 20

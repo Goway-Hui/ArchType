@@ -1,0 +1,65 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  ArchType 的 Windows 安装包（WiX v4）。
+
+  MSI 自己写注册表（COM + CTF TIP），不用 CustomAction 调 DllRegisterServer：
+  卸载时 MSI 会按组件回滚，不会留半截注册项。
+
+  构建：wix build -arch x64 -o ArchType.msi -d Version=0.8.0 -d SourceDir=... -d DataDir=... ArchType.wxs
+-->
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
+  <Package Name="ArchType" Manufacturer="ArchType" Version="$(var.Version)"
+           UpgradeCode="7C2B6D1E-9F4A-4C3B-8E21-5A6D7F0C9B12"
+           Scope="perMachine" Compressed="yes">
+    <MajorUpgrade DowngradeErrorMessage="已经装了更新的 ArchType。" />
+    <MediaTemplate EmbedCab="yes" />
+
+    <StandardDirectory Id="ProgramFiles64Folder">
+      <Directory Id="INSTALLDIR" Name="ArchType">
+        <!-- 输入法本体：TSF COM 服务 + 命令行工具 -->
+        <Component Id="InputMethod" Guid="3A6F1C2D-8B4E-4A79-9C31-5E2F7D0B6A18">
+          <File Id="tsf_dll" Source="$(var.SourceDir)\archtype_tsf.dll" KeyPath="yes" />
+          <File Id="archtype_exe" Source="$(var.SourceDir)\archtype.exe" />
+        </Component>
+
+        <!-- 词库与语言模型（和 Linux/macOS 安装包同一份数据） -->
+        <Component Id="DataFiles" Guid="5D8B2A41-6C3F-4E9D-A128-7B4F0C6E3D92">
+          <File Id="lexicon" Source="$(var.DataDir)\lexicon.tsv" KeyPath="yes" />
+          <File Id="english" Source="$(var.DataDir)\english.txt" />
+          <File Id="words_lm" Source="$(var.DataDir)\words.lm" />
+          <File Id="s2t" Source="$(var.DataDir)\s2t.tsv" />
+          <File Id="wubi" Source="$(var.DataDir)\wubi86.tsv" />
+          <File Id="nnlm" Source="$(var.DataDir)\nnlm.bin" />
+        </Component>
+
+        <!-- COM 注册 + CTF TIP + 安装目录（DLL 在宿主进程里，靠它找资源） -->
+        <Component Id="Registration" Guid="9E4C7B15-2D6A-4F38-B05C-1A8E6F3D2C74">
+          <RegistryKey Root="HKLM" Key="SOFTWARE\ArchType">
+            <RegistryValue Name="InstallDir" Type="string" Value="[INSTALLDIR]" KeyPath="yes" />
+          </RegistryKey>
+          <RegistryKey Root="HKCR" Key="CLSID\{6F2D3C1A-7B4E-4C2D-9E31-2A5B8F0C7D11}">
+            <RegistryValue Type="string" Value="ArchType 拼音" />
+            <RegistryKey Key="InprocServer32">
+              <RegistryValue Type="string" Value="[INSTALLDIR]archtype_tsf.dll" />
+              <RegistryValue Name="ThreadingModel" Type="string" Value="Apartment" />
+            </RegistryKey>
+            <RegistryKey Key="Implemented Categories\{34745C63-B2F0-4784-8B67-5E12C8701A31}" />
+            <RegistryKey Key="Implemented Categories\{13A016DF-560B-46CD-947A-4C3AF1E0E35D}" />
+          </RegistryKey>
+          <RegistryKey Root="HKLM" Key="SOFTWARE\Microsoft\CTF\TIP\{6F2D3C1A-7B4E-4C2D-9E31-2A5B8F0C7D11}">
+            <RegistryValue Name="Enable" Type="integer" Value="1" />
+            <RegistryKey Key="LanguageProfile\0x00000804\{4A8B2C6D-1F3E-4A9B-8C7D-2E5F6A7B8C9D}">
+              <RegistryValue Name="Description" Type="string" Value="ArchType 拼音" />
+            </RegistryKey>
+          </RegistryKey>
+        </Component>
+      </Directory>
+    </StandardDirectory>
+
+    <Feature Id="Main" Title="ArchType" Level="1">
+      <ComponentRef Id="InputMethod" />
+      <ComponentRef Id="DataFiles" />
+      <ComponentRef Id="Registration" />
+    </Feature>
+  </Package>
+</Wix>
