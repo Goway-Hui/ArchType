@@ -149,7 +149,7 @@ lmcnmac.bin 导不出来（§3），所以自己从语料训练。`archtype-lmbu
 日常句和热词表（`data/hotwords.tsv`）是同一时间写的，热词带来的那 3 个点有自评成分。
 
 安装包里自带 400 万搭配的那份（`/usr/share/archtype/words.lm`，CC BY-SA 4.0；0.3.3 及以前在单独的词库包 `2026.10.31.2` 里），
-`scripts/make-data.sh` 从 [Release lm-2026.11.09](https://github.com/Gloridust/WowType/releases/tag/lm-2026.11.09)
+`scripts/make-data.sh` 从 [Release lm-2026.11.09](https://github.com/Goway-Hui/ArchType/releases/tag/lm-2026.11.09)
 下载并核对 sha256。不带 NNLM 时日常句 84.8%、维基句 60.2%，逐键平均约 1.9 ms，和不带它时一样
 （安装包现在自带 ArchType 自己的 NNLM，见 §3.5）。
 
@@ -327,7 +327,7 @@ macOS 外壳的 `archtype_shell::engine::Layout::nnlm_path`）。
 - 效果（`scripts/eval.sh` 加 `--nnlm`，和外壳一样的用法：没有上文时只给 5 个音节以上的输入重排，权重 0.5）：
   日常整句首选 90.6% → 94.2%，上文 89.1% → 94.0%，其余各组不变，回归集全过。
 
-当前版本：`2026.11.17.0`，Release [`nnlm-2026.11.17`](https://github.com/Gloridust/WowType/releases/tag/nnlm-2026.11.17)，
+当前版本：`2026.11.17.0`，Release [`nnlm-2026.11.17`](https://github.com/Goway-Hui/ArchType/releases/tag/nnlm-2026.11.17)，
 解压后的 sha256 `d50289dfd10c8a4a0da49fc412bdc61a37c6f63ef1a1cbec4bdb74bf5bb7b52b`。
 
 **重新训练、发布**：

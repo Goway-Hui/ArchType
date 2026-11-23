@@ -384,7 +384,7 @@ macOS 上的设置在 `~/Library/Application Support/ArchType/archtype.conf`，*
 **词级语言模型**：`words.lm` 记的是「哪两个词常连着出现」，束搜索靠它把长句拼对。
 安装包里自带一份（38 MB，装到 `/usr/share/archtype/words.lm`，许可证 CC BY-SA 4.0），
 是用清华的对话语料 [LCCC](https://huggingface.co/datasets/thu-coai/lccc)（MIT）加中文维基百科（CC BY-SA 4.0）训练的，
-单独下载见 [Release lm-2026.11.09](https://github.com/Gloridust/WowType/releases/tag/lm-2026.11.09)。
+单独下载见 [Release lm-2026.11.09](https://github.com/Goway-Hui/ArchType/releases/tag/lm-2026.11.09)。
 载入约 0.03 秒，多占约 45 MB 内存，对按键速度几乎没有影响。想用自己的语料重新训练：
 
 ```bash
