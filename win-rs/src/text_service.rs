@@ -19,8 +19,8 @@ use archtype_shell::voice::{
 };
 use archtype_shell::keys::{translate_key_down, Modifiers};
 use archtype_shell::runtime::Runtime;
-use windows::core::{implement, Interface, Result};
-use windows::Win32::Foundation::{BOOL, FALSE, HWND, LPARAM, RECT, TRUE, WPARAM};
+use windows::core::{implement, Interface, Result, PCWSTR};
+use windows::Win32::Foundation::{BOOL, FALSE, HWND, LPARAM, LRESULT, RECT, TRUE, WPARAM};
 use windows::Win32::UI::WindowsAndMessaging::{
     CallNextHookEx, KillTimer, SetTimer, SetWindowsHookExW, UnhookWindowsHookEx, HHOOK,
     KBDLLHOOKSTRUCT, WH_KEYBOARD_LL, WM_KEYDOWN, WM_KEYUP, WM_SYSKEYDOWN, WM_SYSKEYUP,
@@ -159,7 +159,7 @@ impl TextService {
         let hook = self.state.hook.replace(0);
         if hook != 0 {
             unsafe {
-                let _ = UnhookWindowsHookEx(HHOOK(hook));
+                let _ = UnhookWindowsHookEx(HHOOK(hook as *mut std::ffi::c_void));
             }
         }
         // 切走应用时把学到的词和统计异步落盘（不阻塞宿主，别用 save_wait）
