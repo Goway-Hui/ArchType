@@ -869,6 +869,7 @@ jobs:
           - **数字后面的标点**：顿号、问号、圆括号是中文标点（\`1、\`、\`（1）\`），小数点、千分位、时间这些仍是半角（\`3.14\`、\`3,000\`、\`20:22\`）。
           - **连不上 GitHub 也能装**：一键安装支持 \`ARCHTYPE_GITHUB_MIRROR=https://<代理>/\` 走自己选的下载代理，连不上时提示从 jsDelivr 取脚本；安装包照样按 SHA256SUMS 校验。
           - 源码里新增 Wayland 语音浮条（\`voice-overlay/\`，GTK 4 + layer-shell）：非 GNOME 桌面（niri、sway 等）也能看到蓝话筒 + 声波浮条，需自行构建运行。
+          - **Windows 版（实验）**：新增 TSF 输入法（\`win-rs/\`）与 MSI——编辑区（composition）、候选窗口（GDI 自绘、点选）、语音（激活时与全局热键）、统计、配置热重载、\`--mode\`、词库包、密码框不学习、更新检查/安装。还没做真机交互验收，遇到问题请在 issue 里贴宿主应用与现象。
 
           ## 安装（Ubuntu / Debian、deepin、Arch Linux、Fedora、NixOS）
 
