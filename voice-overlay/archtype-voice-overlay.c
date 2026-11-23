@@ -185,6 +185,7 @@ static gboolean tick_cb(gpointer data) {
     return G_SOURCE_CONTINUE;
 }
 
+/// 点落在哪块屏；不在任何屏上返回 NULL（调用方再回退）。
 static GdkMonitor *monitor_at(GdkDisplay *display, int x, int y) {
     GListModel *mons = gdk_display_get_monitors(display);
     guint n = g_list_model_get_n_items(mons);
@@ -197,7 +198,56 @@ static GdkMonitor *monitor_at(GdkDisplay *display, int x, int y) {
         }
         g_object_unref(m);
     }
-    return n ? g_list_model_get_item(mons, 0) : NULL;
+    return NULL;
+}
+
+/// 按 connector 名找屏（niri 的 focused-output 给的就是这个，比如 HDMI-A-1）。
+static GdkMonitor *monitor_by_name(GdkDisplay *display, const char *name) {
+    if (!name || !*name) {
+        return NULL;
+    }
+    GListModel *mons = gdk_display_get_monitors(display);
+    guint n = g_list_model_get_n_items(mons);
+    for (guint i = 0; i < n; i++) {
+        GdkMonitor *m = g_list_model_get_item(mons, i);
+        if (g_strcmp0(gdk_monitor_get_connector(m), name) == 0) {
+            return m;
+        }
+        g_object_unref(m);
+    }
+    return NULL;
+}
+
+/// 当前聚焦的屏（niri 的 focused-output）。应用拿不到光标时（微信这类），
+/// 浮条跟着聚焦屏走，别落到另一块屏上。1 秒缓存，避免 50ms 一次起进程。
+static const char *focused_output_name(void) {
+    static char name[64];
+    static gint64 cached_at;
+    gint64 now = g_get_monotonic_time();
+    if (name[0] && now - cached_at < 1 * G_USEC_PER_SEC) {
+        return name;
+    }
+    FILE *pipe = popen("niri msg --json focused-output 2>/dev/null", "r");
+    if (!pipe) {
+        return name;
+    }
+    char buf[4096];
+    size_t len = fread(buf, 1, sizeof(buf) - 1, pipe);
+    pclose(pipe);
+    buf[len] = 0;
+    const char *key = "\"name\":\"";
+    char *found = strstr(buf, key);
+    if (found) {
+        found += strlen(key);
+        char *end = strchr(found, '"');
+        if (end && (size_t)(end - found) < sizeof(name)) {
+            size_t n = (size_t)(end - found);
+            memcpy(name, found, n);
+            name[n] = 0;
+            cached_at = now;
+        }
+    }
+    return name;
 }
 
 static void place(Overlay *o) {
@@ -213,8 +263,23 @@ static void place(Overlay *o) {
     gtk_window_set_default_size(o->win, pw, ph);
 
     GdkDisplay *display = gtk_widget_get_display(GTK_WIDGET(o->win));
-    GdkMonitor *monitor = monitor_at(display, o->has_rect ? (int)o->rect_x : 0,
-                                     o->has_rect ? (int)o->rect_y : 0);
+    // 只认「屏幕坐标」的光标矩形；相对窗口的（微信）和没有光标的，跟聚焦屏走
+    GdkMonitor *monitor = NULL;
+    if (o->has_rect && !o->relative) {
+        monitor = monitor_at(display, (int)o->rect_x, (int)o->rect_y);
+    }
+    if (!monitor) {
+        monitor = monitor_by_name(display, focused_output_name());
+    }
+    if (!monitor) {
+        GListModel *mons = gdk_display_get_monitors(display);
+        if (g_list_model_get_n_items(mons) > 0) {
+            monitor = g_list_model_get_item(mons, 0);
+        }
+    }
+    if (!monitor) {
+        return;
+    }
     GdkRectangle geo;
     gdk_monitor_get_geometry(monitor, &geo);
     gtk_layer_set_monitor(o->win, monitor);
