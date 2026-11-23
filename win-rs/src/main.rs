@@ -13,6 +13,20 @@ fn main() {
         "--unregister" => finish(archtype_tsf::unregister()),
         "--version" | "-V" => println!("ArchType {}", env!("CARGO_PKG_VERSION")),
         "--selftest" => std::process::exit(if selftest() { 0 } else { 1 }),
+        "--check-update" => {
+            let current = env!("CARGO_PKG_VERSION");
+            match archtype_shell::update::latest_version() {
+                Some(latest) if archtype_shell::update::is_newer(&latest, current) => {
+                    println!("有新版本 {latest}（当前 {current}）")
+                }
+                Some(_) => println!("已是最新（{current}）"),
+                None => {
+                    println!("检查更新失败");
+                    std::process::exit(1);
+                }
+            }
+        }
+        "--install-update" => std::process::exit(install_update()),
         "--mode" => {
             let mode = std::env::args().nth(2).unwrap_or_else(|| "toggle".into());
             let path = archtype_tsf::paths::support_dir().join("mode-request");
@@ -35,7 +49,9 @@ fn main() {
         _ => {
             println!(
                 "用法：archtype <--register|--unregister|--selftest|--version|\
-                 --install-lexicon [wanxiang|文件.tar.gz]|--use-lexicon rime-ice|wanxiang>"
+                 --check-update|--install-update|\
+                 --install-lexicon [wanxiang|文件.tar.gz]|--use-lexicon rime-ice|wanxiang|\
+                 --mode zh|en|translate|toggle>"
             );
         }
     }
@@ -47,6 +63,47 @@ fn finish(result: Result<(), String>) {
         Err(error) => {
             eprintln!("{error}");
             std::process::exit(1);
+        }
+    }
+}
+
+/// 下载并安装新版 MSI（需要管理员）。
+fn install_update() -> i32 {
+    let current = env!("CARGO_PKG_VERSION");
+    let Some(latest) = archtype_shell::update::latest_version() else {
+        eprintln!("检查更新失败");
+        return 1;
+    };
+    if !archtype_shell::update::is_newer(&latest, current) {
+        println!("已是最新（{current}）");
+        return 0;
+    }
+    let base = format!("https://github.com/Goway-Hui/ArchType/releases/download/v{latest}");
+    let name = format!("ArchType-{latest}-x64.msi");
+    let dir = std::env::temp_dir().join("archtype-update");
+    let msi = match archtype_shell::update::download_verified(&name, &base, &dir) {
+        Ok(path) => path,
+        Err(error) => {
+            eprintln!("下载安装包失败：{error}");
+            return 1;
+        }
+    };
+    println!("下载完成：{}", msi.display());
+    match std::process::Command::new("msiexec")
+        .args(["/i", &msi.to_string_lossy(), "/qn", "/norestart"])
+        .status()
+    {
+        Ok(status) if status.success() => {
+            println!("已安装 {latest}");
+            0
+        }
+        Ok(status) => {
+            eprintln!("msiexec 失败：{status}");
+            1
+        }
+        Err(error) => {
+            eprintln!("跑不了 msiexec：{error}");
+            1
         }
     }
 }

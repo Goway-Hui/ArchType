@@ -9,7 +9,7 @@ use std::collections::HashMap;
 use std::rc::Rc;
 use std::sync::{LazyLock, Once};
 
-use archtype_core::session::{Frame, Key, Mode};
+use archtype_core::session::{key_hints, Frame, Key, Mode};
 use archtype_shell::input::Input;
 use archtype_shell::keys::win::VoiceKey;
 use archtype_shell::panel::Page;
@@ -28,13 +28,14 @@ use windows::Win32::UI::WindowsAndMessaging::{
 use windows::Win32::UI::Input::KeyboardAndMouse::{
     GetKeyboardLayout, GetKeyboardState, GetKeyState, ToUnicodeEx,
 };
+use windows::Win32::System::Com::CoTaskMemFree;
 use windows::Win32::UI::TextServices::{
-    ITfComposition, ITfCompositionSink, ITfCompositionSink_Impl, ITfContext,
-    ITfContextComposition, ITfEditSession, ITfEditSession_Impl, ITfInsertAtSelection,
-    ITfKeyEventSink, ITfKeyEventSink_Impl, ITfKeystrokeMgr,
-    ITfTextInputProcessorEx, ITfTextInputProcessorEx_Impl, ITfTextInputProcessor_Impl,
-    ITfThreadMgr, TF_CONTEXT_EDIT_CONTEXT_FLAGS, TF_ES_READWRITE, TF_ES_SYNC, TF_IAS_NOQUERY,
-    TF_SELECTION,
+    InputScope, ITfComposition, ITfCompositionSink, ITfCompositionSink_Impl, ITfContext,
+    ITfContextComposition, ITfEditSession, ITfEditSession_Impl, ITfInputScope,
+    ITfInsertAtSelection, ITfKeyEventSink, ITfKeyEventSink_Impl, ITfKeystrokeMgr, ITfProperty,
+    ITfRange, ITfTextInputProcessorEx, ITfTextInputProcessorEx_Impl, ITfTextInputProcessor_Impl,
+    ITfThreadMgr, GUID_PROP_INPUTSCOPE, IS_PASSWORD, TF_CONTEXT_EDIT_CONTEXT_FLAGS, TF_ES_READ,
+    TF_ES_READWRITE, TF_ES_SYNC, TF_IAS_NOQUERY, TF_SELECTION,
 };
 
 /// 进程级：配置、引擎、翻译器、统计（DLL 在每个宿主进程里各一份，和 fcitx5 插件一样）。
@@ -72,6 +73,8 @@ pub struct State {
     hint_shown: Cell<bool>,
     /// 全局语音热键钩子（WH_KEYBOARD_LL）；0 表示没装
     hook: Cell<isize>,
+    /// 当前输入框是不是密码框（探测结果，下一次按键用）
+    password: Cell<bool>,
 }
 
 impl State {
@@ -89,6 +92,7 @@ impl State {
             last_caret: Cell::new(RECT::default()),
             hint_shown: Cell::new(false),
             hook: Cell::new(0),
+            password: Cell::new(false),
         }
     }
 }
@@ -217,9 +221,11 @@ impl KeySink {
             crate::candidate_window::hide();
         }
         let vk = (wparam.0 & 0xffff) as u16;
+        // 密码框：探测一次（同步 edit session），这次按键不学习、不进统计
+        let sensitive = probe_password(pic, &self.state);
         // 自动重复不算按键统计
         if lparam.0 & (1 << 30) == 0 {
-            runtime().stats().record_key(vk, false);
+            runtime().stats().record_key(vk, sensitive);
         }
         // 语音键：按下即开始录，和 macOS / fcitx5 插件一致（只在输入法激活时）
         let config = runtime().config();
@@ -250,6 +256,9 @@ impl KeySink {
             let mut key = Key::default();
             key.keysym = translated.keysym;
             key.modifiers = translated.modifiers.0;
+            if sensitive {
+                key.hints = key_hints::NO_LEARN | key_hints::NO_TRANSLATE;
+            }
             let frame = input.key(&key);
             if let Some(text) = &frame.commit {
                 runtime().stats().record_commit(
@@ -257,7 +266,7 @@ impl KeySink {
                     input.commit_source(),
                     &input.commit_scheme(),
                     input.last_choice_index(),
-                    false,
+                    sensitive,
                 );
             }
             let config = input.config().clone();
@@ -540,6 +549,73 @@ fn start_composition(
         let context_composition: ITfContextComposition = context.cast()?;
         context_composition.StartComposition(ec, range, &sink)
     }
+}
+
+/// 密码框探测：在同步 edit session 里读 `GUID_PROP_INPUTSCOPE`，看有没有 `IS_PASSWORD`。
+#[implement(ITfEditSession)]
+struct ProbePassword {
+    context: ITfContext,
+    state: Rc<State>,
+}
+
+impl ITfEditSession_Impl for ProbePassword_Impl {
+    fn DoEditSession(&self, ec: u32) -> Result<()> {
+        let this = &self.this;
+        unsafe {
+            let mut selection: [TF_SELECTION; 1] = std::mem::zeroed();
+            let mut fetched = 0u32;
+            this.context.GetSelection(ec, 0, &mut selection, &mut fetched)?;
+            if let Some(range) = selection[0].range.as_ref() {
+                this.state.password.set(input_scope_password(&this.context, ec, range));
+            }
+        }
+        Ok(())
+    }
+}
+
+fn probe_password(context: &ITfContext, state: &Rc<State>) -> bool {
+    state.password.set(false);
+    let session: ITfEditSession = ProbePassword {
+        context: context.clone(),
+        state: Rc::clone(state),
+    }
+    .into();
+    let flags = TF_CONTEXT_EDIT_CONTEXT_FLAGS(TF_ES_SYNC.0 | TF_ES_READ.0);
+    unsafe {
+        let _ = context.RequestEditSession(state.tid.get(), &session, flags);
+    }
+    state.password.get()
+}
+
+/// `GUID_PROP_INPUTSCOPE` 里有没有 `IS_PASSWORD`。
+unsafe fn input_scope_password(context: &ITfContext, ec: u32, range: &ITfRange) -> bool {
+    let Ok(property) = context.GetProperty(&GUID_PROP_INPUTSCOPE) else {
+        return false;
+    };
+    let Ok(value) = property.GetValue(ec, range) else {
+        return false;
+    };
+    let unknown = value.Anonymous.Anonymous.Anonymous.punkVal;
+    if unknown.is_null() {
+        return false;
+    }
+    let scope: ITfInputScope = Interface::from_raw(unknown);
+    let mut scopes: *mut InputScope = std::ptr::null_mut();
+    let mut count = 0u32;
+    if scope.GetInputScopes(&mut scopes, &mut count).is_err() {
+        return false;
+    }
+    let mut password = false;
+    if !scopes.is_null() {
+        for index in 0..count as usize {
+            if *scopes.add(index) == IS_PASSWORD {
+                password = true;
+                break;
+            }
+        }
+        CoTaskMemFree(Some(scopes as *const std::ffi::c_void));
+    }
+    password
 }
 
 fn mode_request_path() -> std::path::PathBuf {
