@@ -18,7 +18,15 @@
         let
           path = builtins.getEnv "ARCHTYPE_SETTINGS_ARCHIVE";
         in
-        if path == "" then null else builtins.path { path = path; };
+        if path == "" then
+          null
+        else
+          # 非 tag 构建的包名带 `~git…`（…-0.9.0~git20261124.91eb5f4-linux-x86_64.tar.gz），
+          # `~` 不是合法的 store 路径字符，所以给一个固定名字
+          builtins.path {
+            path = path;
+            name = "archtype-settings.tar.gz";
+          };
     in
     {
       # NixOS：i18n.inputMethod.fcitx5.addons = [ inputs.archtype.packages.${system}.default ];
