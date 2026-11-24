@@ -641,7 +641,7 @@ jobs:
           settings_src=$(nix eval --impure --raw ".#default.settingsSource")
           echo "settings 来源: $settings_src"
           case "$settings_src" in
-            */archtype-settings.tar.gz) ;;
+            *-archtype-settings.tar.gz) ;;
             *)
               echo "settings 不是本地 artifact（$settings_src），settingsArchive 没接上" >&2
               exit 1
