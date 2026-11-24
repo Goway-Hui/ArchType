@@ -12,6 +12,9 @@ use std::time::{Duration, Instant};
 
 use anyhow::Result;
 
+#[cfg(test)]
+use crate::sync::mutex_lock;
+
 /// 一份要写的数据：在写文件的线程上把抄好的数据排成文字。
 pub type Job = Box<dyn FnOnce() -> Result<String> + Send>;
 
@@ -230,7 +233,7 @@ mod tests {
         saver.submit(
             dir.join("gate.tsv"),
             Box::new(move || {
-                let _ = gate.lock().unwrap().recv();
+                let _ = mutex_lock(&gate).recv();
                 Ok(String::new())
             }),
         );

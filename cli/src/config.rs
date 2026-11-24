@@ -47,10 +47,6 @@ pub fn read(path: &str) -> String {
     std::fs::read_to_string(path).unwrap_or_default()
 }
 
-pub fn read_bytes(path: &str) -> Option<Vec<u8>> {
-    std::fs::read(path).ok()
-}
-
 pub fn exists(path: &str) -> bool {
     PathBuf::from(path).exists()
 }

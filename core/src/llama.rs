@@ -18,6 +18,8 @@ use std::sync::{Arc, Condvar, Mutex};
 use std::thread;
 use std::time::{Duration, Instant};
 
+use crate::sync::mutex_lock;
+
 /// 默认的模型文件名（腾讯 HY-MT 1.5 1.8B，Q4_K_M 量化）。
 pub const MODEL_FILE: &str = "HY-MT1.5-1.8B-Q4_K_M.gguf";
 
@@ -800,6 +802,7 @@ mod tests {
 
     #[cfg(target_os = "linux")]
     #[test]
+    #[allow(clippy::zombie_processes)] // 测的是 PDEATHSIG：子进程就是要被带上，不在这个线程等
     fn server_dies_when_our_process_is_killed() {
         // 要真的杀掉一个进程才测得出来：把这个测试程序自己再起一份，只跑这一个测试，
         // 带着这个环境变量的那份扮演输入法

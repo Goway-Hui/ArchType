@@ -51,6 +51,18 @@
 - 返回指针的函数失败时返回 NULL，返回 `int` 的失败时返回负数（个别函数的约定写在头文件注释里）。
 - 失败原因用 `archtype_last_error()` 取（线程局部）。
 
+## 旧候选路径（`archtype_engine_input` / `archtype_candidates_*`）
+
+这条路径在会话（1.3）之前是唯一入口，现在只为旧外壳保留，Rust 导出已标 `deprecated`：
+
+- **输入**：`archtype_engine_input` → 候选句柄。新外壳用 `archtype_session_input`，候选从
+  `archtype_session_candidate_total` / `_candidate_info` / `_candidate` 读。
+- **选词与上文**：`archtype_engine_record_selection[_ex]`、`archtype_engine_set_context`。新外壳用
+  `archtype_session_select`；上文由会话从已上屏的字和已选的词自己维护。
+- **引擎的构建与配置**（`archtype_engine_new`、`set_*`、`load_*`、`save_*`）不是旧路径，所有外壳共用。
+
+新代码不要调用前两类；它们按「只加不删」的规矩继续留着，方便老版本外壳。
+
 ## 输入会话（`archtype_session_*`，1.3 起，1.4 加候选，1.5 加选词，1.6 加选词键、翻页和展开面板，1.7 加 Ctrl+Delete 忘掉学错的词，1.10 加标点、自动空格、上文、中 / 英 / 译和单按 Shift、互译、工具栏和表情面板，1.11 加联想）
 
 输入行为都在会话里，两个外壳（fcitx5、macOS）只把平台的按键翻成键码交给会话、照 frame 画编辑区和候选框、上屏、读周围文字和系统剪贴板、排定时器（[PORTING.md](PORTING.md)）。

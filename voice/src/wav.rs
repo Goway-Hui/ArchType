@@ -1,4 +1,6 @@
 //! 最小 WAV 读写：16kHz 单声道 16bit。
+// MSRV 1.82：`as_chunks` 要 1.88。
+#![allow(clippy::chunks_exact_to_as_chunks)]
 
 use std::fs::File;
 use std::io::{Read, Write};

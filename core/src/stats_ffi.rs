@@ -3,6 +3,9 @@
 //! 约定见 core/include/archtype_core.h：句柄由调用方保证生命周期（一个线程用），
 //! 失败用 archtype_last_error 取原因。记录器新建时是关着的，外壳按 `TypingStats` 打开。
 
+// 和 ffi.rs / voice_ffi.rs 一样：安全契约写在 core/include/archtype_core.h。
+#![allow(clippy::missing_safety_doc)]
+
 use std::os::raw::{c_char, c_int, c_uint};
 use std::time::Duration;
 

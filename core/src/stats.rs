@@ -263,8 +263,8 @@ impl Document {
         }
     }
 
-    /// 排成要写的字节；超过 [`MAX_FILE_BYTES`] 时从最早的一天删起。
-    fn to_bytes_capped(&mut self) -> Vec<u8> {
+    /// 排成要写的字节；超过 [`MAX_FILE_BYTES`] 时从最早的一天删起（会改自身，所以不是 `to_*`）。
+    fn take_bytes_capped(&mut self) -> Vec<u8> {
         loop {
             let bytes = self.to_bytes();
             if bytes.len() <= MAX_FILE_BYTES || self.days.is_empty() {
@@ -698,7 +698,7 @@ impl WriterState {
         }
         document.cleared = marker;
         document.merge(batch);
-        let bytes = document.to_bytes_capped();
+        let bytes = document.take_bytes_capped();
         write_private(&self.path, &bytes)?;
         if read_clear_marker(&self.path) != marker {
             // 写的时候正好清空了：刚写回去的有清空之前的，删掉（下一批也会因为计数变了丢掉）
@@ -732,8 +732,7 @@ pub fn classify(text: &str) -> (u64, Kinds) {
         if is_emoji(ch) {
             // 吞掉变体选择符、肤色修饰、键帽组合、零宽连接符和它后面的表情；
             // 没有连接符的两个表情仍然算两个。
-            loop {
-                let Some(&next) = chars.peek() else { break };
+            while let Some(&next) = chars.peek() {
                 let code = next as u32;
                 if code == 0xfe0f || code == 0x20e3 || (0x1f3fb..=0x1f3ff).contains(&code) {
                     chars.next();

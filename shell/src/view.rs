@@ -62,6 +62,8 @@ pub fn voice_hint_page(text: &str, font_size: f64) -> Page {
 
 #[cfg(test)]
 mod tests {
+    // 测试里先 Default 再改一两项更好读
+    #![allow(clippy::field_reassign_with_default)]
     use super::*;
     use archtype_core::session::{Candidate, Frame, Panel};
 

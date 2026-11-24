@@ -1657,7 +1657,7 @@ impl UserLexicon {
     /// 添加或更新一个用户词。拼音可以是 ni hao / nihao / xi'an。
     pub fn add(&self, pinyin: &str, word: &str, freq: f64) -> Result<()> {
         let pinyin = Self::check_word(pinyin, word)?;
-        let mut guard = self.user.write().unwrap();
+        let mut guard = write_lock(&self.user);
         let user = &mut *guard;
         let same_pinyin = user
             .pos
@@ -1690,7 +1690,7 @@ impl UserLexicon {
 
     /// 删除用户词，返回是否删掉了东西。
     pub fn remove(&self, word: &str) -> bool {
-        let mut guard = self.user.write().unwrap();
+        let mut guard = write_lock(&self.user);
         let user = &mut *guard;
         let Some(at) = user.pos.remove(word) else {
             return false;
@@ -1766,7 +1766,7 @@ impl UserLexicon {
             }
         }
         if !words.is_empty() {
-            let mut user = self.user.write().unwrap();
+            let mut user = write_lock(&self.user);
             for (pinyin, word, freq) in &words {
                 user.put(pinyin, word, *freq);
             }

@@ -3,7 +3,8 @@
  *
  * 生命周期：
  * - archtype_engine_new 成功返回句柄，必须用 archtype_engine_free 释放；
- * - archtype_engine_input 返回的候选句柄必须用 archtype_candidates_free 释放；
+ * - archtype_engine_input 返回的候选句柄必须用 archtype_candidates_free 释放
+ *   （旧候选路径；新外壳用 archtype_session_*，见文件末尾的说明）；
  * - 返回的字符串指针在对应句柄释放前有效（错误串在下一次 API 调用前有效）。
  */
 #ifndef ARCHTYPE_CORE_H
@@ -152,6 +153,8 @@ ArchtypeCandidates *archtype_calc_candidates(const char *expr);
 ArchtypeCandidates *archtype_engine_emoji_search(const ArchtypeEngineHandle *engine,
                                                const char *query, size_t limit);
 
+/* 旧候选路径（只为旧外壳保留）：选词与上文由引擎自己记。
+ * 新外壳用 archtype_session_* —— 输入、候选、选词、上文都由会话统一管。 */
 /* 记录一次选词，参与历史排序特征。返回 0 成功，-1 失败。 */
 int archtype_engine_record_selection(ArchtypeEngineHandle *engine, const char *word);
 
@@ -189,7 +192,8 @@ int archtype_engine_save_history_async(ArchtypeEngineHandle *engine, const char 
  * 进程退出、外壳析构、换词库（新引擎要读这些文件）前调一次 -1；archtype_engine_free 也会先写完再释放。 */
 int archtype_engine_save_wait(ArchtypeEngineHandle *engine, int timeout_ms);
 
-/* 输入拼音串；失败返回 NULL。 */
+/* 输入拼音串；失败返回 NULL。
+ * 旧候选路径：新外壳用 archtype_session_input，候选从会话里读。 */
 ArchtypeCandidates *archtype_engine_input(ArchtypeEngineHandle *engine, const char *input);
 
 /**

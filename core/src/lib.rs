@@ -21,6 +21,7 @@ mod lexstore;
 pub mod llama;
 pub mod lm;
 pub mod nnlm;
+pub(crate) mod postprocess;
 pub mod preedit;
 pub mod rank;
 pub mod recent_emoji;
@@ -1353,12 +1354,7 @@ impl Engine {
             None => self.query_plain(&normalized, completion, at_ms)?,
         };
 
-        protect_exact_input(&mut result);
-        completions_after_exact_words(&mut result);
-        typos_after_typed(&mut result);
-        fuzzy_after_exact_word(&mut result);
-        promote_picked(&mut result);
-        pin_single_initial(&normalized, &mut result);
+        postprocess::stabilize_input(&mut result, &normalized);
         self.promote_custom(&mut result);
         self.append_raw_candidate(raw_display.unwrap_or(display), &mut result);
         let english_only = drop_forced_chinese(&mut result);
@@ -1610,7 +1606,7 @@ impl Engine {
         // 三个音节以上的同音词还要排在读音一样、几个词拼出来的整句前面（qidongqi：启动器 在 启动 | 其
         // 前面），和 protect_exact_input 对束搜索结果做的一样；用户选过的整句不动。
         // 有音节更少、够常用的整词时（jieran 的「截然」），换切法才对得上的长词（己二胺）不往前提
-        let fewest = fewest_exact_syllables(result)
+        let fewest = postprocess::fewest_exact_syllables(result)
             .into_iter()
             .chain(
                 homophones
@@ -1635,7 +1631,7 @@ impl Engine {
                 long && c.consumed >= raw.len()
                     && c.words.len() >= 2
                     && c.features.history_use_count == 0.0
-                    && same_syllables(c, &candidate)
+                    && postprocess::same_syllables(c, &candidate)
             });
             // 打全了、够常用的整词不排在补全出来的候选后面（和 protect_exact_input 对束搜索结果做的一样）：
             // 束搜索的名额被补全的词占满时（qingkuan：情况、请况、轻狂……），「请款」只能从这里补进来，
@@ -1813,9 +1809,7 @@ impl Engine {
         } else if exact {
             // 拼音完整的中文，原始拼音串没必要出现
             return;
-        } else if !has_known_word {
-            Some(0)
-        } else if literal {
+        } else if !has_known_word || literal {
             Some(0)
         } else if top_typos >= 2.0 {
             Some(1)
@@ -2139,7 +2133,7 @@ impl Engine {
                 .total_cmp(&a.score)
                 .then_with(|| a.text.cmp(&b.text))
         });
-        let mut deduped = exact_syllable_first(deduped);
+        let mut deduped = postprocess::exact_syllable_first(deduped);
         deduped.truncate(self.config.max_candidates.max(1));
         Ok(deduped)
     }
@@ -2384,59 +2378,6 @@ impl Engine {
     }
 }
 
-/// 输入正好是一个完整音节（xian、ji、zhe）时：本音节的字排在补全出来的字（想、就、真）前面，
-/// 纠错出来的（gei → 被、飞；si → 是，漏按 h）再往后。
-///
-/// 补全每个字母只罚 1.4 左右，高频字补全以后常常比本音节的字分还高；已经打全的音节，
-/// 用户要的是这个音节的字。多音节输入、没打全的音节不动。
-fn exact_syllable_first(candidates: Vec<Candidate>) -> Vec<Candidate> {
-    let exact = |c: &Candidate| c.features.typo_count == 0.0 && c.features.prefix_completion == 0.0;
-    let one_syllable = candidates
-        .iter()
-        .any(|c| exact(c) && c.words.len() == 1 && c.words[0].known && !c.pinyin.contains(' '));
-    if !one_syllable {
-        return candidates;
-    }
-    let (mut out, rest): (Vec<Candidate>, Vec<Candidate>) = candidates.into_iter().partition(exact);
-    lift_split_word(&mut out);
-    // 补全的在前、纠错的在后，各自按分数
-    let (completions, typos): (Vec<Candidate>, Vec<Candidate>) =
-        rest.into_iter().partition(|c| c.features.typo_count == 0.0);
-    // 分数也压到前面的下面，后面按分数合并、排序的地方不会再把它们换上来
-    for c in completions.into_iter().chain(typos) {
-        let floor = out.last().map_or(0.0, |last| last.score);
-        out.push(Candidate {
-            score: c.score.min(floor - 1e-3),
-            ..c
-        });
-    }
-    out
-}
-
-/// 一个音节也能切成两个音节的整词（xian → 西安）：分数和第一名差得不多时，至少排到第 [`SPLIT_WORD_SLOT`] 位。
-/// 单字太多，按分数它常常排在十几位以后，第一页看不到。
-fn lift_split_word(exact: &mut Vec<Candidate>) {
-    let Some(top) = exact.first().map(|c| c.score) else {
-        return;
-    };
-    let found = exact.iter().position(|c| {
-        c.words.len() == 1 && c.pinyin.contains(' ') && top - c.score <= SPLIT_WORD_MARGIN
-    });
-    let Some(at) = found.filter(|&at| at > SPLIT_WORD_SLOT) else {
-        return;
-    };
-    let mut word = exact.remove(at);
-    // 分数夹在前后两个之间，后面再按分数排也不会变
-    let (above, below) = (exact[SPLIT_WORD_SLOT - 1].score, exact[SPLIT_WORD_SLOT].score);
-    word.score = (above + below) / 2.0;
-    exact.insert(SPLIT_WORD_SLOT, word);
-}
-
-/// [`lift_split_word`]：最多和第一名差多少（自然对数）。实测 xian 的「西安」差 3.0，
-/// 别的音节能切出来的整词（提案、彼岸、立案、堤岸）差 4 以上，不抬。
-const SPLIT_WORD_MARGIN: f64 = 3.5;
-/// [`lift_split_word`]：抬到第几位（从 0 数，4 是第五个）。
-const SPLIT_WORD_SLOT: usize = 4;
 
 /// 第 k 个字母之后在原始串里的字节位置（跳过紧随其后的隔音符）。
 fn letters_to_bytes(raw: &str, letters: usize) -> usize {
@@ -2460,13 +2401,13 @@ fn letters_to_bytes(raw: &str, letters: usize) -> usize {
 /// 整句是一个词时（shijie -> 世界）句首词放在最后；整句由多个词拼成时
 /// （长句）第二名往后的整句只是小改动，价值不如句首词，所以句首词紧跟第一名。
 /// 词频低于这个数的词不受「精确优先」保护（rime-ice 里约排在 20 万名以后，多是生僻或凑出来的条目）。
-const EXACT_PROTECT_MIN_FREQ: f64 = 1000.0;
+pub(crate) const EXACT_PROTECT_MIN_FREQ: f64 = 1000.0;
 /// 整个输入是一个词、音节数到这个数时，「精确优先」不看词频，几个词拼出来的候选也排它后面。
-const EXACT_LONG_SYLLABLES: usize = 3;
+pub(crate) const EXACT_LONG_SYLLABLES: usize = 3;
 /// 上面这条规则要的最低词频：只有个位数词频的条目（赤锦腕 1、大李窑 3）多是人名地名，
 /// 撞上常用词拼出来的整句（吃 | 今晚、搭理 | 要）时不该抢第一；它们照样在第一页的同音词里。
 /// 占位词频是 100，手工补的冷门词（发一版 65）也在这条线以上。
-const EXACT_LONG_MIN_FREQ: f64 = 10.0;
+pub(crate) const EXACT_LONG_MIN_FREQ: f64 = 10.0;
 /// 没有上文时，输入至少这么多个音节才用字级神经语言模型重排（有上文时都用）。
 /// scripts/eval.sh 实测（ArchType 自己的 nnlm.bin，权重 0.5）：门槛 0 时日常整句 +2.2、上文 +4.9，
 /// 但常用词 -3.5、简拼 -6.7、截断 -8.7；门槛 4 时冷门词还掉 1.6；门槛 5 时单独打词的各组和不带模型时一样，
@@ -2582,259 +2523,6 @@ fn weak_syllables(path: &BeamPath) -> usize {
         .sum()
 }
 
-/// 拼音打全了、而且正好是一个实在的词时，这个词必须排第一。
-///
-/// 补全和纠错的分数里带着词频，高频词补出来以后可能比用户打全了的低频词还高：
-/// `zhongdi` 会出「重点」（zhong dian）而不是「种地」，`ka` 出「看」，`beiji` 出「北京」。
-/// 用户按空格上屏的是第一个——打到一半时补全排第二只是多按一个键，
-/// 打全了却被换成别的词就是打错字。所以排在这个词前面的补全/纠错候选都挪到它后面。
-///
-/// 同理，整个输入就是一个词时，几个单字硬凑出来的候选（`shidan` 拆成「是 | 但」）
-/// 也不该压过它（「实弹」）。
-///
-/// 「实在的词」：精确匹配（不靠纠错和补全）、要么整个输入是一个词，要么最后一个词
-/// 至少两个字（这时只和「前面的词一样、只有最后一个词不同」的候选比）；每个词的词频不低于 [`EXACT_PROTECT_MIN_FREQ`]，或者是用户选过的。
-/// 最后是个单字的精确结果（`zhonggu` 拆成「中 | 骨」）不算，用户多半还没打完，
-/// 补全照常可以排第一。
-fn protect_exact_input(candidates: &mut Vec<Candidate>) {
-    let multi = |w: &CandidateWord| w.pinyin.split_whitespace().count() >= 2;
-    // 模糊音兜底的词不是照着打的（jiesu 的「结束」是 jie shu）：当了锚点的话下面一个都不挪，
-    // 补全出来的「结算」就一直压在打全了的「借宿」前面
-    let is_exact = |c: &Candidate| {
-        c.features.coverage_score >= 1.0
-            && c.features.typo_count == 0.0
-            && c.features.prefix_completion == 0.0
-            && !c.features.fuzzy
-            && !c.words.is_empty()
-            && c.words.iter().all(|w| w.known)
-    };
-    // 三个音节以上、整个输入正好是词库里的一个词：读音这么长还能对上，同音的词库词平均不到两个，
-    // 不看词频也算实在的词（前后端、启动器、候选词在 rime-ice 里都只有占位的词频）
-    // 切法得是最自然的那种：有个音节更少、够常用的精确整词时（jieran 的「截然」jie ran），
-    // 换一种切法才对得上的长词（己二胺 ji er an）不算
-    let fewest = fewest_exact_syllables(candidates);
-    let long_word = |c: &Candidate| {
-        let syllables = c.pinyin.split_whitespace().count();
-        c.words.len() == 1
-            && c.words[0].freq >= EXACT_LONG_MIN_FREQ
-            && syllables >= EXACT_LONG_SYLLABLES
-            && fewest.is_none_or(|n| syllables <= n)
-    };
-    let solid = |c: &Candidate| {
-        is_exact(c)
-            && (c.words.len() == 1 || c.words.last().map(multi).unwrap_or(false))
-            && (c.features.history_count > 0.0
-                || long_word(c)
-                || c.words.iter().all(|w| w.freq >= EXACT_PROTECT_MIN_FREQ))
-    };
-    // 长的整词先提到拼出来的整句前面：fayiban 里 法 | 一般 本身也算「实在的」（最后一个词两个字），
-    // 下面按第一个实在的候选当锚点时轮不到「发一版」。用户选过的整句不动
-    // 只压过读音完全一样的拼凑（启动 | 其 = qi dong qi）；分数只抬到刚好高过它，后面的不动
-    // （整段压成等差会让 compose_candidates 按分差去掉硬凑整句的判断失效）
-    if let Some(word_at) = candidates.iter().position(|c| is_exact(c) && long_word(c)) {
-        let stitched = candidates[..word_at].iter().position(|c| {
-            c.words.len() >= 2
-                && c.features.history_use_count == 0.0
-                && same_syllables(c, &candidates[word_at])
-        });
-        if let Some(at) = stitched {
-            let mut word = candidates.remove(word_at);
-            word.score = word.score.max(candidates[at].score + 1e-3);
-            candidates.insert(at, word);
-            for i in 1..candidates.len() {
-                if candidates[i].score > candidates[i - 1].score {
-                    candidates[i].score = candidates[i - 1].score - 1e-3;
-                }
-            }
-        }
-    }
-    let Some(anchor) = candidates.iter().position(solid) else {
-        return;
-    };
-    if anchor == 0 {
-        return;
-    }
-    let whole_word = candidates[anchor].words.len() == 1;
-    let long_anchor = long_word(&candidates[anchor]);
-    let anchor_pinyin = candidates[anchor].pinyin.clone();
-    // 精确结果是几个词拼的（我在 | 种地）时，只管开头一样、只是后面换了词的拼凑结果
-    // （我 | 在重点）；一个整词盖住全部输入的（从善如流 vs 从善 | 入理）是更强的证据，不动
-    let head_text: String = {
-        let words = &candidates[anchor].words;
-        words[..words.len() - 1]
-            .iter()
-            .map(|w| w.text.as_str())
-            .collect()
-    };
-    let same_head =
-        |c: &Candidate| whole_word || (c.words.len() >= 2 && c.text.starts_with(&head_text));
-    let yields = |c: &Candidate| {
-        let corrected = c.features.typo_count > 0.0 || c.features.prefix_completion > 0.0;
-        // 长的整词前面，几个词拼出来的都让位（启动 | 其、前后 | 断）；短的整词只压过全是单字拼的
-        (corrected && same_head(c))
-            || (whole_word
-                && c.words.len() >= 2
-                && ((long_anchor && c.pinyin.split_whitespace().eq(anchor_pinyin.split_whitespace()))
-                    || !c.words.iter().any(multi)))
-    };
-    if !candidates[..anchor].iter().any(yields) {
-        return;
-    }
-    let mut ahead = Vec::new();
-    let mut keep = Vec::with_capacity(candidates.len());
-    for (i, c) in candidates.drain(..).enumerate() {
-        if i < anchor && yields(&c) {
-            ahead.push(c);
-        } else {
-            keep.push(c);
-        }
-    }
-    let at = keep
-        .iter()
-        .position(solid)
-        .map(|i| i + 1)
-        .unwrap_or(keep.len());
-    keep.splice(at..at, ahead);
-    // 分数改成单调递减，后面再按分数重排（繁体转换）顺序也不变
-    for i in 1..keep.len() {
-        if keep[i].score >= keep[i - 1].score {
-            keep[i].score = keep[i - 1].score - 1e-3;
-        }
-    }
-    *candidates = keep;
-}
-
-/// 纠错出来的候选不排在第一个照着打的读法（不纠错、每个词词库里都有、不是简拼、不是模糊音兜底）前面，
-/// 除非它用的音节更少（`jintiam` 的「今天」）。用户的原话：纠错应该是「添加可疑的候选词，而不是替代原候选词」。
-///
-/// 模糊音兜底的词不在这里管：`penyou` 出「朋友」、`shengme` 出「什么」排第一是回归集定死的。
-///
-/// [`typed_reading_first`] 在束搜索的结果上按分数压过一次，但后面按位置挪候选的步骤会把它绕过去：
-/// `sheihaiyo` 里压纠错词「谁还要」用的基准是补全出来的「谁还有」（yo → you），[`protect_exact_input`]
-/// 接着把补全的整句挪到「谁嗨哟」后面，「谁还要」就又成了第一个。这里按位置再拦一次，
-/// 不管前面谁动过顺序。只挪第一个照着打的读法前面的。
-fn typos_after_typed(candidates: &mut Vec<Candidate>) {
-    let syllables = |c: &Candidate| c.pinyin.split_whitespace().count();
-    let typed = |c: &Candidate| {
-        !is_raw_candidate(c)
-            && c.features.typo_count == 0.0
-            && c.features.full_jianpin == 0.0
-            && !c.features.fuzzy
-            && !c.words.is_empty()
-            && c.words.iter().all(|w| w.known)
-    };
-    let Some(anchor) = candidates.iter().position(typed) else {
-        return;
-    };
-    let need = syllables(&candidates[anchor]);
-    let yields = |c: &Candidate| c.features.typo_count > 0.0 && syllables(c) >= need;
-    if !candidates[..anchor].iter().any(yields) {
-        return;
-    }
-    let mut moved = Vec::new();
-    let mut keep = Vec::with_capacity(candidates.len());
-    for (i, c) in candidates.drain(..).enumerate() {
-        if i < anchor && yields(&c) {
-            moved.push(c);
-        } else {
-            keep.push(c);
-        }
-    }
-    let at = keep.iter().position(typed).map_or(keep.len(), |i| i + 1);
-    keep.splice(at..at, moved);
-    make_scores_monotonic(&mut keep);
-    *candidates = keep;
-}
-
-/// 照着打、打全了、整个输入正好是词库里一个够常用的词（[`EXACT_PROTECT_MIN_FREQ`]）。
-fn is_exact_frequent_word(c: &Candidate) -> bool {
-    c.words.len() == 1
-        && c.words[0].known
-        && c.words[0].freq >= EXACT_PROTECT_MIN_FREQ
-        && c.features.coverage_score >= 1.0
-        && c.features.typo_count == 0.0
-        && c.features.prefix_completion == 0.0
-        && c.features.full_jianpin == 0.0
-        && !c.features.fuzzy
-}
-
-/// 照着打的读法本身就是词库里一个够常用的词时，模糊音兜底的词排在第一个这样的词后面
-/// （`penyou`：喷油、朋友；`zuijing`：最精、最近）。
-///
-/// 照着打只能几个字硬凑（`shengme` 没有 sheng me 这个词）时不动，模糊音的词照旧排第一（什么）：
-/// 那时它多半才是用户要的。用户选过的模糊音词也不动。
-fn fuzzy_after_exact_word(candidates: &mut Vec<Candidate>) {
-    let Some(first) = candidates.iter().position(is_exact_frequent_word) else {
-        return;
-    };
-    let yields = |c: &Candidate| c.features.fuzzy && c.features.history_use_count == 0.0;
-    if !candidates[..first].iter().any(yields) {
-        return;
-    }
-    let mut moved = Vec::new();
-    let mut keep = Vec::with_capacity(candidates.len());
-    for (i, c) in candidates.drain(..).enumerate() {
-        if i < first && yields(&c) {
-            moved.push(c);
-        } else {
-            keep.push(c);
-        }
-    }
-    let at = keep.iter().position(is_exact_frequent_word).map_or(keep.len(), |i| i + 1);
-    keep.splice(at..at, moved);
-    make_scores_monotonic(&mut keep);
-    *candidates = keep;
-}
-
-/// 打全了、整个输入正好是一个够常用的词（[`EXACT_PROTECT_MIN_FREQ`]）时，补全出来的候选都排在这些词后面。
-///
-/// [`protect_exact_input`] 只认第一个这样的词：它已经排第一时什么都不挪。`fangxiangji` 第一个是「放像机」，
-/// 补全的「方向键」（jian）就一直压在同样打全了的「芳香剂」前面。补全只能「加」候选，不能抢打全了的词的位置。
-/// 用户选过的补全不挪。
-fn completions_after_exact_words(candidates: &mut Vec<Candidate>) {
-    let exact_word = is_exact_frequent_word;
-    let Some(last) = candidates.iter().rposition(exact_word) else {
-        return;
-    };
-    let yields = |c: &Candidate| c.features.prefix_completion > 0.0 && c.features.history_use_count == 0.0;
-    if !candidates[..last].iter().any(yields) {
-        return;
-    }
-    let mut moved = Vec::new();
-    let mut keep = Vec::with_capacity(candidates.len());
-    for (i, c) in candidates.drain(..).enumerate() {
-        if i < last && yields(&c) {
-            moved.push(c);
-        } else {
-            keep.push(c);
-        }
-    }
-    let at = keep.iter().rposition(exact_word).map_or(keep.len(), |i| i + 1);
-    keep.splice(at..at, moved);
-    make_scores_monotonic(&mut keep);
-    *candidates = keep;
-}
-
-/// 两个候选的音节一样（整词和拼凑出来的整句：启动器 / 启动 | 其）。
-fn same_syllables(a: &Candidate, b: &Candidate) -> bool {
-    a.pinyin.split_whitespace().eq(b.pinyin.split_whitespace())
-}
-
-/// 不靠纠错、补全、整个输入是一个够常用（[`EXACT_PROTECT_MIN_FREQ`]）的词库词的候选里，最少几个音节。
-fn fewest_exact_syllables(candidates: &[Candidate]) -> Option<usize> {
-    candidates
-        .iter()
-        .filter(|c| {
-            c.words.len() == 1
-                && c.words[0].known
-                && c.words[0].freq >= EXACT_PROTECT_MIN_FREQ
-                && c.features.typo_count == 0.0
-                && c.features.prefix_completion == 0.0
-                && c.features.coverage_score >= 1.0
-        })
-        .map(|c| c.pinyin.split_whitespace().count())
-        .min()
-}
 
 /// 用户在设置里加的自定义词排最前（语言模型不认识它们，光靠词频排不上来）。
 impl Engine {
@@ -2870,154 +2558,7 @@ pub fn unescape_custom(text: &str) -> String {
     out
 }
 
-/// 只打一个声母（l、b、zh）时固定排第一的字：词库按读音分的词频把它们排得太后
-/// （了 le 348 万，来 1484 万；不 299 万，把 380 万），而且第一个候选不该随上文、选过的字变来变去
-/// （#156）。没列的声母照词频排。
-const SINGLE_INITIAL_TOP: &[(&str, &str)] = &[
-    ("b", "不"),
-    ("d", "的"),
-    ("g", "个"),
-    ("h", "和"),
-    ("j", "就"),
-    ("l", "了"),
-    ("n", "你"),
-    ("q", "去"),
-    ("r", "人"),
-    ("s", "是"),
-    ("sh", "是"),
-    ("t", "他"),
-    ("w", "我"),
-    ("y", "一"),
-    ("z", "在"),
-    ("zh", "这"),
-];
 
-/// 输入只是一个声母时，把 [`SINGLE_INITIAL_TOP`] 里的字挪到第一个（在选过最多的字前面；
-/// 自定义词、自定义编码之后还会排到它前面）。候选里没有这个字就不动。
-///
-/// 第一个已经是常选的字（[`promote_picked`] 按 [`strongly_picked`] 提上来的，比如这几天一直在打「赖」）
-/// 时不动：首选跟着用户最近的习惯变，不再死钉着「了」（#156）。
-fn pin_single_initial(input: &str, candidates: &mut Vec<Candidate>) {
-    let Some(&(_, top)) = SINGLE_INITIAL_TOP.iter().find(|(key, _)| *key == input) else {
-        return;
-    };
-    if let Some(i) = candidates
-        .iter()
-        .position(|c| c.text == top && c.words.len() == 1)
-    {
-        // 只打一个声母时候选都是简拼出来的（is_picked 不认），这里单独看：最近常选的单字排第一
-        let strong = candidates
-            .iter()
-            .enumerate()
-            .filter(|(j, c)| {
-                *j != i
-                    && c.text.chars().count() == 1
-                    && c.features.typo_count == 0.0
-                    && c.features.history_use_count >= STRONG_PICK_HEAT
-                    && c.features.history_use_count >= 2.0 * candidates[i].features.history_use_count.max(0.5)
-            })
-            .max_by(|a, b| a.1.features.history_use_count.total_cmp(&b.1.features.history_use_count))
-            .map(|(j, _)| j);
-        if let Some(j) = strong {
-            let c = candidates.remove(j);
-            candidates.insert(0, c);
-            return;
-        }
-        let pinned = candidates.remove(i);
-        candidates.insert(0, pinned);
-    }
-}
-
-/// 用户上次给这串输入选过的候选往前放（微信输入法的 FirstUserCandidateRanker /
-/// SingleUserWordCanbeSecond）。
-///
-/// - 词和整句：选得最多的那个放第一（第一个候选被选得更多时不动）。
-/// - 单字：第一个候选一般不动——偶尔选一次生僻字，不该让它以后一直顶掉这个音节最常用的字；
-///   选过的字按热度从第二位起排（#161：找过一次的字下次就在第一页，不只提选得最多的那一个），
-///   最多 [`PICKED_CHARS_MAX`] 个，免得几次手滑把常用字挤到第二页。
-///   但最近常选的字（[`strongly_picked`]：选了好几次、比第一个选得多得多）排第一，首选跟着习惯变（#156）；
-///   热度按 30 天半衰，不再选了就慢慢退回去，又选回原来的字时更快。
-///   两样都有时（xian 选过「西安」也选过「先」）词照样放第一，字跟在后面。
-///
-/// 只看「这个候选本身被选过」（不算末词命中），而且要精确匹配（不是纠错、补全出来的）。
-/// 热度（`history_use_count`，衰减过的）不到 [`learn::MIN_PICK_HEAT`] 的不算：
-/// 误选一次的词一个月以后就不再一直顶在前面。
-fn promote_picked(candidates: &mut Vec<Candidate>) {
-    let single = |c: &Candidate| c.text.chars().count() <= 1;
-    let heat = |c: &Candidate| c.features.history_use_count;
-    let mut changed = false;
-    // 词和整句：选得最多的放第一（一样多时取靠前的）
-    let best_word = candidates
-        .iter()
-        .enumerate()
-        .filter(|(_, c)| !single(c) && is_picked(c))
-        .max_by(|a, b| heat(a.1).total_cmp(&heat(b.1)).then_with(|| b.0.cmp(&a.0)))
-        .map(|(i, _)| i);
-    if let Some(best) = best_word.filter(|&i| i > 0) {
-        // 第一个候选被选得更多（比如常选的单字），就不动它
-        if heat(&candidates[0]) < heat(&candidates[best]) {
-            let c = candidates.remove(best);
-            candidates.insert(0, c);
-            changed = true;
-        }
-    }
-    // 单字：第一个候选之后，按热度排选过的字，最多 PICKED_CHARS_MAX 个
-    let mut picked: Vec<usize> = (1..candidates.len())
-        .filter(|&i| single(&candidates[i]) && is_picked(&candidates[i]))
-        .collect();
-    // 稳定排序：热度一样时保持原来（按词频）的先后
-    picked.sort_by(|&a, &b| heat(&candidates[b]).total_cmp(&heat(&candidates[a])));
-    picked.truncate(PICKED_CHARS_MAX);
-    if !picked.is_empty() {
-        let moved: Vec<Candidate> = picked.iter().map(|&i| candidates[i].clone()).collect();
-        let mut rest = Vec::with_capacity(candidates.len());
-        for (i, c) in std::mem::take(candidates).into_iter().enumerate() {
-            if !picked.contains(&i) {
-                rest.push(c);
-            }
-        }
-        let first_strong = rest.first().is_some_and(|first| strongly_picked(&moved[0], first));
-        let at = if first_strong { 0 } else { rest.len().min(1) };
-        rest.splice(at..at, moved);
-        *candidates = rest;
-        changed = true;
-    }
-    if changed {
-        make_scores_monotonic(candidates);
-    }
-}
-
-/// [`promote_picked`]：选过的单字最多提前几个。
-const PICKED_CHARS_MAX: usize = 3;
-
-/// 一个字选了这么多次（衰减过的热度）以后，才可能顶掉第一个候选（[`strongly_picked`]）。
-/// 选个三五次只排第二（#161 找过的字在第一页就行）；连着打一阵子（礼单上全是「赖」）才换首选（#156）。
-const STRONG_PICK_HEAT: f32 = 6.0;
-
-/// `picked` 是最近常选的字，该排到 `first` 前面：热度到 [`STRONG_PICK_HEAT`]，而且是 `first` 的两倍以上
-/// （`first` 自己也常选时就不换，免得两个字来回跳）。误选一两次不算。
-fn strongly_picked(picked: &Candidate, first: &Candidate) -> bool {
-    let heat = picked.features.history_use_count;
-    is_picked(picked) && heat >= STRONG_PICK_HEAT && heat >= 2.0 * first.features.history_use_count.max(0.5)
-}
-
-/// 这个候选本身被精确选过（不是靠末词命中、纠错或补全出来的），而且热度够
-/// [`learn::MIN_PICK_HEAT`]（误选一次、过了一个月就不算）。
-fn is_picked(c: &Candidate) -> bool {
-    f64::from(c.features.history_use_count) >= learn::MIN_PICK_HEAT
-        && c.features.typo_count == 0.0
-        && c.features.prefix_completion == 0.0
-        && c.features.full_jianpin == 0.0
-}
-
-/// 分数改成单调递减，后面再按分数重排（繁体转换）顺序也不变。
-fn make_scores_monotonic(candidates: &mut [Candidate]) {
-    for i in 1..candidates.len() {
-        if candidates[i].score >= candidates[i - 1].score {
-            candidates[i].score = candidates[i - 1].score - 1e-3;
-        }
-    }
-}
 
 /// 句首词只在多音节输入里有意义，而且只能在音节边界上切。
 ///
@@ -3265,7 +2806,7 @@ fn abbrev_before_last(c: &Candidate) -> bool {
 }
 
 /// 原始串 / 英文候选（append_raw_candidate 插进来的）。
-fn is_raw_candidate(c: &Candidate) -> bool {
+pub(crate) fn is_raw_candidate(c: &Candidate) -> bool {
     c.words.len() == 1 && c.words[0].pinyin.is_empty() && c.features.coverage_score == 0.0
 }
 
@@ -5836,7 +5377,7 @@ mod tests {
             ranked("谁嗨哟", "shei hai yo", 0.0, 9),
             ranked("谁还有", "shei hai you", 0.0, 9),
         ];
-        typos_after_typed(&mut list);
+        postprocess::typos_after_typed(&mut list, "");
         let texts: Vec<&str> = list.iter().map(|c| c.text.as_str()).collect();
         assert_eq!(texts, ["谁嗨哟", "谁还要", "谁还有"]);
         assert!(
@@ -5849,7 +5390,7 @@ mod tests {
             ranked("今天", "jin tian", 1.0, 7),
             ranked("金蹄啊", "jin ti a", 0.0, 7),
         ];
-        typos_after_typed(&mut list);
+        postprocess::typos_after_typed(&mut list, "");
         assert_eq!(list[0].text, "今天");
     }
 
@@ -5911,7 +5452,7 @@ mod tests {
             completion,
             ranked("芳香剂", "fang xiang ji", 0.0, 11),
         ];
-        completions_after_exact_words(&mut list);
+        postprocess::completions_after_exact_words(&mut list, "");
         let texts: Vec<&str> = list.iter().map(|c| c.text.as_str()).collect();
         assert_eq!(texts, ["放像机", "芳香剂", "方向键"]);
     }
@@ -5989,7 +5530,7 @@ mod tests {
         let mut typed = ranked("喷油", "pen you", 0.0, 6);
         typed.score = -9.0;
         let mut list = vec![fuzzy.clone(), typed.clone()];
-        fuzzy_after_exact_word(&mut list);
+        postprocess::fuzzy_after_exact_word(&mut list, "");
         let texts: Vec<&str> = list.iter().map(|c| c.text.as_str()).collect();
         assert_eq!(texts, ["喷油", "朋友"]);
         assert!(list[0].score >= list[1].score);
@@ -6006,14 +5547,14 @@ mod tests {
             })
             .collect();
         let mut list = vec![fuzzy.clone(), typed.clone()];
-        fuzzy_after_exact_word(&mut list);
+        postprocess::fuzzy_after_exact_word(&mut list, "");
         assert_eq!(list[0].text, "朋友");
 
         // 用户选过的模糊音词不挪
         typed = ranked("喷油", "pen you", 0.0, 6);
         fuzzy.features.history_use_count = 1.0;
         let mut list = vec![fuzzy, typed];
-        fuzzy_after_exact_word(&mut list);
+        postprocess::fuzzy_after_exact_word(&mut list, "");
         assert_eq!(list[0].text, "朋友");
     }
 

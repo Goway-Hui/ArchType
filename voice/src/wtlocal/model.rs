@@ -1,4 +1,7 @@
 //! 声学模型：卷积前端 + 40 层 pre-norm Transformer + CTC 输出层；int8 权重直接 mmap 自 xnet
+// MSRV 1.82：`as_chunks` 要 1.88，这里继续用 chunks_exact。
+#![allow(clippy::chunks_exact_to_as_chunks)]
+
 use super::fbank::DIM;
 use super::kernels::{dotf, qgemm, quant, QAct};
 use super::parallel;
@@ -195,7 +198,8 @@ impl Model {
 
         // 每个输出时间步都要一块 DIM*K2 的补零缓冲（约 250 KB）：线程内复用，别每步分配
         thread_local! {
-            static CONV2_BUF: std::cell::RefCell<Vec<f32>> = std::cell::RefCell::new(Vec::new());
+            static CONV2_BUF: std::cell::RefCell<Vec<f32>> =
+                const { std::cell::RefCell::new(Vec::new()) };
         }
         // conv 7×7, 32→64, 时间步长 5（时补 1、频补 3）
         let mut y2 = vec![0f32; t1 * F2 * W2];
@@ -230,7 +234,8 @@ impl Model {
 
         // conv 3×3, 64→192, 频率步长 2（时补 1）→ [t1][192×20]
         thread_local! {
-            static CONV3_BUF: std::cell::RefCell<Vec<f32>> = std::cell::RefCell::new(Vec::new());
+            static CONV3_BUF: std::cell::RefCell<Vec<f32>> =
+                const { std::cell::RefCell::new(Vec::new()) };
         }
         let mut y3 = vec![0f32; t1 * FLAT];
         parallel::for_each_chunk_mut(&mut y3, FLAT, |ti, y| {

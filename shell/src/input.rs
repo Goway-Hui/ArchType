@@ -253,6 +253,7 @@ impl Drop for Input {
 }
 
 /// 把外壳给的按键拼成核心的 [`Key`]。
+#[allow(clippy::too_many_arguments)] // 这些都是平台按键的原始字段，拆成结构体反而要多一层搬运
 pub fn make_key(
     keysym: u32,
     modifiers: u32,

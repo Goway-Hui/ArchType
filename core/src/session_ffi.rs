@@ -1134,6 +1134,8 @@ pub unsafe extern "C" fn archtype_session_candidate_info(
 
 #[cfg(test)]
 mod tests {
+    // 测试里先 Default 再按字段造「旧外壳」的结构体
+    #![allow(clippy::field_reassign_with_default)]
     use super::*;
     use crate::session::keysym;
 

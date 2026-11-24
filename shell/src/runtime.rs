@@ -6,6 +6,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Mutex, OnceLock};
 use std::time::{Duration, SystemTime};
 
+use archtype_core::sync::mutex_lock;
 use archtype_core::translate::Translator;
 
 use crate::config::Config;
@@ -64,7 +65,7 @@ impl Runtime {
 
     /// 后台载入词库和引擎；载入完成前输入控制器不接按键。
     pub fn start_loading(&'static self) {
-        if self.engine.get().is_some() || self.engine_error.lock().unwrap().is_some() {
+        if self.engine.get().is_some() || mutex_lock(&self.engine_error).is_some() {
             return;
         }
         let layout = self.layout.clone();
@@ -75,7 +76,7 @@ impl Runtime {
             }
             Err(error) => {
                 eprintln!("ArchType: {error}");
-                *self.engine_error.lock().unwrap() = Some(error);
+                *mutex_lock(&self.engine_error) = Some(error);
             }
         });
     }
@@ -94,18 +95,18 @@ impl Runtime {
     }
 
     pub fn engine_error(&self) -> Option<String> {
-        self.engine_error.lock().unwrap().clone()
+        mutex_lock(&self.engine_error).clone()
     }
 
     pub fn config(&self) -> Config {
-        self.config.lock().unwrap().clone()
+        mutex_lock(&self.config).clone()
     }
 
     /// 配置文件变了就重读；返回新的设置（没变返回 None）。
     pub fn reload_config_if_changed(&self) -> Option<Config> {
         let path = self.layout.config_path();
         let stamp = modified(&path);
-        let mut known = self.config_stamp.lock().unwrap();
+        let mut known = mutex_lock(&self.config_stamp);
         if *known == stamp {
             return None;
         }
@@ -115,7 +116,7 @@ impl Runtime {
             .get()
             .configure(translate_config(&config, &self.layout));
         self.stats().set_enabled(config.typing_stats);
-        *self.config.lock().unwrap() = config.clone();
+        *mutex_lock(&self.config) = config.clone();
         Some(config)
     }
 
@@ -123,8 +124,8 @@ impl Runtime {
     pub fn store_config(&self, config: Config) {
         let path = self.layout.config_path();
         let stamp = modified(&path);
-        *self.config_stamp.lock().unwrap() = stamp;
-        *self.config.lock().unwrap() = config;
+        *mutex_lock(&self.config_stamp) = stamp;
+        *mutex_lock(&self.config) = config;
     }
 }
 

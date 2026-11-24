@@ -404,7 +404,7 @@ fn oversized_output_drops_oldest_days() {
     for i in 0..needed {
         document.days.insert(format!("{:04}-01-01", 1000 + i), day.clone());
     }
-    let bytes = document.to_bytes_capped();
+    let bytes = document.take_bytes_capped();
     assert!(bytes.len() <= MAX_FILE_BYTES);
     assert!(!document.days.contains_key("1000-01-01"), "从最早的一天删起");
     assert!(document.days.contains_key(&format!("{:04}-01-01", 1000 + needed - 1)));

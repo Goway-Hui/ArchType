@@ -72,6 +72,37 @@ pub mod keysym {
     pub const ASCII_CIRCUM: u32 = 0x5e;
 }
 
+/// 空编辑区时仍然原样交给宿主应用的键：会话不处理，外壳也不该再补输入逻辑。
+///
+/// 这份清单是给外壳和测试看的：空会话按一下，[`Session::key`] 对它们返回 `handled == false`。
+/// 某个键从外壳搬进会话时，同时从清单里删掉并补一条按键测试。
+/// 功能键只列 F1 作代表：F2–F12 是 0xffbf–0xffc9，会话同样不认识。
+/// 带 Ctrl / Alt / Super 的组合键也不在会话里（见 [`Session::key`] 的 `has_command_modifier`）。
+pub const PASSED_THROUGH_KEYS: &[(&str, u32)] = &[
+    ("Backspace", keysym::BACKSPACE),
+    ("Delete", keysym::DELETE),
+    ("KP_Delete", keysym::KP_DELETE),
+    ("Left", keysym::LEFT),
+    ("Right", keysym::RIGHT),
+    ("Up", keysym::UP),
+    ("Down", keysym::DOWN),
+    ("Home", keysym::HOME),
+    ("End", keysym::END),
+    ("PageUp", keysym::PAGE_UP),
+    ("PageDown", keysym::PAGE_DOWN),
+    ("Return", keysym::RETURN),
+    ("KP_Enter", keysym::KP_ENTER),
+    ("Tab", keysym::TAB),
+    ("ISO_Left_Tab", keysym::ISO_LEFT_TAB),
+    ("Escape", keysym::ESCAPE),
+    ("F1", 0xffbe),
+    // 空编辑区按空格就是打一个空格：有输入时空格是选词 / 上屏，由会话处理。
+    ("Space", keysym::SPACE),
+    // 数字同理：没在打字时就是打数字；有候选时由会话选词（`Session::key` 在 composing 分支里处理）。
+    ("Digit1", b'1' as u32),
+    ("Digit0", keysym::DIGIT_0),
+];
+
 /// 修饰键位掩码，和 X11/fcitx5 的 KeyState 取值一样（fcitx5 外壳可以直接传）。
 pub mod modifier {
     pub const SHIFT: u32 = 1 << 0;
@@ -1152,6 +1183,7 @@ impl<'e> Session<'e> {
             self.push_input('\'');
             return true;
         }
+        // 到这里还没处理的键原样交给应用；空编辑区时的完整清单见 [`PASSED_THROUGH_KEYS`]。
         false
     }
 
@@ -3668,6 +3700,27 @@ mod tests {
         let mut session = Session::new();
         assert!(!session.key(&Key::press(keysym::BACKSPACE)).handled);
         assert!(!session.key(&Key::press(keysym::ESCAPE)).handled);
+    }
+
+    /// 清单与行为必须一致：列出的键在空编辑区一律交给应用，字母 / 空格 / 数字由会话处理。
+    #[test]
+    fn passed_through_key_list_matches_behavior() {
+        for (name, sym) in PASSED_THROUGH_KEYS {
+            let mut session = Session::new();
+            let frame = session.key(&Key::press(*sym));
+            assert!(!frame.handled, "{name} 在空编辑区应当交给应用");
+            assert!(session.input().is_empty(), "{name} 不该进编辑区");
+            assert!(frame.commit.is_none(), "{name} 不该上屏");
+        }
+        // 对照：会话自己处理的键不能被误列进清单（空编辑区只有字母进编辑区）
+        for sym in [u32::from(b'a'), u32::from(b'z')] {
+            let mut session = Session::new();
+            let frame = session.key(&Key::press(sym));
+            assert!(
+                frame.handled || frame.commit.is_some(),
+                "{sym:#x} 应当由会话处理，不该出现在 PASSED_THROUGH_KEYS 里"
+            );
+        }
     }
 
     #[test]

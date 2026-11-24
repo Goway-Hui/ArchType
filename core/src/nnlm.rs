@@ -17,6 +17,9 @@ use std::sync::Mutex;
 
 use anyhow::{bail, Context, Result};
 
+#[cfg(test)]
+use crate::sync::mutex_lock;
+
 const D: usize = 256;
 const HEADS: usize = 4;
 const HEAD_DIM: usize = 64;
@@ -1048,7 +1051,7 @@ mod tests {
         let first = m.score(&ctx, "一起去吃饭");
         let again = m.score(&ctx, "一起去吃饭");
         assert_eq!(first, again);
-        m.cache.lock().unwrap().states.clear();
+        mutex_lock(&m.cache).states.clear();
         let fresh = m.score(&ctx, "一起去吃饭");
         assert!((first - fresh).abs() < 1e-4);
     }

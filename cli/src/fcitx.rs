@@ -39,8 +39,11 @@ pub fn knows_archtype() -> Option<bool> {
     Some(reply.contains("'archtype'"))
 }
 
-/// 当前输入法分组：(组名, 布局, [(输入法名, 布局)])。
-pub fn group_info(group: &str) -> Option<(String, String, Vec<(String, String)>)> {
+/// 输入法分组的形状：(组名, 布局, [(输入法名, 布局)])。
+pub type GroupInfo = (String, String, Vec<(String, String)>);
+
+/// 当前输入法分组。
+pub fn group_info(group: &str) -> Option<GroupInfo> {
     let reply = call("InputMethodGroupInfo", &[group])?;
     Some(parse_group_info(&reply))
 }

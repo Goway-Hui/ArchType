@@ -266,6 +266,8 @@ fn expand_tilde(path: &str) -> PathBuf {
 
 #[cfg(test)]
 mod tests {
+    // 测试里先 Default 再改一两项更好读
+    #![allow(clippy::field_reassign_with_default)]
     use super::*;
 
     fn temp_dir(name: &str) -> PathBuf {

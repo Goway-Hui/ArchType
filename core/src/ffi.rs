@@ -1,6 +1,11 @@
 //! C ABI：供 fcitx5 的 C++ 插件通过 cdylib 调用。
 //!
 //! 设计成“不透明句柄 + 候选句柄”，避免 C++ 侧解析 JSON。字符串一律 UTF-8。
+//!
+//! 两套入口，新外壳只用会话（`archtype_session_*`）：输入、候选、选词、上屏都在会话里，
+//! 平台外壳不需要自己维护编辑状态。旧的 `archtype_engine_input` / `archtype_candidates_*`
+//! 候选路径只为兼容保留，已标记 deprecated；引擎的构建与配置（`archtype_engine_new`、
+//! `set_*`、`load_*`、`save_*`）仍是所有外壳共用的入口。
 
 // 安全契约见 core/include/archtype_core.h：空指针、句柄生命周期由调用方保证。
 #![allow(clippy::missing_safety_doc)]
@@ -132,6 +137,7 @@ pub unsafe extern "C" fn archtype_engine_set_beam_size(
 }
 
 /// 输入拼音串，返回候选句柄；失败返回 NULL。
+#[deprecated(note = "新外壳用 archtype_session_input；这条路只为旧壳保留")]
 #[no_mangle]
 pub unsafe extern "C" fn archtype_engine_input(
     engine: *mut ArchtypeEngineHandle,
@@ -228,6 +234,7 @@ pub unsafe extern "C" fn archtype_engine_predict_next(
 }
 
 /// 记录一次选词，用于历史特征。返回 0 表示成功。
+#[deprecated(note = "新外壳用 archtype_session_select；这条路只为旧壳保留")]
 #[no_mangle]
 pub unsafe extern "C" fn archtype_engine_record_selection(
     engine: *mut ArchtypeEngineHandle,
@@ -246,6 +253,7 @@ pub unsafe extern "C" fn archtype_engine_record_selection(
 }
 
 /// 设置光标前文本，用于上下文 bigram 特征。返回 0 表示成功。
+#[deprecated(note = "新外壳把上文交给 archtype_session_input；这条路只为旧壳保留")]
 #[no_mangle]
 pub unsafe extern "C" fn archtype_engine_set_context(
     engine: *mut ArchtypeEngineHandle,
@@ -1069,6 +1077,7 @@ pub unsafe extern "C" fn archtype_candidates_commit(
 }
 
 /// 记录选词并可携带拼音：选够次数后自动加入用户词库。pinyin 可为 NULL。
+#[deprecated(note = "新外壳用 archtype_session_select；这条路只为旧壳保留")]
 #[no_mangle]
 pub unsafe extern "C" fn archtype_engine_record_selection_ex(
     engine: *mut ArchtypeEngineHandle,
@@ -1258,6 +1267,7 @@ mod tests {
     use super::*;
 
     #[test]
+    #[allow(deprecated)] // 这个测试验的就是旧候选路径本身
     fn ffi_roundtrip() {
         let lexicon = concat!(env!("CARGO_MANIFEST_DIR"), "/data/demo_lexicon.tsv");
         let lexicon = CString::new(lexicon).unwrap();

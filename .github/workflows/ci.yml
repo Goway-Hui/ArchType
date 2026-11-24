@@ -34,6 +34,33 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
+  lint:
+    name: 格式与静态检查
+    timeout-minutes: 20
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+      - name: 系统依赖
+        # clippy 要编译 voice（cpal 的构建脚本找 ALSA 头文件）
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends pkg-config libasound2-dev
+      - name: Rust
+        run: |
+          rustup toolchain install stable --profile minimal
+          rustup default stable
+          rustup component add rustfmt clippy
+      # rustfmt 只做机械格式，改了格式的提交单独一个 diff 也好审
+      - name: 格式
+        run: cargo fmt --all -- --check
+      # 本地已经清零；新警告要当场修，不要靠 allow 堆过去
+      - name: Clippy
+        run: cargo clippy --workspace --all-targets -- -D warnings
+      - name: 依赖漏洞
+        uses: rustsec/audit-check@v2
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
   installer:
     name: 安装与更新回归
     timeout-minutes: 20
@@ -797,7 +824,7 @@ jobs:
     name: 发布
     timeout-minutes: 20
     if: startsWith(github.ref, 'refs/tags/v')
-    needs: [installer, core, data, data-wanxiang, ranking-eval, addon, arch, fedora, opensuse, nix, macos-app, windows]
+    needs: [lint, installer, core, data, data-wanxiang, ranking-eval, addon, arch, fedora, opensuse, nix, macos-app, windows]
     runs-on: ubuntu-24.04
     permissions:
       contents: write

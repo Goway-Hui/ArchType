@@ -313,7 +313,7 @@ fn main() {
                 };
                 let (mut run, mut ids) = (String::new(), Vec::new());
                 loop {
-                    let batch = match rx.lock().unwrap().recv() {
+                    let batch = match archtype_core::sync::mutex_lock(&rx).recv() {
                         Ok(b) => b,
                         Err(_) => break,
                     };

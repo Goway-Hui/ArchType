@@ -27,6 +27,7 @@ use std::thread;
 use serde_json::{json, Value};
 
 use crate::llama::{LocalConfig, LocalServer};
+use crate::sync::mutex_lock;
 
 /// 用户可以选的互译语言：代码、给模型看的英文名、面板上的短名。
 pub const LANGUAGES: &[(&str, &str, &str)] = &[
@@ -569,7 +570,7 @@ impl Translator {
     }
 
     pub fn configure(&self, config: TranslateConfig) {
-        let mut inner = self.inner.lock().unwrap();
+        let mut inner = mutex_lock(&self.inner);
         if inner.config != config {
             if inner.config.local != config.local {
                 // 不用本地模型了（或者换了模型）：马上停掉，不占内存和端口
@@ -586,12 +587,12 @@ impl Translator {
     }
 
     pub fn config(&self) -> TranslateConfig {
-        self.inner.lock().unwrap().config.clone()
+        mutex_lock(&self.inner).config.clone()
     }
 
     /// 开始翻译 source。正在译（或刚译完）同一句话就什么也不做；别的请求会被取消。
     pub fn start(&self, source: &str) {
-        let mut inner = self.inner.lock().unwrap();
+        let mut inner = mutex_lock(&self.inner);
         let signature = inner.config.signature();
         if inner.job.source == source
             && inner.job.signature == signature
@@ -651,14 +652,14 @@ impl Translator {
     /// 现在的请求还是翻译 source 的才取消（别的输入框后来发的请求不动），见
     /// [`crate::session::TranslateBackend::cancel_source`]。
     pub fn cancel_source(&self, source: &str) {
-        if self.inner.lock().unwrap().job.source == source {
+        if mutex_lock(&self.inner).job.source == source {
             self.cancel();
         }
     }
 
     pub fn cancel(&self) {
         // kill/wait 可能阻塞：先取出子进程，放掉锁再收，别让 poll / 按键线程排队
-        let mut inner = self.inner.lock().unwrap();
+        let mut inner = mutex_lock(&self.inner);
         inner.next_id += 1;
         inner.job.id = 0;
         inner.job.source.clear();
@@ -674,7 +675,7 @@ impl Translator {
     }
 
     pub fn poll(&self) -> Snapshot {
-        let inner = self.inner.lock().unwrap();
+        let inner = mutex_lock(&self.inner);
         let job = &inner.job;
         let text = match job.state {
             JobState::Idle => String::new(),
@@ -724,7 +725,7 @@ fn run_local_or_remote(
         let lease = match server.acquire(&local) {
             Ok(lease) => lease,
             Err(message) => {
-                let mut inner = shared.lock().unwrap();
+                let mut inner = mutex_lock(&shared);
                 if inner.job.id == id {
                     inner.job.state = JobState::Error;
                     inner.job.error = message;
@@ -732,7 +733,7 @@ fn run_local_or_remote(
                 return;
             }
         };
-        if shared.lock().unwrap().job.id != id {
+        if mutex_lock(&shared).job.id != id {
             return; // 等模型载入的时候用户已经改了原文
         }
         let mut remote = config.clone();
@@ -746,7 +747,7 @@ fn run_local_or_remote(
             cache_key.clone(),
         );
         drop(lease);
-        let mut inner = shared.lock().unwrap();
+        let mut inner = mutex_lock(&shared);
         let crashed = inner.job.id == id
             && inner.job.state == JobState::Error
             && inner.job.raw.is_empty()
@@ -771,7 +772,7 @@ fn run_job(
     // 错误要显示在面板上、写进日志：有的服务会把收到的 Key 原样写进错误里，先抹掉
     let fail = |message: String| {
         let message = redact(&message, &key);
-        let mut inner = shared.lock().unwrap();
+        let mut inner = mutex_lock(&shared);
         if inner.job.id == id {
             inner.job.state = JobState::Error;
             inner.job.error = message;
@@ -806,7 +807,7 @@ fn run_job(
     let stdout = child.stdout.take();
     let stderr = child.stderr.take();
     {
-        let mut inner = shared.lock().unwrap();
+        let mut inner = mutex_lock(&shared);
         if inner.job.id != id {
             let _ = child.kill();
             let _ = child.wait();
@@ -862,7 +863,7 @@ fn run_job(
             if delta.is_empty() {
                 continue;
             }
-            let mut inner = shared.lock().unwrap();
+            let mut inner = mutex_lock(&shared);
             if inner.job.id != id {
                 return;
             }
@@ -882,7 +883,7 @@ fn run_job(
         let _ = stderr.read_to_string(&mut err_text);
     }
 
-    let mut inner = shared.lock().unwrap();
+    let mut inner = mutex_lock(&shared);
     if inner.job.id != id {
         return;
     }
@@ -905,7 +906,7 @@ fn run_job(
     } else if status == 0 && code != Some(0) {
         return fail(curl_error(code, &err_text));
     }
-    let mut inner = shared.lock().unwrap();
+    let mut inner = mutex_lock(&shared);
     if inner.job.id != id {
         return;
     }
@@ -1418,7 +1419,7 @@ mod tests {
                         }
                     }
                 }
-                *seen.lock().unwrap() = String::from_utf8_lossy(&request).to_string();
+                *mutex_lock(&seen) = String::from_utf8_lossy(&request).to_string();
                 let content_type = if status.starts_with("200") {
                     "text/event-stream"
                 } else {
@@ -1484,7 +1485,7 @@ mod tests {
         let snap = wait_done(&t);
         assert_eq!(snap.state, JobState::Done, "{snap:?}");
         assert_eq!(snap.text, "See you tomorrow!");
-        let request = seen.lock().unwrap().clone();
+        let request = mutex_lock(&seen).clone();
         assert!(
             request.starts_with("POST /v1/chat/completions"),
             "{request}"
@@ -1521,7 +1522,7 @@ mod tests {
         let snap = wait_done(&t);
         assert_eq!(snap.state, JobState::Done, "{snap:?}");
         assert_eq!(snap.text, "Could you take a look at this file?");
-        let request = seen.lock().unwrap().clone();
+        let request = mutex_lock(&seen).clone();
         assert!(!request.contains("Authorization"), "{request}");
         let body: Value = serde_json::from_str(request.split("\r\n\r\n").nth(1).unwrap()).unwrap();
         assert_eq!(body["model"], "Index-Translate-2B");

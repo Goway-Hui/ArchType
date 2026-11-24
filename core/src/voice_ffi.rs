@@ -23,6 +23,8 @@ use std::sync::{Arc, Condvar, Mutex};
 use std::time::{Duration, Instant};
 
 use archtype_voice::asr::AsrChannel;
+
+use crate::sync::mutex_lock;
 use archtype_voice::audio::{downmix, to_i16, Framer, Resampler, TARGET_RATE};
 use archtype_voice::hotkey::{Action, Mode, TriggerConfig, VoiceTrigger};
 use archtype_voice::vad::Vad;
@@ -75,7 +77,7 @@ struct ModelSlot {
 
 impl ModelSlot {
     fn code(&self) -> c_int {
-        match &*self.state.lock().unwrap() {
+        match &*mutex_lock(&self.state) {
             ModelState::None => MODEL_NONE,
             ModelState::Missing => MODEL_MISSING,
             ModelState::Loading => MODEL_LOADING,
@@ -89,7 +91,7 @@ impl ModelSlot {
     /// 返回 false 时给用户看的话见 [`ModelSlot::unavailable_hint`]。
     fn prepare(self: &Arc<Self>, dir: &Path) -> bool {
         {
-            let mut state = self.state.lock().unwrap();
+            let mut state = mutex_lock(&self.state);
             if !matches!(*state, ModelState::None | ModelState::Missing | ModelState::Failed(_)) {
                 return true;
             }
@@ -106,7 +108,7 @@ impl ModelSlot {
             .name("archtype-voice-model".into())
             .spawn(move || {
                 let result = wtlocal::load(&dir).map(|_| ());
-                *slot.state.lock().unwrap() = match result {
+                *mutex_lock(&slot.state) = match result {
                     Ok(()) => ModelState::Ready,
                     Err(e) => {
                         eprintln!("archtype: 语音模型不可用：{e:#}");
@@ -119,7 +121,7 @@ impl ModelSlot {
             // 线程数到了上限、内存不够：这里是输入法（C++ / Swift）调进来的，不能 panic——
             // panic 出不了 FFI 边界，整个输入法进程跟着没了
             eprintln!("archtype: 开不了载入语音模型的线程：{e}");
-            *self.state.lock().unwrap() = ModelState::Failed(format!("开不了载入线程（{e}）"));
+            *mutex_lock(&self.state) = ModelState::Failed(format!("开不了载入线程（{e}）"));
             self.changed.notify_all();
             return false;
         }
@@ -128,7 +130,7 @@ impl ModelSlot {
 
     /// [`ModelSlot::prepare`] 返回 false 时给用户看的原因：没下载，或者这次没载入成。
     fn unavailable_hint(&self) -> String {
-        match &*self.state.lock().unwrap() {
+        match &*mutex_lock(&self.state) {
             ModelState::Failed(e) => format!("语音模型不可用：{e}"),
             _ => MISSING_HINT.to_string(),
         }
@@ -137,7 +139,7 @@ impl ModelSlot {
     /// 等模型读进内存。
     fn wait_ready(&self) -> Result<(), String> {
         let deadline = Instant::now() + LOAD_WAIT;
-        let mut state = self.state.lock().unwrap();
+        let mut state = mutex_lock(&self.state);
         loop {
             match &*state {
                 ModelState::Ready => return Ok(()),
@@ -156,7 +158,7 @@ impl ModelSlot {
     }
 
     fn is_ready(&self) -> bool {
-        matches!(*self.state.lock().unwrap(), ModelState::Ready)
+        matches!(*mutex_lock(&self.state), ModelState::Ready)
     }
 }
 
@@ -253,7 +255,7 @@ impl ArchtypeVoice {
             // （载入的线程起不来也走这里，提示的是那个原因）
             self.session += 1;
             {
-                let mut shared = self.shared.lock().unwrap();
+                let mut shared = mutex_lock(&self.shared);
                 shared.session = self.session;
                 shared.voice_at = None;
                 shared.voiced = false;
@@ -265,7 +267,7 @@ impl ArchtypeVoice {
         }
         self.session += 1;
         {
-            let mut shared = self.shared.lock().unwrap();
+            let mut shared = mutex_lock(&self.shared);
             shared.session = self.session;
             shared.phase = VOICE_LISTENING;
             shared.text.clear();
@@ -307,14 +309,14 @@ impl ArchtypeVoice {
         }
         self.trigger = VoiceTrigger::new(TriggerConfig::default());
         self.session += 1;
-        let mut shared = self.shared.lock().unwrap();
+        let mut shared = mutex_lock(&self.shared);
         shared.session = self.session;
         shared.phase = VOICE_IDLE;
         shared.text.clear();
     }
 
     fn fail(&mut self, message: &str) {
-        let mut shared = self.shared.lock().unwrap();
+        let mut shared = mutex_lock(&self.shared);
         shared.phase = VOICE_ERROR;
         shared.text = message.to_string();
     }
@@ -322,7 +324,7 @@ impl ArchtypeVoice {
     fn poll(&mut self) -> c_int {
         let now = Instant::now();
         let (phase, text, voice_at, voiced) = {
-            let shared = self.shared.lock().unwrap();
+            let shared = mutex_lock(&self.shared);
             (shared.phase, shared.text.clone(), shared.voice_at, shared.voiced)
         };
         if let Some(at) = voice_at {
@@ -344,7 +346,7 @@ impl ArchtypeVoice {
             self.tx = None;
         }
         if phase == VOICE_RESULT || phase == VOICE_ERROR {
-            let mut shared = self.shared.lock().unwrap();
+            let mut shared = mutex_lock(&self.shared);
             if shared.phase == phase {
                 shared.phase = VOICE_IDLE;
             }
@@ -394,7 +396,7 @@ impl Worker {
 
     /// 改共享状态；这次说话已经被新的一次顶掉（或取消）就什么也不做。
     fn update(&self, f: impl FnOnce(&mut Shared)) {
-        let mut shared = self.shared.lock().unwrap();
+        let mut shared = mutex_lock(&self.shared);
         if shared.session == self.session {
             f(&mut shared);
         }
@@ -428,7 +430,7 @@ impl Worker {
             return Ok(Source::Wav);
         }
         let tx = self.tx.clone();
-        let device = self.device.lock().unwrap().clone();
+        let device = mutex_lock(&self.device).clone();
         let capture = archtype_voice::capture::start(device.as_deref(), move |pcm| {
             let _ = tx.send(Msg::Pcm(pcm));
         })?;
@@ -643,7 +645,7 @@ pub unsafe extern "C" fn archtype_voice_set_device(voice: *mut ArchtypeVoice, na
                 .filter(|s| !s.is_empty())
                 .map(str::to_string)
         };
-        *voice.device.lock().unwrap() = device;
+        *mutex_lock(&voice.device) = device;
     }
 }
 
@@ -696,7 +698,7 @@ pub unsafe extern "C" fn archtype_voice_text(voice: *const ArchtypeVoice) -> *co
 #[no_mangle]
 pub unsafe extern "C" fn archtype_voice_level(voice: *const ArchtypeVoice) -> c_int {
     match unsafe { voice.as_ref() } {
-        Some(voice) => c_int::from(voice.shared.lock().unwrap().level),
+        Some(voice) => c_int::from(mutex_lock(&voice.shared).level),
         None => 0,
     }
 }
@@ -769,10 +771,10 @@ mod tests {
     fn unavailable_hint_tells_missing_from_failed() {
         let dir = std::env::temp_dir().join(format!("archtype-voice-hint-{}", std::process::id()));
         let voice = ArchtypeVoice::new(dir);
-        *voice.model.state.lock().unwrap() = ModelState::Missing;
+        *mutex_lock(&voice.model.state) = ModelState::Missing;
         assert_eq!(voice.model.unavailable_hint(), MISSING_HINT);
         // 载入的线程起不来时 prepare 记下的状态：提示原因，不是「去下载」
-        *voice.model.state.lock().unwrap() = ModelState::Failed("开不了载入线程（EAGAIN）".into());
+        *mutex_lock(&voice.model.state) = ModelState::Failed("开不了载入线程（EAGAIN）".into());
         assert_eq!(voice.model.code(), MODEL_FAILED);
         let hint = voice.model.unavailable_hint();
         assert!(hint.contains("开不了载入线程") && !hint.contains("下载"), "{hint}");
