@@ -32,7 +32,7 @@ let
   # 手动改的话 hash 在发布页 SHA256SUMS 里，nix hash convert --hash-algo sha256 <十六进制> 转成 SRI 格式。
   dataVersion = "2026.11.11.8";
   data = fetchurl {
-    url = "https://github.com/Goway-Hui/ArchType/releases/download/v0.6.2/archtype-data-rime-ice-${dataVersion}.tar.gz";
+    url = "https://github.com/Goway-Hui/ArchType/releases/download/v0.9.0/archtype-data-rime-ice-${dataVersion}.tar.gz";
     hash = "sha256-hCYHF2XmmQji+RuZ8kWyl8lsgm/b+/kdZ+GPukTX84w=";
   };
 
