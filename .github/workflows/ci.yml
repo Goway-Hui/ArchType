@@ -605,6 +605,8 @@ jobs:
     # 所以稳定版也要能编。新稳定版出来（每年 5 月、11 月）时把 nixos-26.05 换成新的。
     name: Nix · ${{ matrix.nixpkgs }} · ${{ matrix.system }}
     timeout-minutes: 40
+    # 设置界面包用本轮 CI 自己打的（settings-nsh-*），不等发布页上的资产
+    needs: [settings]
     runs-on: ${{ matrix.system == 'aarch64-linux' && 'ubuntu-24.04-arm' || 'ubuntu-24.04' }}
     strategy:
       fail-fast: false
@@ -616,7 +618,12 @@ jobs:
     steps:
       - uses: actions/checkout@v5
       - uses: cachix/install-nix-action@v31
-      # 构建插件（词库按 flake 里固定的哈希从发布页下载），再跑 checks：
+      - name: 设置界面包（本轮 CI）
+        uses: actions/download-artifact@v5
+        with:
+          name: settings-nsh-${{ matrix.system == 'aarch64-linux' && 'arm64' || 'amd64' }}
+          path: dist/settings
+      # 构建插件（词库按 flake 里固定的哈希从发布页下载，设置界面用上面这一步的包），再跑 checks：
       # 自检工具用装好的词库打出「你好」、设置界面自测
       - name: 构建并检查
         env:
@@ -626,8 +633,17 @@ jobs:
           if [ "$NIXPKGS" != nixos-unstable ]; then
             override=(--override-input nixpkgs "github:NixOS/nixpkgs/$NIXPKGS")
           fi
-          nix build .#default -L "${override[@]}"
-          nix flake check -L "${override[@]}"
+          # flake.nix 在 --impure 下读这个变量，交给 package.nix 的 settingsArchive
+          export ARCHTYPE_SETTINGS_ARCHIVE="$(ls "$PWD"/dist/settings/archtype-settings-nsh-*-linux-*.tar.gz | head -1)"
+          test -f "$ARCHTYPE_SETTINGS_ARCHIVE"
+          set -o pipefail
+          nix build .#default -L --impure "${override[@]}" 2>&1 | tee /tmp/nix-build.log
+          nix flake check -L --impure "${override[@]}" 2>&1 | tee -a /tmp/nix-build.log
+          # 设置界面包必须来自本地 artifact；又去发布页下载就说明 settingsArchive 没接上
+          if grep -E 'downloading.*archtype-settings-nsh' /tmp/nix-build.log; then
+            echo "设置界面包又去发布页下载了，本地 settingsArchive 没生效" >&2
+            exit 1
+          fi
 
   macos-app:
     # macOS 输入法外壳（macos/）：按键测试、打通用安装包、自检、真装一遍 pkg。

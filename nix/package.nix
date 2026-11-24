@@ -20,6 +20,9 @@
   gsettings-desktop-schemas,
   fcitx5,
   alsa-lib,
+  # CI 用：本轮 CI 打好的设置界面包（`ARCHTYPE_SETTINGS_ARCHIVE=… nix build .#default --impure`）。
+  # 普通构建不传，按下面的 settingsAssets 从发布页下载。
+  settingsArchive ? null,
 }:
 
 let
@@ -50,7 +53,11 @@ let
       hash = "sha256-p+gRn/6vwTusSo/97MOvIGhUyeKfdTYugmSJ8tVmOHY=";
     };
   };
-  settingsPackage = fetchurl settingsAssets.${stdenv.hostPlatform.system};
+  settingsPackage =
+    if settingsArchive != null then
+      settingsArchive
+    else
+      fetchurl settingsAssets.${stdenv.hostPlatform.system};
 
 in
 stdenv.mkDerivation {

@@ -11,11 +11,19 @@
         "aarch64-linux"
       ];
       forAllSystems = f: nixpkgs.lib.genAttrs systems (system: f nixpkgs.legacyPackages.${system});
+      # CI 用本轮 CI 打好的设置界面包（不下载发布页上的旧资产）：
+      #   ARCHTYPE_SETTINGS_ARCHIVE=$PWD/dist/settings/xxx.tar.gz nix build .#default --impure
+      # 普通构建走纯求值，getEnv 恒为空，仍然按 package.nix 的 settingsAssets 下载。
+      localSettings =
+        let
+          path = builtins.getEnv "ARCHTYPE_SETTINGS_ARCHIVE";
+        in
+        if path == "" then null else builtins.path { path = path; };
     in
     {
       # NixOS：i18n.inputMethod.fcitx5.addons = [ inputs.archtype.packages.${system}.default ];
       packages = forAllSystems (pkgs: rec {
-        archtype = pkgs.callPackage ./nix/package.nix { };
+        archtype = pkgs.callPackage ./nix/package.nix { settingsArchive = localSettings; };
         default = archtype;
       });
 
