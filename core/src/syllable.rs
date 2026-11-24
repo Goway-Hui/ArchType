@@ -223,10 +223,17 @@ fn fuzzy_table() -> &'static [(u32, u32)] {
             .map(|(i, text)| match split(text) {
                 Some((initial, final_)) => {
                     // yong 是零声母的 iong（和 jiong、xiong 同韵），不是 y + ong
-                    let final_ = if (initial, final_) == ("y", "ong") { "iong" } else { final_ };
+                    let final_ = if (initial, final_) == ("y", "ong") {
+                        "iong"
+                    } else {
+                        final_
+                    };
                     let (ih, im) = place(INITIAL_CHAINS, initial);
                     let (fh, fm) = place(FINAL_CHAINS, final_);
-                    let ic = INITIALS.iter().position(|x| *x == ih).map_or(0, |p| p as u32 + 1);
+                    let ic = INITIALS
+                        .iter()
+                        .position(|x| *x == ih)
+                        .map_or(0, |p| p as u32 + 1);
                     let fc = bsearch(FINALS, fh).map_or(0, |p| p as u32 + 1);
                     ((ic << 8) | fc, im | fm)
                 }
@@ -310,7 +317,8 @@ fn pack(bytes: &[u8]) -> Option<u32> {
         return None;
     }
     bytes.iter().try_fold(0u32, |key, &b| {
-        b.is_ascii_lowercase().then(|| key << 5 | u32::from(b - b'a' + 1))
+        b.is_ascii_lowercase()
+            .then(|| key << 5 | u32::from(b - b'a' + 1))
     })
 }
 
@@ -322,7 +330,9 @@ pub fn syllable_from_bytes(bytes: &[u8]) -> Option<Syllable> {
     static TABLE: std::sync::OnceLock<Vec<(u32, Syllable)>> = std::sync::OnceLock::new();
     let Some(key) = pack(bytes) else {
         // 表只收小写字母的串；别的（大写、隔音符……）照旧现算
-        return std::str::from_utf8(bytes).ok().and_then(Syllable::from_text);
+        return std::str::from_utf8(bytes)
+            .ok()
+            .and_then(Syllable::from_text);
     };
     let table = TABLE.get_or_init(|| {
         // from_text 认的就是表里的音节和它们别的写法
@@ -644,7 +654,14 @@ mod tests {
                 buf.pop();
             }
         }
-        let mut check = |b: &[u8]| assert_eq!(syllable_from_bytes(b), slow(b), "{:?}", String::from_utf8_lossy(b));
+        let mut check = |b: &[u8]| {
+            assert_eq!(
+                syllable_from_bytes(b),
+                slow(b),
+                "{:?}",
+                String::from_utf8_lossy(b)
+            )
+        };
         for len in 1..=4 {
             all(len, &mut buf, &mut check);
         }
@@ -664,7 +681,19 @@ mod tests {
             words.push(format!("{w}g"));
             words.push(format!("{w}ng"));
         }
-        words.extend(["", "Zhong", "zh'", "zhuangg", "zhuangzhuang", "a1", "ü", "lüe"].map(String::from));
+        words.extend(
+            [
+                "",
+                "Zhong",
+                "zh'",
+                "zhuangg",
+                "zhuangzhuang",
+                "a1",
+                "ü",
+                "lüe",
+            ]
+            .map(String::from),
+        );
         for w in &words {
             check(w.as_bytes());
         }
@@ -686,7 +715,11 @@ mod tests {
         }
         fn parts(text: &str) -> Option<(&'static str, &'static str)> {
             let (i, f) = split(text)?;
-            Some(if (i, f) == ("y", "ong") { (i, "iong") } else { (i, f) })
+            Some(if (i, f) == ("y", "ong") {
+                (i, "iong")
+            } else {
+                (i, f)
+            })
         }
         let direct = |a: &str, b: &str| -> Option<u32> {
             let ((ai, af), (bi, bf)) = (parts(a)?, parts(b)?);
@@ -752,7 +785,15 @@ mod tests {
         assert_eq!(Syllable::from_text("lue").map(|s| s.text), Some("lve"));
         assert_eq!(split("nue"), Some(("n", "ve")));
         // j q x y 后面的 ü 用 v 打：和 u 是同一个音节
-        for (v, u) in [("jv", "ju"), ("qv", "qu"), ("xv", "xu"), ("yv", "yu"), ("qvan", "quan"), ("xve", "xue"), ("jvn", "jun")] {
+        for (v, u) in [
+            ("jv", "ju"),
+            ("qv", "qu"),
+            ("xv", "xu"),
+            ("yv", "yu"),
+            ("qvan", "quan"),
+            ("xve", "xue"),
+            ("jvn", "jun"),
+        ] {
             assert_eq!(id_of(v), id_of(u), "{v} 应等于 {u}");
         }
         // l、n 后面的 v 不动：lv（绿）和 lu（路）是两个音节

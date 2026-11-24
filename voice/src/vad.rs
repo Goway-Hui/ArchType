@@ -94,7 +94,11 @@ impl Vad {
             self.score = self.score.saturating_sub(1);
             // 噪声底只在非语音帧上跟随：启动阶段（前 0.4 秒）跟得快，安静房间的底能迅速落到实际噪声；
             // 之后放慢，免得一两个词的停顿把底抬上去
-            let alpha = if self.frames <= WARMUP_FRAMES { 0.3 } else { 0.02 };
+            let alpha = if self.frames <= WARMUP_FRAMES {
+                0.3
+            } else {
+                0.02
+            };
             self.noise_floor = self.noise_floor * (1.0 - alpha) + energy * alpha;
         }
 

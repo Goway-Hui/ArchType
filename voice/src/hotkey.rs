@@ -263,7 +263,10 @@ mod tests {
         let t0 = Instant::now();
         let mut tr = VoiceTrigger::new(cfg());
         tr.on_down(t0);
-        assert_eq!(tr.on_up(t0 + Duration::from_millis(600)), vec![Action::Stop]);
+        assert_eq!(
+            tr.on_up(t0 + Duration::from_millis(600)),
+            vec![Action::Stop]
+        );
         assert!(tr.on_down(t0 + Duration::from_millis(700)).is_empty());
         assert!(!tr.is_recording());
         assert_eq!(

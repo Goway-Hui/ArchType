@@ -76,5 +76,4 @@ mod tests {
         // 带后缀的 tag（0.8.1-beta1）按数字段比
         assert!(is_newer("0.8.1-beta1", "0.8.0"));
     }
-
 }

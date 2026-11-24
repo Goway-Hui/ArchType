@@ -33,6 +33,7 @@ pub mod stats;
 pub mod stats_ffi;
 pub mod syllable;
 pub mod symbols;
+pub mod sync;
 pub mod train;
 pub mod translate;
 pub mod translate_ffi;
@@ -515,7 +516,12 @@ impl Engine {
     /// 不重算：学的时候记下了改之前的值。start 已经挤出日志（隔了上千条改动）时什么也不做。
     /// 返回是不是真的退了什么。
     pub fn undo_learning(&self, start: u64, end: u64) -> bool {
-        let Some(changes) = self.journal.lock().ok().and_then(|mut j| j.take(start, end)) else {
+        let Some(changes) = self
+            .journal
+            .lock()
+            .ok()
+            .and_then(|mut j| j.take(start, end))
+        else {
             return false;
         };
         let mut undone = false;
@@ -528,7 +534,11 @@ impl Engine {
     /// 把一条改动改回去（现在的值还是那次改成的才改）。
     fn revert(&self, change: learn::Change) -> bool {
         match change {
-            learn::Change::Word { word, before, after } => {
+            learn::Change::Word {
+                word,
+                before,
+                after,
+            } => {
                 let Ok(mut history) = self.history.write() else {
                     return false;
                 };
@@ -563,7 +573,11 @@ impl Engine {
                 }
                 *last = before;
             }
-            learn::Change::UserWord { word, before, after } => {
+            learn::Change::UserWord {
+                word,
+                before,
+                after,
+            } => {
                 if self.lexicon.entry(&word) != after {
                     return false;
                 }
@@ -576,7 +590,11 @@ impl Engine {
                     }
                 }
             }
-            learn::Change::NewWord { word, before, after } => {
+            learn::Change::NewWord {
+                word,
+                before,
+                after,
+            } => {
                 let Ok(mut new_words) = self.new_words.write() else {
                     return false;
                 };
@@ -610,7 +628,12 @@ impl Engine {
     /// 不是上一次 input() 的候选就原样返回。
     pub fn lexicon_form(&self, shown: &str) -> String {
         if self.config.traditional {
-            if let Some(words) = self.last_words.read().ok().and_then(|m| m.get(shown).cloned()) {
+            if let Some(words) = self
+                .last_words
+                .read()
+                .ok()
+                .and_then(|m| m.get(shown).cloned())
+            {
                 if !words.is_empty() {
                     return words.concat();
                 }
@@ -649,7 +672,11 @@ impl Engine {
         let now = now_ms();
         self.saver.submit(
             path.as_ref().to_path_buf(),
-            Box::new(move || Ok(crate::learn::history_text(&history, &pairs, &new_words, now))),
+            Box::new(move || {
+                Ok(crate::learn::history_text(
+                    &history, &pairs, &new_words, now,
+                ))
+            }),
         );
         Ok(())
     }
@@ -674,7 +701,11 @@ impl Engine {
     #[allow(clippy::type_complexity)]
     fn history_snapshot(
         &self,
-    ) -> Result<(HashMap<String, HistoryEntry>, UserPairs, HashMap<String, learn::NewWord>)> {
+    ) -> Result<(
+        HashMap<String, HistoryEntry>,
+        UserPairs,
+        HashMap<String, learn::NewWord>,
+    )> {
         let history = self
             .history
             .read()
@@ -1091,7 +1122,11 @@ impl Engine {
                 .map(|(w, _)| w)
                 .collect();
             // 有字级模型时多取一些再按它重排（见 ASSOCIATE_POOL）
-            let pool = if nnlm.is_some() { ASSOCIATE_POOL.max(limit) } else { limit.saturating_mul(2) };
+            let pool = if nnlm.is_some() {
+                ASSOCIATE_POOL.max(limit)
+            } else {
+                limit.saturating_mul(2)
+            };
             let mut out: Vec<(String, f64)> = Vec::new();
             let mut seen: std::collections::HashSet<String> = std::collections::HashSet::new();
             for (word, score) in self.predict_next(key, pool) {
@@ -1323,7 +1358,11 @@ impl Engine {
         words.retain(|c| !result.iter().any(|r| r.text == c.text));
         words.retain(|c| c.words[0].freq >= EXACT_PROTECT_MIN_FREQ);
         // 候选满了也不挤掉双拼读出来的（翻页长尾最后的生僻字）
-        let room = self.config.max_candidates.max(1).saturating_sub(result.len());
+        let room = self
+            .config
+            .max_candidates
+            .max(1)
+            .saturating_sub(result.len());
         words.truncate(SHUANGPIN_ABBREV_WORDS.min(room));
         if words.is_empty() {
             return Ok(());
@@ -1667,10 +1706,8 @@ impl Engine {
         }
         // 长尾按 TailTier 分层排：层与层之间按层，同一层里保持束搜索给的顺序
         let single = |c: &Candidate| c.text.chars().count() == 1;
-        let mut tail: Vec<(TailTier, Candidate)> = whole
-            .into_iter()
-            .map(|c| (TailTier::Whole, c))
-            .collect();
+        let mut tail: Vec<(TailTier, Candidate)> =
+            whole.into_iter().map(|c| (TailTier::Whole, c)).collect();
         for c in heads {
             let tier = match (single(&c), is_rare_char(&c)) {
                 (false, _) => TailTier::HeadWord,
@@ -1900,7 +1937,9 @@ impl Engine {
             if !fuzzy && self.config.fuzzy_fallback && !self.config.shuangpin {
                 self.fuzzy_fallback(&full, &mut found);
             }
-            let any_known = found.iter().any(|c| !c.words.is_empty() && c.words.iter().all(|w| w.known));
+            let any_known = found
+                .iter()
+                .any(|c| !c.words.is_empty() && c.words.iter().all(|w| w.known));
             if !self.config.jianpin_fallback || any_known {
                 return Ok(found);
             }
@@ -2025,16 +2064,27 @@ impl Engine {
         for segmentation in segmentations.iter().filter(|s| (2..=4).contains(&s.len())) {
             let query: Vec<SyllableQuery> = segmentation.iter().map(|e| e.query()).collect();
             let exact = self.lexicon.lookup_common(&query);
-            let pinyin = query.iter().map(|q| q.display()).collect::<Vec<_>>().join(" ");
+            let pinyin = query
+                .iter()
+                .map(|q| q.display())
+                .collect::<Vec<_>>()
+                .join(" ");
             for entry in view.lookup_common(&query) {
                 // 精确读音也有这个词、而且更常用：不是靠模糊音才有的
-                if exact.iter().any(|e| e.word == entry.word && e.freq >= entry.freq) {
+                if exact
+                    .iter()
+                    .any(|e| e.word == entry.word && e.freq >= entry.freq)
+                {
                     continue;
                 }
                 if found.iter().chain(&extra).any(|c| c.text == entry.word) {
                     continue;
                 }
-                let lm = if mid_sentence { 0.0 } else { self.lm.score(None, &entry.word) };
+                let lm = if mid_sentence {
+                    0.0
+                } else {
+                    self.lm.score(None, &entry.word)
+                };
                 let feature = Feature {
                     coverage_score: 1.0,
                     lm_score_with_previous_txt: lm as f32,
@@ -2068,7 +2118,11 @@ impl Engine {
         extra.sort_by(|a, b| b.score.total_cmp(&a.score));
         extra.truncate(2);
         found.extend(extra);
-        found.sort_by(|a, b| b.score.total_cmp(&a.score).then_with(|| a.text.cmp(&b.text)));
+        found.sort_by(|a, b| {
+            b.score
+                .total_cmp(&a.score)
+                .then_with(|| a.text.cmp(&b.text))
+        });
         found.truncate(self.config.max_candidates.max(1));
     }
 
@@ -2378,7 +2432,6 @@ impl Engine {
     }
 }
 
-
 /// 第 k 个字母之后在原始串里的字节位置（跳过紧随其后的隔音符）。
 fn letters_to_bytes(raw: &str, letters: usize) -> usize {
     let bytes = raw.as_bytes();
@@ -2523,7 +2576,6 @@ fn weak_syllables(path: &BeamPath) -> usize {
         .sum()
 }
 
-
 /// 用户在设置里加的自定义词排最前（语言模型不认识它们，光靠词频排不上来）。
 impl Engine {
     fn promote_custom(&self, candidates: &mut [Candidate]) {
@@ -2557,8 +2609,6 @@ pub fn unescape_custom(text: &str) -> String {
     }
     out
 }
-
-
 
 /// 句首词只在多音节输入里有意义，而且只能在音节边界上切。
 ///
@@ -2658,7 +2708,8 @@ fn prefix_on_syllable_boundaries(
         if !exact && p.features.typo_count == 0.0 && typed_letters {
             return true;
         }
-        if exact && used < letters.len() && typed_letters && splits_into_syllables(&letters[used..]) {
+        if exact && used < letters.len() && typed_letters && splits_into_syllables(&letters[used..])
+        {
             other_splits.push(p.clone());
         }
         false
@@ -2916,7 +2967,9 @@ fn compose_candidates(result: &mut Vec<Candidate>, prefix: Vec<Candidate>, max: 
     // 只能排在它后面，不能被它当成硬凑的整个筛掉
     // 纠错出来的词只在没有照着打的读法时才当基准（zhognguo 本来就读不通）：meiyuo 的「没有」（yuo 当成 you）
     // 当基准的话，照着打的「没雨哦」这些整句全被当成硬凑的去掉，纠错就成了「替换」
-    let typed_exists = whole.iter().any(|c| c.features.typo_count == 0.0 && !c.features.fuzzy);
+    let typed_exists = whole
+        .iter()
+        .any(|c| c.features.typo_count == 0.0 && !c.features.fuzzy);
     let top_word = whole
         .first()
         .filter(|c| {
@@ -2939,9 +2992,7 @@ fn compose_candidates(result: &mut Vec<Candidate>, prefix: Vec<Candidate>, max: 
             // 整句的名额被纠错出来的整句占满、前面一个照着打的都没有时，照着打的这一句照样留：接着上文打 weihuj，
             // 前面全是「委会」「维护」这些纠错的，照着打的「委户籍」「维护及」以前一个都不剩（纠错只能「加」候选）
             let over_cap = sentences >= cap && !(typed(&c) && !kept.iter().any(typed));
-            if !first
-                && (over_cap || kept.iter().any(|k| differs_only_at_tail(&k.text, &c.text)))
-            {
+            if !first && (over_cap || kept.iter().any(|k| differs_only_at_tail(&k.text, &c.text))) {
                 continue;
             }
             sentences += 1;
@@ -2969,7 +3020,9 @@ fn compose_candidates(result: &mut Vec<Candidate>, prefix: Vec<Candidate>, max: 
     let weak_top = kept.first().is_some_and(|c| {
         is_sentence(c)
             && c.features.history_use_count == 0.0
-            && c.words.iter().all(|w| w.pinyin.split_whitespace().count() == 1)
+            && c.words
+                .iter()
+                .all(|w| w.pinyin.split_whitespace().count() == 1)
     });
     if weak_top {
         let top = kept[0].score;
@@ -3135,11 +3188,7 @@ mod tests {
             "ma\t马\t1\n",
             "ma\t妈\t1\n",
         ));
-        assert_eq!(
-            e.input_at("ma", 1_000_000)[0].text,
-            "吗",
-            "没选过时按词频"
-        );
+        assert_eq!(e.input_at("ma", 1_000_000)[0].text, "吗", "没选过时按词频");
         // 粤语用户常选的几个生僻字各选几次：都要排到第一页，不只提最常选的那个
         e.record_selection_at("马", 1_000_001);
         e.record_selection_at("妈", 1_000_002);
@@ -3179,14 +3228,26 @@ mod tests {
             }
         }
         let texts: Vec<String> = e.input_at("ma", 100).into_iter().map(|c| c.text).collect();
-        assert_eq!(&texts[..6], &["吗", "骂", "马", "妈", "麻", "嘛"], "{texts:?}");
+        assert_eq!(
+            &texts[..6],
+            &["吗", "骂", "马", "妈", "麻", "嘛"],
+            "{texts:?}"
+        );
         // 误选一次的字：一个半月以后热度不到半次，不再提前
         let e = engine("ma\t吗\t100000\nma\t麻\t50000\nma\t嘛\t40000\nma\t骂\t1\n");
         e.record_selection_at("骂", 0);
         let texts: Vec<String> = e.input_at("ma", day).into_iter().map(|c| c.text).collect();
         assert_eq!(texts[1], "骂", "刚选过的提前: {texts:?}");
-        let texts: Vec<String> = e.input_at("ma", 45 * day).into_iter().map(|c| c.text).collect();
-        assert_eq!(&texts[..3], &["吗", "麻", "嘛"], "一个半月以后回到原位: {texts:?}");
+        let texts: Vec<String> = e
+            .input_at("ma", 45 * day)
+            .into_iter()
+            .map(|c| c.text)
+            .collect();
+        assert_eq!(
+            &texts[..3],
+            &["吗", "麻", "嘛"],
+            "一个半月以后回到原位: {texts:?}"
+        );
     }
 
     #[test]
@@ -3198,7 +3259,11 @@ mod tests {
         }
         e.record_selection_at("西安", 10);
         e.record_selection_at("西安", 11);
-        let texts: Vec<String> = e.input_at("xian", 100).into_iter().map(|c| c.text).collect();
+        let texts: Vec<String> = e
+            .input_at("xian", 100)
+            .into_iter()
+            .map(|c| c.text)
+            .collect();
         assert_eq!(&texts[..3], &["西安", "鲜", "先"], "{texts:?}");
     }
 
@@ -3440,11 +3505,17 @@ mod tests {
         let at = |t: &str| texts.iter().position(|x| *x == t);
         for common in ["零", "龄"] {
             assert!(at(common).is_some(), "{texts:?}");
-            assert!(at(common) < at("凌厉"), "{common} 应在换切法的词前面：{texts:?}");
+            assert!(
+                at(common) < at("凌厉"),
+                "{common} 应在换切法的词前面：{texts:?}"
+            );
         }
         assert!(at("凌厉").is_some() && at("伶俐").is_some(), "{texts:?}");
         assert!(at("凌厉") < at("㖫"), "换切法的词在生僻字前面：{texts:?}");
-        assert!(at("里").is_none() && at("力").is_none(), "li | ng… 不是一种切法：{texts:?}");
+        assert!(
+            at("里").is_none() && at("力").is_none(),
+            "li | ng… 不是一种切法：{texts:?}"
+        );
     }
 
     #[test]
@@ -3563,7 +3634,10 @@ mod tests {
             let texts = |r: &[(String, f64)]| r.iter().map(|c| c.0.clone()).collect::<Vec<_>>();
             assert_eq!(texts(&got), texts(&reference), "lm_weight {lm_weight}");
             for (a, b) in got.iter().zip(&reference) {
-                assert!((a.1 - b.1).abs() < 1e-9, "lm_weight {lm_weight}: {a:?} vs {b:?}");
+                assert!(
+                    (a.1 - b.1).abs() < 1e-9,
+                    "lm_weight {lm_weight}: {a:?} vs {b:?}"
+                );
             }
         }
     }
@@ -3573,9 +3647,8 @@ mod tests {
         // 去掉的只是基础模型的句首分：用户在「快」后面选过「乐」，这个搭配加成要留着。
         // 两个引擎都选过一次「乐」（热度一样），只有 a 是在「快」后面选的。
         let make = || {
-            let lexicon: Arc<dyn Lexicon> = Arc::new(
-                MemoryLexicon::from_tsv_str("le\t了\t100000\nle\t乐\t10000\n").unwrap(),
-            );
+            let lexicon: Arc<dyn Lexicon> =
+                Arc::new(MemoryLexicon::from_tsv_str("le\t了\t100000\nle\t乐\t10000\n").unwrap());
             Engine::new(lexicon, Arc::new(SentenceStartBoost))
         };
         // 搭配只认「上一次选的词，且光标前正好以它结尾」，所以先选前一个字
@@ -3592,7 +3665,10 @@ mod tests {
             e.set_context("");
             e.record_selection("快");
             e.set_context("快");
-            e.input("le").into_iter().find(|c| c.text == "乐").map(|c| c.score)
+            e.input("le")
+                .into_iter()
+                .find(|c| c.text == "乐")
+                .map(|c| c.score)
         };
         let (sa, sb) = (score(&a).unwrap(), score(&b).unwrap());
         assert!(sa > sb, "学过的搭配没起作用：{sa} vs {sb}");
@@ -3622,13 +3698,20 @@ mod tests {
         struct Domain;
         impl LanguageModel for Domain {
             fn score(&self, prev: Option<&str>, cur: &str) -> f64 {
-                if prev == Some("今天") && cur == "天" { 2.0 } else { 0.0 }
+                if prev == Some("今天") && cur == "天" {
+                    2.0
+                } else {
+                    0.0
+                }
             }
         }
         let mut e = engine("jin tian\t今天\t1000\ntian\t天\t1000\ntian\t田\t1000\n");
         let scores = |e: &Engine| -> Vec<(String, f64)> {
             e.set_context("今天");
-            e.input("tian").into_iter().map(|c| (c.text, c.score)).collect()
+            e.input("tian")
+                .into_iter()
+                .map(|c| (c.text, c.score))
+                .collect()
         };
         let general = scores(&e);
         e.set_domain_lm(Some(Arc::new(Domain)));
@@ -3642,15 +3725,18 @@ mod tests {
 
     #[test]
     fn context_merged_into_one_word_counts_as_common_pair() {
-        let lexicon: Arc<dyn Lexicon> = Arc::new(
-            MemoryLexicon::from_tsv_str("yao\t要\t1000000\nyao\t腰\t30000\n").unwrap(),
-        );
+        let lexicon: Arc<dyn Lexicon> =
+            Arc::new(MemoryLexicon::from_tsv_str("yao\t要\t1000000\nyao\t腰\t30000\n").unwrap());
         let e = Engine::new(lexicon, Arc::new(MergedPairLm));
         // 上文只有「我」和「今天我」（整段不是模型里的词）都要一样：取末尾模型认识的后缀
         for context in ["我", "今天我"] {
             e.set_context(context);
             let texts: Vec<String> = e.input("yao").into_iter().map(|c| c.text).collect();
-            assert_eq!(texts.first().map(String::as_str), Some("要"), "{context}: {texts:?}");
+            assert_eq!(
+                texts.first().map(String::as_str),
+                Some("要"),
+                "{context}: {texts:?}"
+            );
         }
     }
 
@@ -3667,7 +3753,10 @@ mod tests {
         let texts: Vec<String> = e.input("xian").into_iter().map(|c| c.text).collect();
         let at = |w: &str| texts.iter().position(|t| t == w);
         assert_eq!(texts.first().map(String::as_str), Some("先"), "{texts:?}");
-        assert!(at("鲜") < at("想"), "补全的字排到了本音节的字前面：{texts:?}");
+        assert!(
+            at("鲜") < at("想"),
+            "补全的字排到了本音节的字前面：{texts:?}"
+        );
         assert_eq!(at("西安"), Some(4), "{texts:?}");
         // 没打全时照样出补全
         let texts: Vec<String> = e.input("xia").into_iter().map(|c| c.text).collect();
@@ -3805,9 +3894,13 @@ mod tests {
         assert!(text.contains("沃特") && !text.contains("我特"), "{text}");
 
         // 写不了的报一次错
-        e.save_history_async(dir.join("没有这个目录/history.tsv")).unwrap();
+        e.save_history_async(dir.join("没有这个目录/history.tsv"))
+            .unwrap();
         assert!(matches!(e.save_wait(None), saver::SaveStatus::Failed(_)));
-        assert_eq!(e.save_wait(Some(std::time::Duration::ZERO)), saver::SaveStatus::Done);
+        assert_eq!(
+            e.save_wait(Some(std::time::Duration::ZERO)),
+            saver::SaveStatus::Done
+        );
 
         // 引擎释放时先写完
         e.save_history_async(&history).unwrap();
@@ -3987,7 +4080,13 @@ mod tests {
         // 只开另外十二组时都对不上（yun 是 ün：yun = yong 算 un = iong，不算 un = ong）
         let new_groups = fuzzy::AN_AI | fuzzy::HUANG_WANG | fuzzy::UN_IONG | fuzzy::ENG_ONG;
         e.set_fuzzy_groups(fuzzy::ALL & !new_groups);
-        let pairs = [("wangse", "黄色"), ("jiong", "军"), ("zheng", "中"), ("dai", "单"), ("yong", "云")];
+        let pairs = [
+            ("wangse", "黄色"),
+            ("jiong", "军"),
+            ("zheng", "中"),
+            ("dai", "单"),
+            ("yong", "云"),
+        ];
         for (input, word) in pairs {
             assert!(!has(&e, input, word), "{input} 不该出 {word}");
         }
@@ -3995,7 +4094,10 @@ mod tests {
         assert!(has(&e, "wangse", "黄色"));
         e.set_fuzzy_groups(fuzzy::UN_IONG);
         assert!(has(&e, "jiong", "军"));
-        assert!(has(&e, "yong", "云"), "yun 是 ün，和 yong 是 un = iong，不是 un = ong");
+        assert!(
+            has(&e, "yong", "云"),
+            "yun 是 ün，和 yong 是 un = iong，不是 un = ong"
+        );
         e.set_fuzzy_groups(fuzzy::ENG_ONG);
         assert!(has(&e, "zheng", "中"));
         e.set_fuzzy_groups(fuzzy::AN_AI);
@@ -4234,9 +4336,15 @@ mod tests {
             let guo = at("中国").unwrap_or_else(|| panic!("{scheme:?} zg 没有中国：{c:?}"));
             assert!(at("这个").is_some(), "{scheme:?} zg：{c:?}");
             for zeng in ["增", "曾", "赠"] {
-                assert!(at(zeng).unwrap() < guo, "{scheme:?} zg：{zeng} 该在中国前面：{c:?}");
+                assert!(
+                    at(zeng).unwrap() < guo,
+                    "{scheme:?} zg：{zeng} 该在中国前面：{c:?}"
+                );
             }
-            assert!(c.iter().all(|x| x.consumed == 2 || is_raw_candidate(x)), "{c:?}");
+            assert!(
+                c.iter().all(|x| x.consumed == 2 || is_raw_candidate(x)),
+                "{c:?}"
+            );
             // 加进来的带简拼的标记（和全拼的简拼一样，不变量检查、选过的提前都认它）
             assert!(c[guo].features.full_jianpin > 0.0, "{c:?}");
             // 关掉以后只有双拼的读法
@@ -4265,7 +4373,10 @@ mod tests {
         assert_eq!(c[0].text, "这个", "{c:?}");
         assert!(c.iter().take(2).any(|x| x.text == "中国"), "{c:?}");
         // zh 键只当 zh：不会拆成 z、h 两个音节
-        assert!(c.iter().all(|x| x.pinyin.split_whitespace().count() <= 2), "{c:?}");
+        assert!(
+            c.iter().all(|x| x.pinyin.split_whitespace().count() <= 2),
+            "{c:?}"
+        );
     }
 
     #[test]
@@ -4284,9 +4395,8 @@ mod tests {
         let mut e = Engine::new(lexicon, lm);
         e.set_shuangpin(true);
         e.set_shuangpin_scheme(Scheme::Ziranma);
-        let texts = |input: &str| -> Vec<String> {
-            e.input(input).into_iter().map(|c| c.text).collect()
-        };
+        let texts =
+            |input: &str| -> Vec<String> { e.input(input).into_iter().map(|c| c.text).collect() };
         // lo 和 luo 撞码：两个读法的候选要按分数一起排，luo 读法打全的「逻辑」不能被
         // lo 读法的长尾压在后面（#226）
         let loji = texts("loji");
@@ -4324,14 +4434,29 @@ mod tests {
         assert_eq!(e.input_at("loji", t0)[0].text, "逻辑");
         e.record_selection_at("落籍", t0 + 1);
         e.record_selection_at("落籍", t0 + 2);
-        let texts: Vec<String> = e.input_at("loji", t0 + 10).into_iter().map(|c| c.text).collect();
+        let texts: Vec<String> = e
+            .input_at("loji", t0 + 10)
+            .into_iter()
+            .map(|c| c.text)
+            .collect();
         assert_eq!(texts[0], "落籍", "{texts:?}");
         // 冷门读法（lo）的单字选过也一样，至少排到第二
-        let before: Vec<String> = e.input_at("lo", t0 + 3).into_iter().map(|c| c.text).collect();
-        assert!(before.iter().position(|t| t == "咯") > Some(1), "{before:?}");
+        let before: Vec<String> = e
+            .input_at("lo", t0 + 3)
+            .into_iter()
+            .map(|c| c.text)
+            .collect();
+        assert!(
+            before.iter().position(|t| t == "咯") > Some(1),
+            "{before:?}"
+        );
         e.record_selection_at("咯", t0 + 3);
         e.record_selection_at("咯", t0 + 4);
-        let texts: Vec<String> = e.input_at("lo", t0 + 10).into_iter().map(|c| c.text).collect();
+        let texts: Vec<String> = e
+            .input_at("lo", t0 + 10)
+            .into_iter()
+            .map(|c| c.text)
+            .collect();
         assert!(texts[..2].iter().any(|t| t == "咯"), "{texts:?}");
     }
 
@@ -4342,10 +4467,15 @@ mod tests {
         let cands = e.input("loji");
         let texts: Vec<&str> = cands.iter().map(|c| c.text.as_str()).collect();
         assert_eq!(texts[0], "逻辑", "{texts:?}");
-        let heads: Vec<usize> = (0..cands.len()).filter(|&i| cands[i].consumed < 4).collect();
+        let heads: Vec<usize> = (0..cands.len())
+            .filter(|&i| cands[i].consumed < 4)
+            .collect();
         for ch in ["落", "罗", "络"] {
             let at = texts.iter().position(|t| *t == ch);
-            assert!(at.is_some_and(|i| cands[i].consumed == 2), "{ch}: {texts:?}");
+            assert!(
+                at.is_some_and(|i| cands[i].consumed == 2),
+                "{ch}: {texts:?}"
+            );
         }
         // 句首的单字都排在用完整个输入的候选后面
         let first_head = heads[0];
@@ -4448,7 +4578,12 @@ mod tests {
         e.load_english_str("ok\nbug\n");
         let texts =
             |input: &str| -> Vec<String> { e.input(input).into_iter().map(|c| c.text).collect() };
-        assert_eq!(texts("ok").first().map(String::as_str), Some("ok"), "{:?}", texts("ok"));
+        assert_eq!(
+            texts("ok").first().map(String::as_str),
+            Some("ok"),
+            "{:?}",
+            texts("ok")
+        );
         let bug = texts("bug");
         assert_eq!(bug.first().map(String::as_str), Some("不过"), "{bug:?}");
         assert_eq!(bug.get(1).map(String::as_str), Some("bug"), "{bug:?}");
@@ -4564,11 +4699,22 @@ mod tests {
         for input in ["xianshijichang", "xi'an'shi'ji'chang", "xi'anshi'jichang"] {
             let list = e.input(input);
             let heads: Vec<&Candidate> = list.iter().filter(|c| c.consumed < input.len()).collect();
-            assert!(heads.iter().any(|c| c.text == "西安市"), "{input}: 缺句首候选 西安市");
-            assert!(heads.iter().any(|c| c.text == "西安"), "{input}: 缺句首词 西安");
+            assert!(
+                heads.iter().any(|c| c.text == "西安市"),
+                "{input}: 缺句首候选 西安市"
+            );
+            assert!(
+                heads.iter().any(|c| c.text == "西安"),
+                "{input}: 缺句首词 西安"
+            );
             for c in heads {
                 let used = input[..c.consumed].replace('\'', "");
-                assert_eq!(used, c.pinyin.replace(' ', ""), "{input}: {} 用掉了 {used}", c.text);
+                assert_eq!(
+                    used,
+                    c.pinyin.replace(' ', ""),
+                    "{input}: {} 用掉了 {used}",
+                    c.text
+                );
             }
         }
         // 小鹤双拼：每个音节两个键，解码出来的全拼音节之间都有隔音符
@@ -4669,7 +4815,10 @@ mod tests {
         e.set_max_candidates(20);
         let list = e.input(input);
         assert!(list.len() <= 20);
-        assert!(list.iter().filter(|c| c.text.starts_with("同音")).count() >= 15, "{list:?}");
+        assert!(
+            list.iter().filter(|c| c.text.starts_with("同音")).count() >= 15,
+            "{list:?}"
+        );
     }
 
     /// 三个音节以上、整个输入正好是一个词库词：排在几个词拼出来的候选前面，不看词频。
@@ -4683,7 +4832,12 @@ mod tests {
             "qi dong qi\t启动器\t100\n",
         ));
         let list = e.input("qidongqi");
-        assert_eq!(list[0].text, "启动器", "{:?}", list.iter().map(|c| &c.text).collect::<Vec<_>>());
+        assert_eq!(
+            list[0].text,
+            "启动器",
+            "{:?}",
+            list.iter().map(|c| &c.text).collect::<Vec<_>>()
+        );
         assert!(list.iter().any(|c| c.text == "启动其"));
     }
 
@@ -4861,8 +5015,16 @@ mod tests {
         e.record_selection_at("事件", 0);
         let day = 24 * 3600 * 1000;
         assert_eq!(e.input_at("shijian", day)[0].text, "事件", "刚选过的提前");
-        assert_eq!(e.input_at("shijian", 29 * day)[0].text, "事件", "一个月以内还提前");
-        assert_eq!(e.input_at("shijian", 45 * day)[0].text, "时间", "一个半月以后回到原位");
+        assert_eq!(
+            e.input_at("shijian", 29 * day)[0].text,
+            "事件",
+            "一个月以内还提前"
+        );
+        assert_eq!(
+            e.input_at("shijian", 45 * day)[0].text,
+            "时间",
+            "一个半月以后回到原位"
+        );
     }
 
     #[test]
@@ -5087,7 +5249,12 @@ mod tests {
             "ma\t吗\t100000\n",
             "ma\t骂\t1\n",
         ));
-        let texts = |raw: &str, at: u64| e.input_at(raw, at).into_iter().map(|c| c.text).collect::<Vec<_>>();
+        let texts = |raw: &str, at: u64| {
+            e.input_at(raw, at)
+                .into_iter()
+                .map(|c| c.text)
+                .collect::<Vec<_>>()
+        };
         for t in 0..8 {
             e.record_selection_at("赖", t);
         }
@@ -5127,7 +5294,11 @@ mod tests {
         ));
         let has = |raw: &str, want: &str| {
             let c = e.input(raw);
-            assert!(c.iter().any(|c| c.text == want), "{raw} 应有 {want}：{:?}", c.iter().map(|c| &c.text).collect::<Vec<_>>());
+            assert!(
+                c.iter().any(|c| c.text == want),
+                "{raw} 应有 {want}：{:?}",
+                c.iter().map(|c| &c.text).collect::<Vec<_>>()
+            );
         };
         has("r", "人");
         has("r", "日");
@@ -5222,7 +5393,11 @@ mod tests {
             .collect();
         BeamPath {
             text: words.iter().map(|w| w.text.as_str()).collect(),
-            pinyin: words.iter().map(|w| w.pinyin.as_str()).collect::<Vec<_>>().join(" "),
+            pinyin: words
+                .iter()
+                .map(|w| w.pinyin.as_str())
+                .collect::<Vec<_>>()
+                .join(" "),
             words,
             score: 0.0,
             lm_score: 0.0,
@@ -5343,7 +5518,10 @@ mod tests {
             assert_eq!(texts[0], want, "{input}: {texts:?}");
             // 按的那个音节的单字都要选得到
             for single in ["测", "侧"] {
-                assert!(texts.iter().any(|t| t == single), "{input} 没有「{single}」：{texts:?}");
+                assert!(
+                    texts.iter().any(|t| t == single),
+                    "{input} 没有「{single}」：{texts:?}"
+                );
             }
         }
     }
@@ -5438,7 +5616,10 @@ mod tests {
         assert!(
             found.iter().any(|c| c.text == "蹲" && c.pinyin == "cun"),
             "{:?}",
-            found.iter().map(|c| (&c.text, &c.pinyin)).collect::<Vec<_>>()
+            found
+                .iter()
+                .map(|c| (&c.text, &c.pinyin))
+                .collect::<Vec<_>>()
         );
     }
 
@@ -5462,10 +5643,7 @@ mod tests {
         // jitnian：第一名「今天」（jin tian）纠了一处，和字母一个音节边界都对不上；
         // 照着打的 ji 的字以前全被筛掉，候选只剩「今天」「金田」
         let result = vec![ranked("今天", "jin tian", 1.0, 7)];
-        let mut prefix = vec![
-            ranked("几", "ji", 0.0, 2),
-            ranked("进", "jin", 1.0, 3),
-        ];
+        let mut prefix = vec![ranked("几", "ji", 0.0, 2), ranked("进", "jin", 1.0, 3)];
         prefix_on_syllable_boundaries(&result, "jitnian", &mut prefix);
         let texts: Vec<&str> = prefix.iter().map(|c| c.text.as_str()).collect();
         assert_eq!(texts, ["几"]);
@@ -5511,8 +5689,18 @@ mod tests {
             c.score = score;
             c
         };
-        let corrected = sentence("借给妈妈", &[("借给", "jie gei"), ("妈妈", "ma ma")], 1.0, -10.0);
-        let typed = sentence("记得给妈妈", &[("记得", "ji de"), ("给", "gei"), ("妈妈", "ma ma")], 0.0, -12.0);
+        let corrected = sentence(
+            "借给妈妈",
+            &[("借给", "jie gei"), ("妈妈", "ma ma")],
+            1.0,
+            -10.0,
+        );
+        let typed = sentence(
+            "记得给妈妈",
+            &[("记得", "ji de"), ("给", "gei"), ("妈妈", "ma ma")],
+            0.0,
+            -12.0,
+        );
         let mut head = ranked("借给", "jie gei", 1.0, 4);
         head.score = -11.0;
         let mut result = vec![corrected, typed];
@@ -5578,7 +5766,10 @@ mod tests {
         typed.score = -20.0;
         let mut result = vec![fuzzy.clone(), typed.clone()];
         compose_candidates(&mut result, Vec::new(), 10);
-        assert!(result.iter().any(|c| c.text == "您可"), "照着打的整句被筛掉了");
+        assert!(
+            result.iter().any(|c| c.text == "您可"),
+            "照着打的整句被筛掉了"
+        );
 
         // 照着打的整词排第一时，差得多的硬凑整句照旧筛掉（你好 vs 泥 | 好）
         fuzzy.features.fuzzy = false;

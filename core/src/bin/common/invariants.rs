@@ -187,11 +187,11 @@ fn typed_reading<'a>(
 /// 候选的拼音正好是打的字母（不是补全、纠错出来的）。翻页长尾里补全出来的词没有补全的标记，
 /// 只能这样认：shenghu 的「圣皇」是 sheng huang。
 fn same_letters(c: &Candidate, input: &str) -> bool {
-    let typed = input.bytes().filter(u8::is_ascii_alphabetic).map(|b| b.to_ascii_lowercase());
-    c.pinyin
+    let typed = input
         .bytes()
         .filter(u8::is_ascii_alphabetic)
-        .eq(typed)
+        .map(|b| b.to_ascii_lowercase());
+    c.pinyin.bytes().filter(u8::is_ascii_alphabetic).eq(typed)
 }
 
 /// 「照着打的」：不是纠错、模糊音兜底、简拼加进来的，每个词词库里真有这个读音。
@@ -501,7 +501,9 @@ fn only_adds(
         .iter()
         .find(|c| c.consumed >= len && plain_typed(lexicon, c));
     // 是几个词拼的整句时（我 | 知己）拼法可以换，至少还要有一个照着打的读法
-    let typed_on = on.iter().any(|c| c.consumed >= len && plain_typed(lexicon, c));
+    let typed_on = on
+        .iter()
+        .any(|c| c.consumed >= len && plain_typed(lexicon, c));
     if let Some(t) = top.filter(|t| !is_word(t) && !typed_on) {
         missing.push(t.text.as_str());
     }

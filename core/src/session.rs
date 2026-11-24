@@ -451,7 +451,9 @@ pub enum Tool {
     Clipboard,
     Phrases,
     /// 表情面板；symbols 是从菜单「符号」进来的（不搜索时列全部符号，选的不记进最近用过）
-    Emoji { symbols: bool },
+    Emoji {
+        symbols: bool,
+    },
 }
 
 #[derive(Clone, Debug)]
@@ -957,7 +959,8 @@ impl<'e> Session<'e> {
             return None;
         }
         let mods = key.modifiers & !(modifier::CAPS | modifier::NUMLOCK);
-        let plain = mods & (modifier::CTRL | modifier::ALT | modifier::SUPER) == 0 && key.action == KeyAction::None;
+        let plain = mods & (modifier::CTRL | modifier::ALT | modifier::SUPER) == 0
+            && key.action == KeyAction::None;
         let n = state.items.len();
         if state.focused && plain {
             let cursor = state.cursor.min(n.saturating_sub(1));
@@ -973,7 +976,9 @@ impl<'e> Session<'e> {
                 }
                 keysym::LEFT | keysym::UP | keysym::ISO_LEFT_TAB => Some(cursor.saturating_sub(1)),
                 keysym::TAB if shift => Some(cursor.saturating_sub(1)),
-                keysym::RIGHT | keysym::DOWN | keysym::TAB => Some((cursor + 1).min(n.saturating_sub(1))),
+                keysym::RIGHT | keysym::DOWN | keysym::TAB => {
+                    Some((cursor + 1).min(n.saturating_sub(1)))
+                }
                 _ => None,
             };
             if let Some(cursor) = moved {
@@ -1040,7 +1045,11 @@ impl<'e> Session<'e> {
         let Some(engine) = self.engine else {
             return;
         };
-        let just = self.last_choice.as_ref().map(|c| c.text.clone()).unwrap_or_default();
+        let just = self
+            .last_choice
+            .as_ref()
+            .map(|c| c.text.clone())
+            .unwrap_or_default();
         let plain = engine.associate(&self.context, &just, self.page_size().min(9));
         if plain.is_empty() {
             return;
@@ -1069,7 +1078,11 @@ impl<'e> Session<'e> {
     /// 选第 index 个联想：上屏，和普通选词一样记一次选词（学搭配），接着出下一轮联想。
     fn choose_association(&mut self, index: usize) -> bool {
         // 序号不对什么也不做（联想留着）
-        if !self.association.as_ref().is_some_and(|a| index < a.items.len()) {
+        if !self
+            .association
+            .as_ref()
+            .is_some_and(|a| index < a.items.len())
+        {
             return false;
         }
         let Some(state) = self.association.take() else {
@@ -1131,7 +1144,11 @@ impl<'e> Session<'e> {
         }
         match key.action {
             KeyAction::ToggleMode => {
-                self.switch_mode(if self.mode == Mode::Chinese { Mode::English } else { Mode::Chinese });
+                self.switch_mode(if self.mode == Mode::Chinese {
+                    Mode::English
+                } else {
+                    Mode::Chinese
+                });
                 return true;
             }
             KeyAction::ToggleTranslate => return self.toggle_translate(),
@@ -1163,7 +1180,9 @@ impl<'e> Session<'e> {
         }
         let sym = key.keysym;
         // 打拼音途中的隔音符（xi'an）下面单独处理；打五笔码时它是标点
-        if let Some(c) = visible_symbol(sym).filter(|&c| !(c == '\'' && self.composing() && !self.wubi_code())) {
+        if let Some(c) =
+            visible_symbol(sym).filter(|&c| !(c == '\'' && self.composing() && !self.wubi_code()))
+        {
             return self.symbol_key(c, key);
         }
         if (u32::from(b'a')..=u32::from(b'z')).contains(&sym)
@@ -1190,7 +1209,10 @@ impl<'e> Session<'e> {
     /// 换翻译器（None：没有翻译器，「译」里也照常上屏）。换掉时攒着的原文丢掉。
     pub fn set_translator(&mut self, translator: Option<&'e dyn TranslateBackend>) {
         let same = match (self.translator, translator) {
-            (Some(a), Some(b)) => std::ptr::addr_eq(a as *const dyn TranslateBackend, b as *const dyn TranslateBackend),
+            (Some(a), Some(b)) => std::ptr::addr_eq(
+                a as *const dyn TranslateBackend,
+                b as *const dyn TranslateBackend,
+            ),
             (None, None) => true,
             _ => false,
         };
@@ -1236,7 +1258,10 @@ impl<'e> Session<'e> {
         self.last_choice_index = 0;
         self.now_ms = now_ms;
         // 单按 Shift 等双击等到了时间：切（第二下正按着时等它松开再说）
-        let due = self.shift.pending.is_some_and(|at| now_ms.saturating_sub(at) >= SHIFT_DOUBLE_TAP_MS);
+        let due = self
+            .shift
+            .pending
+            .is_some_and(|at| now_ms.saturating_sub(at) >= SHIFT_DOUBLE_TAP_MS);
         if due && self.shift.down.is_none() {
             self.flush_shift_tap();
         }
@@ -1258,7 +1283,11 @@ impl<'e> Session<'e> {
         if !self.translating() {
             return;
         }
-        if self.translation.due_ms.is_some_and(|due| self.now_ms >= due) {
+        if self
+            .translation
+            .due_ms
+            .is_some_and(|due| self.now_ms >= due)
+        {
             self.translation.due_ms = None;
             self.request_translation();
         }
@@ -1350,8 +1379,16 @@ impl<'e> Session<'e> {
                 self.source_changed(false);
                 Some(true)
             }
-            keysym::LEFT | keysym::RIGHT | keysym::UP | keysym::DOWN | keysym::HOME | keysym::END
-            | keysym::DELETE | keysym::PAGE_UP | keysym::PAGE_DOWN | keysym::TAB
+            keysym::LEFT
+            | keysym::RIGHT
+            | keysym::UP
+            | keysym::DOWN
+            | keysym::HOME
+            | keysym::END
+            | keysym::DELETE
+            | keysym::PAGE_UP
+            | keysym::PAGE_DOWN
+            | keysym::TAB
             | keysym::ISO_LEFT_TAB => {
                 // 原文里没有光标，别让应用里的光标乱跑
                 Some(true)
@@ -1371,7 +1408,11 @@ impl<'e> Session<'e> {
         let fresh = !t.source.is_empty() && snap.source == t.source;
         let failed = fresh && snap.state == JobState::Error;
         let done = fresh && snap.state == JobState::Done;
-        let text = if fresh && !failed { snap.text.as_str() } else { "" };
+        let text = if fresh && !failed {
+            snap.text.as_str()
+        } else {
+            ""
+        };
         if t.source.is_empty() || failed {
             t.shown.clear();
         } else if done || text.len() >= t.shown.len() {
@@ -1485,7 +1526,10 @@ impl<'e> Session<'e> {
         };
         match tool {
             Tool::Menu => {
-                state.items = TOOL_MENU.iter().map(|m| item((*m).to_owned(), String::new())).collect();
+                state.items = TOOL_MENU
+                    .iter()
+                    .map(|m| item((*m).to_owned(), String::new()))
+                    .collect();
             }
             Tool::Clipboard => {
                 if self.config.clipboard_history {
@@ -1545,7 +1589,9 @@ impl<'e> Session<'e> {
             }
         };
         if state.query.is_empty() && symbols {
-            crate::symbols::SYMBOLS.iter().for_each(|s| add(s.text.to_owned()));
+            crate::symbols::SYMBOLS
+                .iter()
+                .for_each(|s| add(s.text.to_owned()));
         } else {
             if state.query.is_empty() {
                 crate::recent_emoji::list().into_iter().for_each(&mut add);
@@ -1796,7 +1842,10 @@ impl<'e> Session<'e> {
             return self.tool.as_ref().map_or(&[], |t| t.items.as_slice());
         }
         if self.association.is_some() {
-            return self.association.as_ref().map_or(&[], |a| a.items.as_slice());
+            return self
+                .association
+                .as_ref()
+                .map_or(&[], |a| a.items.as_slice());
         }
         self.candidates()
     }
@@ -1854,7 +1903,9 @@ impl<'e> Session<'e> {
     fn toggle_mode(&mut self) {
         let next = match self.mode {
             Mode::Chinese => Mode::English,
-            Mode::English if self.config.translate_mode && !self.config.translate_key => Mode::Translate,
+            Mode::English if self.config.translate_mode && !self.config.translate_key => {
+                Mode::Translate
+            }
             Mode::English | Mode::Translate => Mode::Chinese,
         };
         self.switch_mode(next);
@@ -1964,9 +2015,10 @@ impl<'e> Session<'e> {
     /// 等双击时外壳过多久调 tick；不在等是 0。第二下正按着时不用叫：松开时就知道了。
     fn shift_wake_ms(&self) -> u32 {
         match self.shift.pending {
-            Some(at) if self.shift.down.is_none() => {
-                (at + SHIFT_DOUBLE_TAP_MS).saturating_sub(self.now_ms).clamp(1, SHIFT_DOUBLE_TAP_MS) as u32
-            }
+            Some(at) if self.shift.down.is_none() => (at + SHIFT_DOUBLE_TAP_MS)
+                .saturating_sub(self.now_ms)
+                .clamp(1, SHIFT_DOUBLE_TAP_MS)
+                as u32,
             _ => 0,
         }
     }
@@ -2014,7 +2066,9 @@ impl<'e> Session<'e> {
         }
         if self.translating() {
             // 互译时打的字都进原文：数字、没有中文写法的符号、数字写法里的点（3.14）也是
-            let text = self.punct_text(c, self.last_char).unwrap_or_else(|| c.to_string());
+            let text = self
+                .punct_text(c, self.last_char)
+                .unwrap_or_else(|| c.to_string());
             self.emit(&text);
             return true;
         }
@@ -2047,7 +2101,10 @@ impl<'e> Session<'e> {
     ///   数字后面也跳（（3）），应用说光标后面不是它时（光标早挪走了）配对作废、照常上屏
     /// - 左标点（数字后面保持半角的不配对）：上屏成对的，光标左移一格放到中间
     fn auto_pair_key(&mut self, c: char, prev: Option<char>) -> bool {
-        if !self.config.auto_pair_punct || self.config.punct_style != PunctStyle::Fullwidth || self.translating() {
+        if !self.config.auto_pair_punct
+            || self.config.punct_style != PunctStyle::Fullwidth
+            || self.translating()
+        {
             return false;
         }
         if let Some(top) = self.pairs.last().copied() {
@@ -2077,7 +2134,11 @@ impl<'e> Session<'e> {
         if self.pairs.len() >= MAX_PAIRS {
             self.pairs.remove(0);
         }
-        self.pairs.push(Pair { open, close, inner: 0 });
+        self.pairs.push(Pair {
+            open,
+            close,
+            inner: 0,
+        });
         self.cursor_delta -= 1;
         true
     }
@@ -2114,10 +2175,16 @@ impl<'e> Session<'e> {
             return;
         }
         let mods = key.modifiers & !(modifier::CAPS | modifier::NUMLOCK);
-        let plain = key.action == KeyAction::None && mods & (modifier::CTRL | modifier::ALT | modifier::SUPER) == 0;
+        let plain = key.action == KeyAction::None
+            && mods & (modifier::CTRL | modifier::ALT | modifier::SUPER) == 0;
         if plain && typed_key(key.keysym) {
             self.pair_typed(1);
-        } else if plain && mods == 0 && key.keysym == keysym::BACKSPACE && !self.composing() && self.tool.is_none() {
+        } else if plain
+            && mods == 0
+            && key.keysym == keysym::BACKSPACE
+            && !self.composing()
+            && self.tool.is_none()
+        {
             self.pair_backspace(key);
         } else if !(plain && key.keysym == keysym::ESCAPE) {
             self.pairs.clear();
@@ -2151,7 +2218,8 @@ impl<'e> Session<'e> {
 
     /// c 在全角样式下换成的中文标点；半角样式、数字写法里的符号、没有中文标点的是 None。
     fn punct_text(&mut self, c: char, prev: Option<char>) -> Option<String> {
-        crate::symbols::punct_with(c, self.config.punct_style, prev, &mut self.quotes).map(str::to_owned)
+        crate::symbols::punct_with(c, self.config.punct_style, prev, &mut self.quotes)
+            .map(str::to_owned)
     }
 
     /// 上屏 text 之前要不要补一个空格（汉字和字母、数字之间，设置里的 AutoSpace）。
@@ -2159,9 +2227,9 @@ impl<'e> Session<'e> {
     fn space_before(&self, first: char) -> bool {
         self.config.auto_space != 0
             && self.hints & key_hints::NO_AUTO_SPACE == 0
-            && self
-                .prev_char
-                .is_some_and(|prev| crate::autospace::needs_space(prev, first, self.config.auto_space))
+            && self.prev_char.is_some_and(|prev| {
+                crate::autospace::needs_space(prev, first, self.config.auto_space)
+            })
     }
 
     /// 上屏一段字（接在这次调用已经要上屏的后面）：要补空格就补，记下光标前的字和上文。
@@ -2186,7 +2254,9 @@ impl<'e> Session<'e> {
             text.to_owned()
         };
         self.pair_typed(spaced.chars().count());
-        self.pending.get_or_insert_with(String::new).push_str(&spaced);
+        self.pending
+            .get_or_insert_with(String::new)
+            .push_str(&spaced);
         self.remember(text);
     }
 
@@ -2233,7 +2303,10 @@ impl<'e> Session<'e> {
                 if at < self.input.len() {
                     // 光标在拼音中间（#129）：删光标前一个；光标在最前面时撤销选词，没有就不动
                     if at > self.rest_start() {
-                        let prev = self.input[..at].chars().next_back().map_or(1, char::len_utf8);
+                        let prev = self.input[..at]
+                            .chars()
+                            .next_back()
+                            .map_or(1, char::len_utf8);
                         self.input.replace_range(at - prev..at, "");
                         self.caret = Some(at - prev);
                     } else {
@@ -2327,7 +2400,10 @@ impl<'e> Session<'e> {
                 KeyAction::PrevCandidate => self.move_cursor(true),
                 KeyAction::NextCandidate => self.move_cursor(false),
                 // OBSERVE 在 key() 里就返回了，切模式的在 handle_key 开头，到不了这里
-                KeyAction::None | KeyAction::Observe | KeyAction::ToggleMode | KeyAction::ToggleTranslate => {}
+                KeyAction::None
+                | KeyAction::Observe
+                | KeyAction::ToggleMode
+                | KeyAction::ToggleTranslate => {}
             }
             return Some(true);
         }
@@ -2606,18 +2682,32 @@ impl<'e> Session<'e> {
         if chosen.kind != CandidateKind::Word || chars.len() < 2 {
             return false;
         }
-        let pick = if last { chars[chars.len() - 1] } else { chars[0] };
+        let pick = if last {
+            chars[chars.len() - 1]
+        } else {
+            chars[0]
+        };
         // 开着繁体时也取词库写法里的同一个字（字数对不上就不知道是哪个，留空）
         let plain: Vec<char> = self.plain_of(&chosen.text).chars().collect();
         let plain = if plain.len() == chars.len() {
-            (if last { plain[plain.len() - 1] } else { plain[0] }).to_string()
+            (if last {
+                plain[plain.len() - 1]
+            } else {
+                plain[0]
+            })
+            .to_string()
         } else {
             String::new()
         };
         // 拼音按音节对上字数时带上这个字的读音（以后拼成词能学），对不上就不带
         let syllables: Vec<&str> = chosen.pinyin.split_whitespace().collect();
         let pinyin = if syllables.len() == chars.len() {
-            (if last { syllables[syllables.len() - 1] } else { syllables[0] }).to_string()
+            (if last {
+                syllables[syllables.len() - 1]
+            } else {
+                syllables[0]
+            })
+            .to_string()
         } else {
             String::new()
         };
@@ -2697,7 +2787,12 @@ impl<'e> Session<'e> {
         if self.config.wubi_auto_commit
             && self.wubi_code()
             && self.input.len() == crate::wubi::MAX_CODE
-            && self.candidates().iter().filter(|c| c.kind != CandidateKind::Emoji).count() == 1
+            && self
+                .candidates()
+                .iter()
+                .filter(|c| c.kind != CandidateKind::Emoji)
+                .count()
+                == 1
         {
             self.choose_now(0);
         }
@@ -2797,8 +2892,15 @@ impl<'e> Session<'e> {
         if let Some(state) = &self.association {
             frame.panel = Panel::Association;
             frame.cand_count = state.items.len();
-            frame.cand_cursor = state.focused.then_some(state.cursor.min(state.items.len().saturating_sub(1)));
-            frame.aux = if state.focused { ASSOCIATION_FOCUSED_HINT } else { ASSOCIATION_HINT }.to_owned();
+            frame.cand_cursor = state
+                .focused
+                .then_some(state.cursor.min(state.items.len().saturating_sub(1)));
+            frame.aux = if state.focused {
+                ASSOCIATION_FOCUSED_HINT
+            } else {
+                ASSOCIATION_HINT
+            }
+            .to_owned();
             return frame;
         }
         if let Some((view, wake)) = self.translate_view() {
@@ -2926,7 +3028,9 @@ impl<'e> Session<'e> {
 
     /// 编辑区光标在 input 里的字节位置：在还没选词的那段里（临时拼音的 z 后面），没移动过时在末尾。
     fn caret(&self) -> usize {
-        self.caret.map_or(self.input.len(), |at| at.clamp(self.caret_start(), self.input.len()))
+        self.caret.map_or(self.input.len(), |at| {
+            at.clamp(self.caret_start(), self.input.len())
+        })
     }
 
     /// 光标最多往前挪到哪：还没选词的那段的开头；五笔临时拼音的 z 前面不去（在 z 前面打字就不是拼音了）。
@@ -2943,7 +3047,10 @@ impl<'e> Session<'e> {
     /// 左右键移动拼音里的光标（[`ArrowKeys::Caret`]），Home、End、Delete 也管光标；到了两头照样吃掉。
     /// Some：处理完了；None：不是这几个键。
     fn caret_key(&mut self, sym: u32) -> Option<bool> {
-        if !matches!(sym, keysym::LEFT | keysym::RIGHT | keysym::HOME | keysym::END | keysym::DELETE) {
+        if !matches!(
+            sym,
+            keysym::LEFT | keysym::RIGHT | keysym::HOME | keysym::END | keysym::DELETE
+        ) {
             return None;
         }
         if self.translating() {
@@ -2953,7 +3060,10 @@ impl<'e> Session<'e> {
         let start = self.caret_start();
         let at = self.caret();
         let len = self.input.len();
-        let prev = self.input[..at].chars().next_back().map_or(0, char::len_utf8);
+        let prev = self.input[..at]
+            .chars()
+            .next_back()
+            .map_or(0, char::len_utf8);
         let next = self.input[at..].chars().next().map_or(0, char::len_utf8);
         match sym {
             keysym::LEFT if at > start => self.caret = Some(at - prev),
@@ -3113,20 +3223,34 @@ impl<'e> Session<'e> {
             .lexicon()
             .custom_phrases()
             .into_iter()
-            .filter(|(custom, _)| !custom.contains(' ') && custom.chars().filter(|&c| c != '\'').eq(code.chars()))
+            .filter(|(custom, _)| {
+                !custom.contains(' ') && custom.chars().filter(|&c| c != '\'').eq(code.chars())
+            })
             .map(|(_, word)| candidate(crate::unescape_custom(&word), String::new()))
             .collect();
         let mut longer = Vec::new();
-        for hit in engine.wubi().iter().flat_map(|table| table.lookup(code, WUBI_MORE)) {
+        for hit in engine
+            .wubi()
+            .iter()
+            .flat_map(|table| table.lookup(code, WUBI_MORE))
+        {
             // 繁体输出时转完可能重复，自定义词也可能和码表的一样：只留前面那个，码位不动
             let text = engine.shown_text(hit.word);
-            if all.iter().chain(&longer).any(|c: &Candidate| c.text == text) {
+            if all
+                .iter()
+                .chain(&longer)
+                .any(|c: &Candidate| c.text == text)
+            {
                 continue;
             }
             if hit.code.len() == len {
                 all.push(candidate(text, String::new()));
             } else {
-                let rest = if self.config.wubi_hint { &hit.code[len..] } else { "" };
+                let rest = if self.config.wubi_hint {
+                    &hit.code[len..]
+                } else {
+                    ""
+                };
                 longer.push(candidate(text, rest.to_owned()));
             }
         }
@@ -3184,7 +3308,11 @@ impl<'e> Session<'e> {
         if !self.config.calculator || !self.selections.is_empty() {
             return false;
         }
-        let prefix = if self.shuangpin() || self.wubi() { 'V' } else { 'v' };
+        let prefix = if self.shuangpin() || self.wubi() {
+            'V'
+        } else {
+            'v'
+        };
         let Some(rest) = self.input.strip_prefix(prefix) else {
             return false;
         };
@@ -3404,7 +3532,13 @@ impl<'e> Session<'e> {
                 let mut plain: String = self
                     .selections
                     .iter()
-                    .map(|s| if s.plain.is_empty() { s.text.as_str() } else { s.plain.as_str() })
+                    .map(|s| {
+                        if s.plain.is_empty() {
+                            s.text.as_str()
+                        } else {
+                            s.plain.as_str()
+                        }
+                    })
                     .collect();
                 plain += &self.plain_of(tail);
                 self.learn_composed(&plain, &pinyin);
@@ -3590,7 +3724,11 @@ fn typed_key(sym: u32) -> bool {
         || (keysym::KP_0..=keysym::KP_9).contains(&sym)
         || matches!(
             sym,
-            keysym::KP_MULTIPLY | keysym::KP_ADD | keysym::KP_SUBTRACT | keysym::KP_DECIMAL | keysym::KP_DIVIDE
+            keysym::KP_MULTIPLY
+                | keysym::KP_ADD
+                | keysym::KP_SUBTRACT
+                | keysym::KP_DECIMAL
+                | keysym::KP_DIVIDE
         )
 }
 

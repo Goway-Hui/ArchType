@@ -38,10 +38,7 @@ pub fn list_devices() -> Result<Vec<String>> {
 
 /// 候选录音设备，按优先级：指定名字的那个 > 系统默认 > 其余。
 fn candidate_devices(host: &cpal::Host, want: Option<&str>) -> Result<Vec<cpal::Device>> {
-    let mut all: Vec<cpal::Device> = host
-        .input_devices()
-        .context("枚举录音设备失败")?
-        .collect();
+    let mut all: Vec<cpal::Device> = host.input_devices().context("枚举录音设备失败")?.collect();
     let mut ordered: Vec<cpal::Device> = Vec::new();
     if let Some(want) = want {
         if let Some(pos) = all

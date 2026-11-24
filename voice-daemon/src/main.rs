@@ -18,9 +18,9 @@ mod other;
 #[cfg(not(target_os = "linux"))]
 use other as imp;
 
+use archtype_voice::TriggerConfig;
 use std::process::ExitCode;
 use std::time::Duration;
-use archtype_voice::TriggerConfig;
 
 /// 启动参数
 #[derive(Debug, Clone)]
@@ -91,7 +91,9 @@ fn parse_args() -> Options {
                 }
                 opt.asr = Some(mode);
             }
-            "--asr-dir" => opt.asr_dir = Some(std::path::PathBuf::from(value(&mut it, "--asr-dir"))),
+            "--asr-dir" => {
+                opt.asr_dir = Some(std::path::PathBuf::from(value(&mut it, "--asr-dir")))
+            }
             "--help" | "-h" => {
                 println!(
                     "archtype-voiced --hotkey alt_r|ctrl_r --mode tap|hold --silence-ms 1500 [--device 名称] [--asr-cmd '命令 参数']"

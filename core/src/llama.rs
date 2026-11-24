@@ -164,11 +164,7 @@ impl LocalServer {
 
     /// 进程号（测试用）。
     pub fn pid(&self) -> Option<u32> {
-        let s = self
-            .state
-            .0
-            .lock()
-            .unwrap_or_else(|e| e.into_inner());
+        let s = self.state.0.lock().unwrap_or_else(|e| e.into_inner());
         s.running.as_ref().map(|r| r.child.id())
     }
 
@@ -231,7 +227,7 @@ impl LocalServer {
                     let mut s = lock.lock().unwrap_or_else(|e| e.into_inner());
                     s.generation == generation && alive(&mut s)
                 });
-                s = lock.lock().unwrap();
+                s = mutex_lock(lock);
                 s.starting = false;
                 cvar.notify_all();
                 if s.generation != generation {
@@ -465,12 +461,9 @@ mod pdeathsig {
             .unwrap_or_else(|poisoned| poisoned.into_inner())
             .send((command, reply));
         match sent {
-            Ok(()) => result.recv().unwrap_or_else(|_| {
-                Err(io::Error::new(
-                    io::ErrorKind::Other,
-                    "起 llama-server 的线程没了",
-                ))
-            }),
+            Ok(()) => result
+                .recv()
+                .unwrap_or_else(|_| Err(io::Error::other("起 llama-server 的线程没了"))),
             // 那个线程已经不在了：把 Command 拿回来自己起
             Err(mpsc::SendError((mut command, _))) => command.spawn(),
         }
@@ -759,9 +752,15 @@ mod tests {
             find_server("llama-server", empty.clone(), Some(downloaded.clone())),
             Some(downloaded.clone())
         );
-        assert_eq!(find_server("llama-server", None, Some(downloaded.clone())), Some(downloaded));
+        assert_eq!(
+            find_server("llama-server", None, Some(downloaded.clone())),
+            Some(downloaded)
+        );
         // 下载的那份不能执行（没下完、被删）时当作没有
-        assert_eq!(find_server("llama-server", empty, Some(dir.join("data/none"))), None);
+        assert_eq!(
+            find_server("llama-server", empty, Some(dir.join("data/none"))),
+            None
+        );
         std::fs::remove_dir_all(&dir).ok();
     }
 
@@ -824,7 +823,10 @@ mod tests {
         let dir = tempdir::Dir::new();
         let pidfile = dir.path().join("pid");
         let mut host = Command::new(std::env::current_exe().unwrap())
-            .args(["--exact", "llama::tests::server_dies_when_our_process_is_killed"])
+            .args([
+                "--exact",
+                "llama::tests::server_dies_when_our_process_is_killed",
+            ])
             .env(ROLE, &pidfile)
             .stdin(Stdio::null())
             .stdout(Stdio::null())

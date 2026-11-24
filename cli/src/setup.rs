@@ -22,11 +22,21 @@ fn im_config_active() -> Option<String> {
     }
     let text = String::from_utf8_lossy(&output.stdout).to_string();
     let lines: Vec<&str> = text.lines().collect();
-    let mut active = lines.get(1).map(|line| line.trim().to_string()).unwrap_or_default();
+    let mut active = lines
+        .get(1)
+        .map(|line| line.trim().to_string())
+        .unwrap_or_default();
     if active.is_empty() || active == "missing" {
-        active = lines.first().map(|line| line.trim().to_string()).unwrap_or_default();
+        active = lines
+            .first()
+            .map(|line| line.trim().to_string())
+            .unwrap_or_default();
     }
-    if active.is_empty() { None } else { Some(active) }
+    if active.is_empty() {
+        None
+    } else {
+        Some(active)
+    }
 }
 
 /// 系统自己管输入法框架、不该去动：deepin。
@@ -149,15 +159,18 @@ pub fn add_to_group(restart: bool, say: impl Fn(&str)) -> i32 {
 /// fcitx5 在跑时不动（它自己存文件，要经 D-Bus 改；这里只处理还没跑的情况）。
 fn free_left_shift_first_time(running: bool, say: &dyn Fn(&str)) -> bool {
     let toggle = config::get("ShiftToggle");
-    let toggle = if toggle.is_empty() { "Both".to_string() } else { toggle };
+    let toggle = if toggle.is_empty() {
+        "Both".to_string()
+    } else {
+        toggle
+    };
     let needed = matches!(toggle.as_str(), "Both" | "Left");
     if !needed || running {
         return false;
     }
     let path = format!("{}/fcitx5/config", config::config_home());
-    let base = std::fs::read_to_string(&path).unwrap_or_else(|_| {
-        std::fs::read_to_string("/etc/xdg/fcitx5/config").unwrap_or_default()
-    });
+    let base = std::fs::read_to_string(&path)
+        .unwrap_or_else(|_| std::fs::read_to_string("/etc/xdg/fcitx5/config").unwrap_or_default());
     let updated = match strip_shift_l(&base) {
         Some(text) => text,
         None => return false,
@@ -167,7 +180,9 @@ fn free_left_shift_first_time(running: bool, say: &dyn Fn(&str)) -> bool {
         return false;
     }
     let _ = config::state_set("fcitx_shift_freed", "true");
-    say("左 Shift 让给了 ArchType（单按切中英文），切换输入法用 Ctrl+空格；想还给 fcitx5，到「ArchType 设置」的「输入」页关掉");
+    say(
+        "左 Shift 让给了 ArchType（单按切中英文），切换输入法用 Ctrl+空格；想还给 fcitx5，到「ArchType 设置」的「输入」页关掉",
+    );
     true
 }
 
@@ -207,8 +222,7 @@ fn strip_shift_l(text: &str) -> Option<String> {
 pub fn setup(args: &[String]) -> i32 {
     let flag = |name: &str| args.iter().any(|arg| arg == name);
     let yes = flag("--yes") || std::env::var("ARCHTYPE_YES").is_ok();
-    let im_allowed =
-        !flag("--no-im-config") && std::env::var("ARCHTYPE_NO_IM_CONFIG").is_err();
+    let im_allowed = !flag("--no-im-config") && std::env::var("ARCHTYPE_NO_IM_CONFIG").is_err();
     let allow_restart = !flag("--no-restart") && std::env::var("ARCHTYPE_NO_RESTART").is_err();
     let first = fcitx::first_time();
     let known = fcitx::knows_archtype();
@@ -243,14 +257,20 @@ pub fn setup(args: &[String]) -> i32 {
             .map(|question| ask_terminal(question, yes))
             .unwrap_or(true);
     if action == "restart" && !(confirmed && allow_restart) {
-        say("没重启 fcitx5。之后重启它（archtype-config --restart-fcitx）或注销再登录，再运行 archtype-config --setup，或在「ArchType 设置」第一页点「一键设置」");
+        say(
+            "没重启 fcitx5。之后重启它（archtype-config --restart-fcitx）或注销再登录，再运行 archtype-config --setup，或在「ArchType 设置」第一页点「一键设置」",
+        );
         return SETUP_UNFINISHED;
     }
     if action == "add" || action == "restart" {
         if add_to_group(action == "restart", |text| say(text)) != 0 {
             return SETUP_FAILED;
         }
-        return if action == "restart" { SETUP_RESTARTED } else { SETUP_OK };
+        return if action == "restart" {
+            SETUP_RESTARTED
+        } else {
+            SETUP_OK
+        };
     }
     let mut code = SETUP_RELOGIN;
     if action == "im-config" {
@@ -258,9 +278,7 @@ pub fn setup(args: &[String]) -> i32 {
             say("没切换输入法框架，ArchType 要在 fcitx5 下才能用");
             code = SETUP_UNFINISHED;
         } else {
-            let status = Command::new("im-config")
-                .args(["-n", "fcitx5"])
-                .status();
+            let status = Command::new("im-config").args(["-n", "fcitx5"]).status();
             match status {
                 Ok(status) if status.success() => say("已把输入法框架切到 fcitx5（im-config）"),
                 _ => {
@@ -269,7 +287,10 @@ pub fn setup(args: &[String]) -> i32 {
                 }
             }
         }
-    } else if im_allowed && !own_im_framework() && Command::new("im-config").arg("-m").output().is_err() {
+    } else if im_allowed
+        && !own_im_framework()
+        && Command::new("im-config").arg("-m").output().is_err()
+    {
         say(&format!(
             "请在桌面设置中启用 Fcitx 5 并注销重新登录（{}）",
             os_release_pretty()

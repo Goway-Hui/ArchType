@@ -77,8 +77,16 @@ pub fn layout(page: &Page, measurer: &impl TextMeasurer) -> Layout {
         widths.push(width);
     }
 
-    let top_height = if page.aux_top.is_some() { row_height } else { 0.0 };
-    let bottom_height = if page.aux_bottom.is_some() { row_height } else { 0.0 };
+    let top_height = if page.aux_top.is_some() {
+        row_height
+    } else {
+        0.0
+    };
+    let bottom_height = if page.aux_bottom.is_some() {
+        row_height
+    } else {
+        0.0
+    };
     let count = page.texts.len();
 
     let mut positions = vec![(PADDING_X, top_height + PADDING_Y); count];
@@ -113,8 +121,9 @@ pub fn layout(page: &Page, measurer: &impl TextMeasurer) -> Layout {
             *position = (PADDING_X, top_height + i as f64 * row_height + PADDING_Y);
         }
     } else {
-        body_width =
-            widths.iter().sum::<f64>() + ITEM_GAP * count.saturating_sub(1) as f64 + PADDING_X * 2.0;
+        body_width = widths.iter().sum::<f64>()
+            + ITEM_GAP * count.saturating_sub(1) as f64
+            + PADDING_X * 2.0;
         body_height = row_height;
         let mut x = PADDING_X;
         for (i, position) in positions.iter_mut().enumerate() {
@@ -162,7 +171,10 @@ mod tests {
 
     impl TextMeasurer for Fake {
         fn measure(&self, text: &str, font_size: f64) -> (f64, f64) {
-            (text.chars().count() as f64 * font_size * 0.6, font_size * 1.2)
+            (
+                text.chars().count() as f64 * font_size * 0.6,
+                font_size * 1.2,
+            )
         }
     }
 

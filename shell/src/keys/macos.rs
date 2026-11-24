@@ -1,6 +1,6 @@
 //! macOS 的键表：`NSEvent` 的 keyCode、`characters`、修饰键的设备位。
 
-use super::{keysym, Modifiers, KeyInput};
+use super::{keysym, KeyInput, Modifiers};
 
 /// macOS 的虚拟键码（Carbon kVK_*），只列用到的。
 pub mod virtual_key {
@@ -170,12 +170,11 @@ impl VoiceKey {
     ];
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::*;
 
-#[test]
+    #[test]
     fn shift_digit_is_the_shifted_character() {
         // Shift+1：macOS 的 characters 是 "!"，键码不是功能键
         let key = translate_key_down(0x12, Some("!"), Some("1"), 1 << 17).unwrap();
@@ -184,7 +183,7 @@ mod tests {
         assert!(!key.release);
     }
 
-#[test]
+    #[test]
     fn control_uses_characters_ignoring_modifiers() {
         // Control+Option+字母：characters 可能是特殊字符，用 ignoring 的原字符
         let key =
@@ -194,7 +193,7 @@ mod tests {
         assert!(key.modifiers.contains(Modifiers::ALT));
     }
 
-#[test]
+    #[test]
     fn special_keys_ignore_characters() {
         let key = translate_key_down(virtual_key::LEFT, Some("\u{1}"), None, 0).unwrap();
         assert_eq!(key.keysym, keysym::LEFT);
@@ -204,14 +203,14 @@ mod tests {
         assert_eq!(key.keysym, keysym::DELETE);
     }
 
-#[test]
+    #[test]
     fn function_keys_and_non_ascii_are_dropped() {
         assert!(translate_key_down(0x60, Some("\u{f705}"), None, 0).is_none()); // F5
         assert!(translate_key_down(0x00, Some("中"), None, 0).is_none());
         assert!(translate_key_down(0x00, None, None, 0).is_none());
     }
 
-#[test]
+    #[test]
     fn voice_key_names_and_masks() {
         let key = VoiceKey::parse("Alt_R").unwrap();
         assert_eq!(key.key_code, 0x3d);

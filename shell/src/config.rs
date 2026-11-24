@@ -810,10 +810,7 @@ impl Config {
     ///
     /// 和设置界面的 `set_key` 一样：只动这一行，不改文件里其它内容。
     pub fn set_key_in_file(path: &std::path::Path, key: &str, value: &str) -> bool {
-        let text = match std::fs::read_to_string(path) {
-            Ok(text) => text,
-            Err(_) => String::new(),
-        };
+        let text = std::fs::read_to_string(path).unwrap_or_default();
         let mut out = String::new();
         let mut done = false;
         for line in text.lines() {

@@ -61,7 +61,10 @@ pub fn format(value: f64) -> String {
 /// 只打一个数时是大写金额、中文数字和数字本身。
 pub fn candidates(expr: &str) -> Vec<String> {
     if is_plain_number(expr) {
-        let mut out: Vec<String> = [rmb_upper(expr), chinese_number(expr)].into_iter().flatten().collect();
+        let mut out: Vec<String> = [rmb_upper(expr), chinese_number(expr)]
+            .into_iter()
+            .flatten()
+            .collect();
         out.push(expr.to_string());
         return out;
     }
@@ -389,7 +392,11 @@ mod tests {
     fn candidate_list() {
         assert_eq!(
             candidates("12345.67"),
-            vec!["壹万贰仟叁佰肆拾伍元陆角柒分", "一万二千三百四十五点六七", "12345.67"]
+            vec![
+                "壹万贰仟叁佰肆拾伍元陆角柒分",
+                "一万二千三百四十五点六七",
+                "12345.67"
+            ]
         );
         assert_eq!(candidates("3.14159"), vec!["三点一四一五九", "3.14159"]);
         assert_eq!(candidates("12*3.5"), vec!["42", "12*3.5=42", "肆拾贰元整"]);

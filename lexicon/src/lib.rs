@@ -80,8 +80,12 @@ fn latest_asset(value: &serde_json::Value) -> Result<(String, String), String> {
         .ok_or_else(|| "发布页上没有资产".to_string())?;
     let mut best: Option<(Vec<u64>, String, String)> = None;
     for asset in assets {
-        let Some(name) = asset["name"].as_str() else { continue };
-        let Some(version) = pack_version(name) else { continue };
+        let Some(name) = asset["name"].as_str() else {
+            continue;
+        };
+        let Some(version) = pack_version(name) else {
+            continue;
+        };
         let url = asset["browser_download_url"]
             .as_str()
             .unwrap_or("")
@@ -121,8 +125,8 @@ pub fn install_wanxiang(env: &impl Env) -> Result<String, String> {
     let path = format!("{work}/{name}");
     net::download(&url, &path)?;
     let sums = net::fetch(&sums_url(&release)?)?;
-    let expected = net::expected_digest(&sums, &name)
-        .ok_or_else(|| format!("SHA256SUMS 里没有 {name}"))?;
+    let expected =
+        net::expected_digest(&sums, &name).ok_or_else(|| format!("SHA256SUMS 里没有 {name}"))?;
     let actual = net::sha256(&path)?;
     if actual != expected {
         let _ = std::fs::remove_file(&path);
@@ -257,7 +261,11 @@ pub fn use_lexicon(env: &impl Env, kind: &str) -> i32 {
     let running = env.reload();
     println!(
         "已切到{}{}",
-        if kind == "wanxiang" { "万象拼音" } else { "雾凇拼音（默认）" },
+        if kind == "wanxiang" {
+            "万象拼音"
+        } else {
+            "雾凇拼音（默认）"
+        },
         if running {
             "，输入法正在后台换词库，过几秒生效"
         } else {

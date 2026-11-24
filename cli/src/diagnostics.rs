@@ -15,7 +15,11 @@ pub fn collect() -> String {
     out.push_str(&format!("fcitx5：{}\n", run(&["fcitx5", "--version"])));
     out.push_str(&format!(
         "fcitx5 在跑：{}\n",
-        if process_running("fcitx5") { "是" } else { "否" }
+        if process_running("fcitx5") {
+            "是"
+        } else {
+            "否"
+        }
     ));
     out.push_str(&format!("插件版本：{}\n", config::version()));
     out.push_str(&format!(

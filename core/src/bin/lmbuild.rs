@@ -171,7 +171,10 @@ struct Local {
 
 impl Local {
     fn add_bigram(&mut self, prev: u32, cur: u32) {
-        *self.bigram.entry((prev as u64) << 32 | cur as u64).or_insert(0) += 1;
+        *self
+            .bigram
+            .entry((prev as u64) << 32 | cur as u64)
+            .or_insert(0) += 1;
     }
 
     /// 多字词 id 再切一次（不许用它自己），内部相邻两段各记一次搭配；切不出全是词库词的就不记。

@@ -28,7 +28,14 @@ fn dispatch(args: &[String]) -> i32 {
     }
     if flag("--restart-fcitx") {
         let ok = fcitx::restart();
-        println!("{}", if ok { "已重启 fcitx5" } else { "重启 fcitx5 失败，请注销后重新登录" });
+        println!(
+            "{}",
+            if ok {
+                "已重启 fcitx5"
+            } else {
+                "重启 fcitx5 失败，请注销后重新登录"
+            }
+        );
         return if ok { 0 } else { 1 };
     }
     if flag("--setup") {

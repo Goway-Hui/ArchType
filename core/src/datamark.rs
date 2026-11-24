@@ -71,10 +71,7 @@ impl DataMarker {
             .map(|at| (at, KEY))
             .or_else(|| text.find(LEGACY_KEY).map(|at| (at, LEGACY_KEY)))?;
         let rest = &text[at + key.len()..];
-        let rest = rest
-            .split(['\n', '\r', '\0'])
-            .next()
-            .unwrap_or_default();
+        let rest = rest.split(['\n', '\r', '\0']).next().unwrap_or_default();
         if !rest.starts_with(' ') {
             return None;
         }
@@ -144,7 +141,10 @@ pub fn scan(head: &[u8]) -> Option<DataMarker> {
     let at = head
         .windows(KEY.len())
         .position(|w| w == KEY.as_bytes())
-        .or_else(|| head.windows(LEGACY_KEY.len()).position(|w| w == LEGACY_KEY.as_bytes()))?;
+        .or_else(|| {
+            head.windows(LEGACY_KEY.len())
+                .position(|w| w == LEGACY_KEY.as_bytes())
+        })?;
     let end = head[at..]
         .iter()
         .position(|&b| b == b'\n' || b == b'\r' || b == 0)?;
@@ -196,8 +196,10 @@ mod tests {
 
     #[test]
     fn parse_and_format() {
-        let m = DataMarker::parse("# archtype-data: lexicon.tsv 2026.11.14.5 rime-ice abc (2026-11-14)\n")
-            .unwrap();
+        let m = DataMarker::parse(
+            "# archtype-data: lexicon.tsv 2026.11.14.5 rime-ice abc (2026-11-14)\n",
+        )
+        .unwrap();
         assert_eq!(m.name, "lexicon.tsv");
         assert_eq!(m.version, "2026.11.14.5");
         assert_eq!(m.source, "rime-ice abc (2026-11-14)");
@@ -221,9 +223,18 @@ mod tests {
     #[test]
     fn version_order() {
         assert_eq!(compare_versions("2026.11.9", "2026.11.10"), Ordering::Less);
-        assert_eq!(compare_versions("2026.11.14", "2026.11.14.0"), Ordering::Equal);
-        assert_eq!(compare_versions("2026.11.14.1", "2026.11.14"), Ordering::Greater);
-        assert_eq!(compare_versions("2026.011.14", "2026.11.14"), Ordering::Equal);
+        assert_eq!(
+            compare_versions("2026.11.14", "2026.11.14.0"),
+            Ordering::Equal
+        );
+        assert_eq!(
+            compare_versions("2026.11.14.1", "2026.11.14"),
+            Ordering::Greater
+        );
+        assert_eq!(
+            compare_versions("2026.011.14", "2026.11.14"),
+            Ordering::Equal
+        );
         assert_eq!(
             compare_versions("99999999999999999999999.1", "99999999999999999999998.9"),
             Ordering::Greater
@@ -240,7 +251,10 @@ mod tests {
         bin.extend_from_slice(b"archtype-data: nnlm.bin 2026.11.20.0 nnlm-2026.11.20\0");
         bin.extend_from_slice(&[0xff; 100]);
         let m = scan(&bin).unwrap();
-        assert_eq!((m.name.as_str(), m.source.as_str()), ("nnlm.bin", "nnlm-2026.11.20"));
+        assert_eq!(
+            (m.name.as_str(), m.source.as_str()),
+            ("nnlm.bin", "nnlm-2026.11.20")
+        );
         // 在 4 KB 以外、没有结尾的不算
         let mut far = vec![b'x'; SCAN_BYTES];
         far.extend_from_slice(b"\n# archtype-data: lexicon.tsv 1\n");
@@ -267,7 +281,8 @@ mod tests {
         let lex = MemoryLexicon::from_tsv_str(lexicon).unwrap();
         assert_eq!(lex.len(), 1);
 
-        let wubi = "# archtype-data: wubi86.tsv 2023.10.25.0 rime-wubi\na\t工\t99454797\naa\t式\t1\n";
+        let wubi =
+            "# archtype-data: wubi86.tsv 2023.10.25.0 rime-wubi\na\t工\t99454797\naa\t式\t1\n";
         let table = crate::wubi::WubiTable::from_tsv_str(wubi).unwrap();
         assert_eq!(table.len(), 2);
 

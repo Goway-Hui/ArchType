@@ -22,10 +22,7 @@ pub fn page_from_frame(frame: &Frame, shown: &[Candidate], config: &Config) -> P
             Some(view.title.clone()),
             (!view.status.is_empty()).then(|| view.status.clone()),
         ),
-        None => (
-            (!frame.aux.is_empty()).then(|| frame.aux.clone()),
-            None,
-        ),
+        None => ((!frame.aux.is_empty()).then(|| frame.aux.clone()), None),
     };
 
     let mut texts = Vec::with_capacity(shown.len());

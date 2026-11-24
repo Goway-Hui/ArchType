@@ -498,7 +498,11 @@ pub struct MixedLm {
 
 impl MixedLm {
     /// `weight` 是领域模型的权重，夹在 0..=1。
-    pub fn new(general: Arc<dyn LanguageModel>, domain: Arc<dyn LanguageModel>, weight: f64) -> Self {
+    pub fn new(
+        general: Arc<dyn LanguageModel>,
+        domain: Arc<dyn LanguageModel>,
+        weight: f64,
+    ) -> Self {
         Self {
             general,
             domain,
@@ -509,7 +513,8 @@ impl MixedLm {
 
 impl LanguageModel for MixedLm {
     fn score(&self, prev: Option<&str>, cur: &str) -> f64 {
-        (1.0 - self.weight) * self.general.score(prev, cur) + self.weight * self.domain.score(prev, cur)
+        (1.0 - self.weight) * self.general.score(prev, cur)
+            + self.weight * self.domain.score(prev, cur)
     }
 
     fn has_bigram(&self, prev: &str, cur: &str) -> bool {
@@ -541,7 +546,11 @@ mod mixed_lm_tests {
 
     #[test]
     fn mixed_score_is_weighted() {
-        let m = MixedLm::new(Arc::new(Fixed(-2.0, true)), Arc::new(Fixed(-4.0, false)), 0.25);
+        let m = MixedLm::new(
+            Arc::new(Fixed(-2.0, true)),
+            Arc::new(Fixed(-4.0, false)),
+            0.25,
+        );
         assert!((m.score(None, "x") - (-2.5)).abs() < 1e-9);
         // 认不认识一个词按通用模型：混上领域模型以后上文特征照样有
         assert_eq!(m.knows_word("x"), Some(true));

@@ -92,7 +92,10 @@ impl ModelSlot {
     fn prepare(self: &Arc<Self>, dir: &Path) -> bool {
         {
             let mut state = mutex_lock(&self.state);
-            if !matches!(*state, ModelState::None | ModelState::Missing | ModelState::Failed(_)) {
+            if !matches!(
+                *state,
+                ModelState::None | ModelState::Missing | ModelState::Failed(_)
+            ) {
                 return true;
             }
             // 每次都看一眼磁盘：设置界面可能刚下载好，也可能刚删掉
@@ -325,7 +328,12 @@ impl ArchtypeVoice {
         let now = Instant::now();
         let (phase, text, voice_at, voiced) = {
             let shared = mutex_lock(&self.shared);
-            (shared.phase, shared.text.clone(), shared.voice_at, shared.voiced)
+            (
+                shared.phase,
+                shared.text.clone(),
+                shared.voice_at,
+                shared.voiced,
+            )
         };
         if let Some(at) = voice_at {
             self.trigger.note_voice(at);
@@ -777,6 +785,9 @@ mod tests {
         *mutex_lock(&voice.model.state) = ModelState::Failed("开不了载入线程（EAGAIN）".into());
         assert_eq!(voice.model.code(), MODEL_FAILED);
         let hint = voice.model.unavailable_hint();
-        assert!(hint.contains("开不了载入线程") && !hint.contains("下载"), "{hint}");
+        assert!(
+            hint.contains("开不了载入线程") && !hint.contains("下载"),
+            "{hint}"
+        );
     }
 }

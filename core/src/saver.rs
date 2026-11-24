@@ -100,7 +100,13 @@ impl Saver {
         let mut state = self.shared.lock();
         while !state.pending.is_empty() || state.writing {
             match deadline {
-                None => state = self.shared.idle.wait(state).unwrap_or_else(|e| e.into_inner()),
+                None => {
+                    state = self
+                        .shared
+                        .idle
+                        .wait(state)
+                        .unwrap_or_else(|e| e.into_inner())
+                }
                 Some(deadline) => {
                     let now = Instant::now();
                     if now >= deadline {
@@ -126,7 +132,11 @@ impl Saver {
     pub fn flush(&self) {
         let mut state = self.shared.lock();
         while !state.pending.is_empty() || state.writing {
-            state = self.shared.idle.wait(state).unwrap_or_else(|e| e.into_inner());
+            state = self
+                .shared
+                .idle
+                .wait(state)
+                .unwrap_or_else(|e| e.into_inner());
         }
     }
 }
@@ -135,7 +145,11 @@ impl Drop for Saver {
     fn drop(&mut self) {
         self.shared.lock().stop = true;
         self.shared.wake.notify_all();
-        let worker = self.worker.get_mut().unwrap_or_else(|e| e.into_inner()).take();
+        let worker = self
+            .worker
+            .get_mut()
+            .unwrap_or_else(|e| e.into_inner())
+            .take();
         if let Some(worker) = worker {
             let _ = worker.join();
         }
@@ -205,7 +219,8 @@ mod tests {
     use std::sync::atomic::{AtomicUsize, Ordering};
 
     fn dir(name: &str) -> PathBuf {
-        let dir = std::env::temp_dir().join(format!("archtype-saver-{name}-{}", std::process::id()));
+        let dir =
+            std::env::temp_dir().join(format!("archtype-saver-{name}-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
         dir
     }

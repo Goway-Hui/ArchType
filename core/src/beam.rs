@@ -168,7 +168,13 @@ struct Keep<'a> {
 
 impl<'a> Keep<'a> {
     /// 按排好的先后递进来一个词（纠错处数、字）；`of` 查已经留下的词的纠错处数和字。返回 true：名额都满了，这组不用再往下看。
-    fn offer(&mut self, span: u32, span_typos: usize, span_text: &'a str, of: &dyn Fn(u32) -> (usize, &'a str)) -> bool {
+    fn offer(
+        &mut self,
+        span: u32,
+        span_typos: usize,
+        span_text: &'a str,
+        of: &dyn Fn(u32) -> (usize, &'a str),
+    ) -> bool {
         let (per_span, typo_quota) = (self.per_span, self.typo_quota);
         let kept = &mut self.kept;
         let corrected = typo_quota && span_typos > 0;
@@ -319,14 +325,12 @@ pub fn beam_search(
                     continue;
                 }
                 let (lm_raw, covered) = if word.known {
-                    (
-                        lm.score(prev_text.as_deref(), &word.text),
-                        word.syllable_count,
-                    )
+                    (lm.score(prev_text, &word.text), word.syllable_count)
                 } else {
                     (0.0, 0)
                 };
-                let typo_cost = (config.typo_cost * word.typos as f64 - config.swap_discount * word.swaps as f64)
+                let typo_cost = (config.typo_cost * word.typos as f64
+                    - config.swap_discount * word.swaps as f64)
                     + config.completion_cost * word.completion as f64
                     + abbrev_penalty(graph, word, config);
                 let next = Node {
@@ -493,7 +497,7 @@ pub fn all_first_words(
     config: &BeamConfig,
     per_span: usize,
 ) -> Vec<(BeamWord, f64)> {
-    if graph.len() == 0 || per_span == 0 {
+    if graph.is_empty() || per_span == 0 {
         return Vec::new();
     }
     // 生僻字只在这里（翻页的长尾）出现，见 [`crate::lexicon::LexEntry::is_rare`]
@@ -570,7 +574,10 @@ fn collect_spans(
     // 先后和以前完全一样：以前是按结束位置分组（组内保持查到的先后）、组内按（代价, 字）稳定排序，
     // 这里按（结束位置, 代价, 字, 查到的先后）排，是同一个顺序。
     let Found {
-        hits, lookups, text, ..
+        hits,
+        lookups,
+        text,
+        ..
     } = found;
     let word_of = |h: &Hit| &text[h.text.0 as usize..h.text.1 as usize];
     let mut order: Vec<u32> = (0..hits.len() as u32).collect();
@@ -620,7 +627,11 @@ fn collect_spans(
         if !done && head < group.len() {
             // 照着打的名额满了以后，剩下照着打的词都只是跳过（kept.0 只增不减），不用排它们
             let mut tail: Vec<u32> = if typo_quota && keep.kept.0 >= per_span {
-                group[head..].iter().copied().filter(|&i| typos_of(i) > 0).collect()
+                group[head..]
+                    .iter()
+                    .copied()
+                    .filter(|&i| typos_of(i) > 0)
+                    .collect()
             } else {
                 group[head..].to_vec()
             };
@@ -705,7 +716,8 @@ fn collect_dfs(
         let skip_ext = !config.rare_ext_chars && keys.len() == 1;
         let lookup = out.lookups.len() as u32;
         // 排序用的代价：和以前组内排序时现算的一样（词典代价 + 纠错、补全的代价）
-        let extra = (config.typo_cost * edge_typos as f64 - config.swap_discount * edge_swaps as f64)
+        let extra = (config.typo_cost * edge_typos as f64
+            - config.swap_discount * edge_swaps as f64)
             + config.completion_cost * usize::from(edge.completion) as f64;
         let total_freq = out.total_freq;
         let before_hits = out.hits.len();

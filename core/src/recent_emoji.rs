@@ -77,4 +77,3 @@ pub fn remember(emoji: &str) {
 pub fn list() -> Vec<String> {
     RECENT.lock().map(|r| r.items.clone()).unwrap_or_default()
 }
-

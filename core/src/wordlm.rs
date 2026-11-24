@@ -152,7 +152,11 @@ impl WordLm {
 
     /// 第 i 个词的字。
     fn word_bytes(&self, i: usize) -> &[u8] {
-        let start = if i == 0 { 0 } else { self.word_end[i - 1] as usize };
+        let start = if i == 0 {
+            0
+        } else {
+            self.word_end[i - 1] as usize
+        };
         &self.word_bytes[start..self.word_end[i] as usize]
     }
 
@@ -585,7 +589,12 @@ mod tests {
             words,
             unigram: vec![10, 10, 9, 6, 50],
             history: vec![10, 8, 7, 0, 0],
-            bigram: vec![(key(0, 1), 10), (key(1, 2), 8), (key(2, 3), 6), (key(2, 1), 3)],
+            bigram: vec![
+                (key(0, 1), 10),
+                (key(1, 2), 8),
+                (key(2, 3), 6),
+                (key(2, 1), 3),
+            ],
         };
         let (bytes, _, _) = build(&counts, BuildConfig::default()).unwrap();
         let plain = WordLm::from_bytes(&bytes).unwrap();
@@ -610,7 +619,11 @@ mod tests {
             (Some("不认识"), "见"),
         ];
         for (prev, cur) in probes {
-            assert_eq!(lm.score(prev, cur), plain.score(prev, cur), "{prev:?} {cur}");
+            assert_eq!(
+                lm.score(prev, cur),
+                plain.score(prev, cur),
+                "{prev:?} {cur}"
+            );
         }
         assert_eq!(lm.top_next("明天", 5), plain.top_next("明天", 5));
         assert_eq!(lm.top_next("<s>", 5), plain.top_next("<s>", 5));
@@ -622,7 +635,10 @@ mod tests {
         let lm2 = WordLm::from_bytes(&again).unwrap();
         assert_eq!(lm2.data_marker(), Some(&newer));
         assert_eq!(lm2.words(), lm.words());
-        assert_eq!(lm2.score(Some("明天"), "见"), plain.score(Some("明天"), "见"));
+        assert_eq!(
+            lm2.score(Some("明天"), "见"),
+            plain.score(Some("明天"), "见")
+        );
         // 坏文件、多出来的字节：报错，不乱写
         assert!(set_data_marker(&bytes[..bytes.len() - 1], &marker).is_err());
         let mut longer = bytes.clone();

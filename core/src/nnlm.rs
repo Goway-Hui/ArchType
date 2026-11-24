@@ -174,9 +174,7 @@ impl Nnlm {
             bail!("WTNN 版本 {version} 不认识");
         }
         let meta_len = u32_at(data, 8)? as usize;
-        let meta = data
-            .get(12..12 + meta_len)
-            .context("WTNN 说明越界")?;
+        let meta = data.get(12..12 + meta_len).context("WTNN 说明越界")?;
         let meta = std::str::from_utf8(meta).ok().map(str::to_owned);
         let mut at = 12 + meta_len;
         let vocab_size = u32_at(data, at)? as usize;
@@ -226,7 +224,10 @@ impl Nnlm {
         }
         let lnf_g = take(D)?;
         let lnf_b = take(D)?;
-        if [&wte, &wpe, &lnf_g].iter().any(|w| w.iter().any(|v| !v.is_finite())) {
+        if [&wte, &wpe, &lnf_g]
+            .iter()
+            .any(|w| w.iter().any(|v| !v.is_finite()))
+        {
             bail!("WTNN 权重里有非有限数");
         }
         Ok(Self {
@@ -477,7 +478,12 @@ impl Nnlm {
     /// 并成 FMA），算出来一位不差。
     #[cfg(target_arch = "x86_64")]
     #[target_feature(enable = "avx")]
-    unsafe fn step_many_avx(&self, items: &[(u32, Vec<&State>)], pos: usize, clock: u64) -> Vec<State> {
+    unsafe fn step_many_avx(
+        &self,
+        items: &[(u32, Vec<&State>)],
+        pos: usize,
+        clock: u64,
+    ) -> Vec<State> {
         self.step_many_impl(items, pos, clock)
     }
 
@@ -925,13 +931,19 @@ mod tests {
         let mut blob = Vec::new();
         blob.extend_from_slice(b"WTNN");
         blob.extend_from_slice(&1u32.to_le_bytes());
-        let meta = "archtype-data: nnlm.bin 2026.1.1.0 test\n{\"name\":\"archtype-nnlm\"}".as_bytes();
+        let meta =
+            "archtype-data: nnlm.bin 2026.1.1.0 test\n{\"name\":\"archtype-nnlm\"}".as_bytes();
         blob.extend_from_slice(&(meta.len() as u32).to_le_bytes());
         blob.extend_from_slice(meta);
         for v in [vocab_size as u32, 4] {
             blob.extend_from_slice(&v.to_le_bytes());
         }
-        for (cp, id) in [('你' as u32, 3u32), ('好' as u32, 4), ('我' as u32, 5), ('说' as u32, 6)] {
+        for (cp, id) in [
+            ('你' as u32, 3u32),
+            ('好' as u32, 4),
+            ('我' as u32, 5),
+            ('说' as u32, 6),
+        ] {
             blob.extend_from_slice(&cp.to_le_bytes());
             blob.extend_from_slice(&id.to_le_bytes());
         }
@@ -955,7 +967,10 @@ mod tests {
         assert_eq!(model.vocab_size(), vocab_size);
         assert_eq!(model.token('你'), 3);
         assert_eq!(model.token('他'), UNK);
-        assert!(model.meta().unwrap().starts_with("archtype-data: nnlm.bin 2026.1.1.0"));
+        assert!(model
+            .meta()
+            .unwrap()
+            .starts_with("archtype-data: nnlm.bin 2026.1.1.0"));
         assert!(crate::datamark::scan(&blob).is_some_and(|m| m.version == "2026.1.1.0"));
         let s = model.score(&model.context_tokens("我说"), "你好");
         assert!(s.is_finite() && s < 0.0, "{s}");
@@ -978,7 +993,11 @@ mod tests {
             let x: Vec<f32> = (0..n).map(|_| next()).collect();
             let got = dot_rows(&block, &x);
             for (j, v) in got.iter().enumerate() {
-                assert_eq!(v.to_bits(), dot(&block[j * n..(j + 1) * n], &x).to_bits(), "n={n} row {j}");
+                assert_eq!(
+                    v.to_bits(),
+                    dot(&block[j * n..(j + 1) * n], &x).to_bits(),
+                    "n={n} row {j}"
+                );
             }
         }
     }
@@ -987,7 +1006,14 @@ mod tests {
     #[test]
     fn scoring_together_matches_one_by_one() {
         let blob = random_wtnn();
-        let texts = ["你好", "你好我说", "我说你好好", "说", "你我", "好好说说你我"];
+        let texts = [
+            "你好",
+            "你好我说",
+            "我说你好好",
+            "说",
+            "你我",
+            "好好说说你我",
+        ];
         let alone: Vec<f64> = texts
             .iter()
             .map(|t| {
@@ -1005,7 +1031,10 @@ mod tests {
         // 缓存里已经有一部分前缀时也一样
         let again = model.score_many(&ctx, &["你好我说你", "说说"]);
         let fresh = Nnlm::from_bytes(&blob).unwrap();
-        assert_eq!(again[0].to_bits(), fresh.score(&ctx, "你好我说你").to_bits());
+        assert_eq!(
+            again[0].to_bits(),
+            fresh.score(&ctx, "你好我说你").to_bits()
+        );
         assert_eq!(again[1].to_bits(), fresh.score(&ctx, "说说").to_bits());
         assert_eq!(model.score_many(&ctx, &[]), Vec::<f64>::new());
         assert_eq!(model.score_many(&ctx, &[""]), vec![0.0]);

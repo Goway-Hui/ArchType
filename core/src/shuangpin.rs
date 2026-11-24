@@ -457,7 +457,7 @@ pub fn encode(scheme: Scheme, syllable: &str) -> Vec<[u8; 2]> {
         }
         // 微软、搜狗、拼音加加的 ou 也能照打
         if layout.zero == Zero::OOrFirst && final_ == "ou" {
-            push([b'o', b'u']);
+            push(*b"ou");
         }
         for &k in &keys {
             if layout.zero != Zero::OOnly {

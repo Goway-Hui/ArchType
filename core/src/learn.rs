@@ -440,7 +440,10 @@ pub fn load_history_lines(
                 }
             }
             ["p", prev, cur, count, last]
-                if !prev.is_empty() && !cur.is_empty() && !plain_ascii(prev) && !plain_ascii(cur) =>
+                if !prev.is_empty()
+                    && !cur.is_empty()
+                    && !plain_ascii(prev)
+                    && !plain_ascii(cur) =>
             {
                 if let Some(e) = entry(count, last) {
                     pairs.insert((*prev).to_string(), (*cur).to_string(), e);
@@ -485,12 +488,18 @@ mod tests {
         let mut words = HashMap::new();
         let mut pairs = UserPairs::default();
         let mut new_words = HashMap::new();
-        assert_eq!(load_history(&path, &mut words, &mut pairs, &mut new_words).unwrap(), 2);
+        assert_eq!(
+            load_history(&path, &mut words, &mut pairs, &mut new_words).unwrap(),
+            2
+        );
         assert!(words.contains_key("你好"));
         assert!(!words.contains_key("hunter2pass"));
         save_history(&path, &words, &pairs, &new_words, 1000).unwrap();
         let text = std::fs::read_to_string(&path).unwrap();
-        assert!(!text.contains("hunter2pass") && !text.contains("secret"), "{text}");
+        assert!(
+            !text.contains("hunter2pass") && !text.contains("secret"),
+            "{text}"
+        );
         assert!(text.contains("你好\t世界"));
         let _ = std::fs::remove_dir_all(&dir);
     }
@@ -590,7 +599,10 @@ mod tests {
         );
         save_history(&path, &words, &pairs, &new_words, 42).unwrap();
         let text = std::fs::read_to_string(&path).unwrap();
-        assert!(text.contains("w\t衰减过\t1.26\t42\n"), "带小数的热度：{text}");
+        assert!(
+            text.contains("w\t衰减过\t1.26\t42\n"),
+            "带小数的热度：{text}"
+        );
         assert!(text.contains("w\t种地\t3\t42\n"), "整数照旧：{text}");
 
         let mut w2 = HashMap::new();
@@ -607,7 +619,10 @@ mod tests {
         let text = history_text(&w2, &p2, &n2, later);
         assert!(!text.contains("衰减过"), "{text}");
         assert!(!text.contains("霜频阁"), "{text}");
-        assert!(text.contains("种地"), "3 次的还在（6 个半衰期后约 0.05）：{text}");
+        assert!(
+            text.contains("种地"),
+            "3 次的还在（6 个半衰期后约 0.05）：{text}"
+        );
         std::fs::remove_dir_all(&dir).ok();
     }
 
@@ -627,7 +642,10 @@ mod tests {
         let mut words = HashMap::new();
         let mut pairs = UserPairs::default();
         let mut new_words = HashMap::new();
-        assert_eq!(load_history(&path, &mut words, &mut pairs, &mut new_words).unwrap(), 2);
+        assert_eq!(
+            load_history(&path, &mut words, &mut pairs, &mut new_words).unwrap(),
+            2
+        );
         assert_eq!(words.len(), 1);
         assert_eq!(words["种地"].count, 3.0);
         assert_eq!(pairs.get("发", "给").unwrap().count, 2.0);
@@ -680,7 +698,10 @@ mod tests {
         kept.sort();
         assert_eq!(kept, ["一次不久", "两次很久", "刚用"]);
         assert!(p2.get("发", "给").is_none());
-        assert!(p2.get("再", "见").is_some(), "3 × 0.5^6.3 ≈ 0.037，还在门槛上");
+        assert!(
+            p2.get("再", "见").is_some(),
+            "3 × 0.5^6.3 ≈ 0.037，还在门槛上"
+        );
         // 内存里的没动
         assert_eq!(words.len(), 4);
         assert_eq!(pairs.len(), 2);

@@ -23,7 +23,10 @@ impl Code {
     /// 1–4 个 a–y 的字母；别的（含 z：五笔不用 z）是 None。
     fn parse(text: &str) -> Option<Self> {
         let bytes = text.as_bytes();
-        if bytes.is_empty() || bytes.len() > MAX_CODE || !bytes.iter().all(|b| (b'a'..=b'y').contains(b)) {
+        if bytes.is_empty()
+            || bytes.len() > MAX_CODE
+            || !bytes.iter().all(|b| (b'a'..=b'y').contains(b))
+        {
             return None;
         }
         let mut code = [0; MAX_CODE];
@@ -85,7 +88,9 @@ impl WubiTable {
                 continue;
             }
             let mut fields = line.split('\t');
-            let (Some(code), Some(word), Some(weight)) = (fields.next(), fields.next(), fields.next()) else {
+            let (Some(code), Some(word), Some(weight)) =
+                (fields.next(), fields.next(), fields.next())
+            else {
                 continue;
             };
             let (Some(code), Ok(weight)) = (Code::parse(code), weight.trim().parse::<u64>()) else {
@@ -110,7 +115,12 @@ impl WubiTable {
             .entries
             .sort_by(|a, b| a.code.cmp(&b.code).then(b.weight.cmp(&a.weight)));
         let mut by_word: Vec<u32> = (0..table.entries.len() as u32).collect();
-        by_word.sort_by(|&a, &b| table.word(a as usize).cmp(table.word(b as usize)).then(a.cmp(&b)));
+        by_word.sort_by(|&a, &b| {
+            table
+                .word(a as usize)
+                .cmp(table.word(b as usize))
+                .then(a.cmp(&b))
+        });
         table.by_word = by_word;
         Ok(table)
     }
@@ -187,7 +197,9 @@ impl WubiTable {
             }
             hits.push(WubiHit {
                 word,
-                code: self.shortest_code(word, &prefix).unwrap_or(self.entries[i].code.as_str()),
+                code: self
+                    .shortest_code(word, &prefix)
+                    .unwrap_or(self.entries[i].code.as_str()),
             });
             added += 1;
         }
@@ -196,7 +208,9 @@ impl WubiTable {
 
     /// word 的码在 entries 里的下标（码升序）。
     fn codes_of<'a>(&'a self, word: &'a str) -> impl Iterator<Item = usize> + 'a {
-        let start = self.by_word.partition_point(|&i| self.word(i as usize) < word);
+        let start = self
+            .by_word
+            .partition_point(|&i| self.word(i as usize) < word);
         self.by_word[start..]
             .iter()
             .map(|&i| i as usize)
@@ -216,7 +230,12 @@ impl WubiTable {
     pub fn full_code(&self, word: &str) -> Option<&str> {
         self.codes_of(word)
             .map(|i| &self.entries[i])
-            .max_by(|a, b| a.code.len().cmp(&b.code.len()).then(a.weight.cmp(&b.weight)))
+            .max_by(|a, b| {
+                a.code
+                    .len()
+                    .cmp(&b.code.len())
+                    .then(a.weight.cmp(&b.weight))
+            })
             .map(|e| e.code.as_str())
     }
 
@@ -249,7 +268,9 @@ impl WubiTable {
             .map(|i| &self.entries[i].code)
             .min_by_key(|code| code.len());
         match (shortest, self.full_code(word)) {
-            (Some(short), Some(full)) if short.as_str() != full => Some(format!("{}/{full}", short.as_str())),
+            (Some(short), Some(full)) if short.as_str() != full => {
+                Some(format!("{}/{full}", short.as_str()))
+            }
             (_, Some(full)) => Some(full.to_owned()),
             _ => self.phrase_code(word),
         }
@@ -299,7 +320,10 @@ j\t是\t1632303407
     #[test]
     fn exact_codes_keep_table_order() {
         let t = table();
-        assert_eq!(words(&t.lookup("wqvb", 0)), [("你好", "wqvb"), ("您好", "wqvb")]);
+        assert_eq!(
+            words(&t.lookup("wqvb", 0)),
+            [("你好", "wqvb"), ("您好", "wqvb")]
+        );
         assert_eq!(words(&t.lookup("g", 0)), [("一", "g")]);
         assert!(t.lookup("zz", 10).is_empty(), "z 不是五笔码");
         assert!(t.lookup("aaaaa", 10).is_empty(), "最多四码");
@@ -311,7 +335,10 @@ j\t是\t1632303407
     fn longer_codes_follow_with_their_shortest_code() {
         let t = table();
         // 你 在 wq 是精确码；后面按频次是你好、您好（你 不重复出现）
-        assert_eq!(words(&t.lookup("wq", 10)), [("你", "wq"), ("你好", "wqvb"), ("您好", "wqvb")]);
+        assert_eq!(
+            words(&t.lookup("wq", 10)),
+            [("你", "wq"), ("你好", "wqvb"), ("您好", "wqvb")]
+        );
         // 只打 w：你 带最短的码 wq（虽然 wqi、wqiy 的频次更高）
         assert_eq!(words(&t.lookup("w", 1)), [("你", "wq")]);
         // 同一个词在前缀下的几个码只出一次
@@ -339,7 +366,10 @@ j\t是\t1632303407
 
     #[test]
     fn bad_lines_are_skipped_and_empty_is_an_error() {
-        let t = WubiTable::from_tsv_str("# 注释\n\nzz\t符\t1\nabcde\t长\t1\nab\t\t1\nab\t好\tx\nab\t对\t5\r\n").unwrap();
+        let t = WubiTable::from_tsv_str(
+            "# 注释\n\nzz\t符\t1\nabcde\t长\t1\nab\t\t1\nab\t好\tx\nab\t对\t5\r\n",
+        )
+        .unwrap();
         assert_eq!(t.len(), 1);
         assert_eq!(words(&t.lookup("ab", 0)), [("对", "ab")]);
         assert!(WubiTable::from_tsv_str("# 只有注释\n").is_err());

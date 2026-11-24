@@ -286,8 +286,9 @@ pub fn panel_search(engine: Option<&crate::Engine>, query: &str, limit: usize) -
         let mut words: Vec<String> = Vec::new();
         if let Some(engine) = engine {
             if query.bytes().all(|b| b.is_ascii_alphabetic() || b == b'\'') {
-                let outcome =
-                    std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| engine.try_input(query)));
+                let outcome = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                    engine.try_input(query)
+                }));
                 if let Ok(Ok(candidates)) = outcome {
                     words = candidates
                         .into_iter()

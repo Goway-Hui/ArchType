@@ -156,7 +156,7 @@ fn main() {
     } else if !lm.is_empty() {
         match archtype_core::lm::load_lm(&lm) {
             Ok(v) => {
-                report.ok("语言模型", &format!("{lm}"));
+                report.ok("语言模型", &lm.to_string());
                 v
             }
             Err(e) => {
@@ -224,7 +224,8 @@ fn main() {
         );
     }
 
-    match archtype_core::shuangpin::encode(archtype_core::shuangpin::Scheme::Ziranma, "zhong").first()
+    match archtype_core::shuangpin::encode(archtype_core::shuangpin::Scheme::Ziranma, "zhong")
+        .first()
     {
         Some([a, b]) => report.ok("双拼", &format!("zhong -> {}{}", *a as char, *b as char)),
         None => report.fail("双拼", "zhong 无法编码"),

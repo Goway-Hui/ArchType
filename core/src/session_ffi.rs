@@ -12,11 +12,11 @@ use std::panic;
 use std::ptr;
 
 use crate::ffi::{set_last_error, ArchtypeEngineHandle};
-use crate::symbols::PunctStyle;
 use crate::session::{
     ArrowKeys, Candidate, CandidateKind, Config, Frame, Key, KeyAction, Mode, Panel, SelectKeys,
     Session, ShiftToggle, Tool,
 };
+use crate::symbols::PunctStyle;
 
 /// 一次按键（C 布局）。`size` 是外壳编译时的 `sizeof(ArchtypeKey)`：
 /// 以后在末尾加字段，旧外壳传的 size 小，没传的字段当 0。
@@ -67,7 +67,9 @@ pub struct ArchtypeTranslateBackend {
             error: *mut *const c_char,
         ) -> c_int,
     >,
-    pub tag: Option<unsafe extern "C" fn(user: *mut std::ffi::c_void, text: *const c_char) -> *const c_char>,
+    pub tag: Option<
+        unsafe extern "C" fn(user: *mut std::ffi::c_void, text: *const c_char) -> *const c_char,
+    >,
 }
 
 impl Default for ArchtypeTranslateBackend {
@@ -627,7 +629,7 @@ impl ArchtypeSession {
         match panic::catch_unwind(panic::AssertUnwindSafe(|| f(inner))) {
             Ok(frame) => self.publish(frame),
             Err(_) => {
-                set_last_error(&format!("session {what} panicked"));
+                set_last_error(format!("session {what} panicked"));
                 self.current(false)
             }
         }
@@ -822,7 +824,10 @@ pub unsafe extern "C" fn archtype_session_candidate_comment(
 }
 
 /// 上一次的 frame 里显示的第 index 个候选。
-unsafe fn shown_candidate<'a>(session: *mut ArchtypeSession, index: usize) -> Option<&'a CCandidate> {
+unsafe fn shown_candidate<'a>(
+    session: *mut ArchtypeSession,
+    index: usize,
+) -> Option<&'a CCandidate> {
     let handle = unsafe { session.as_mut() }?;
     if index >= handle.frame.cand_count {
         return None;
@@ -859,7 +864,9 @@ pub unsafe extern "C" fn archtype_session_set_mode(
 /// 现在的输入模式，`ARCHTYPE_MODE_*`；session 为 NULL 时是中文。（1.10 起）
 #[no_mangle]
 pub unsafe extern "C" fn archtype_session_mode(session: *const ArchtypeSession) -> c_int {
-    unsafe { session.as_ref() }.map_or(ARCHTYPE_MODE_CHINESE, |handle| mode_to_c(handle.session.mode()))
+    unsafe { session.as_ref() }.map_or(ARCHTYPE_MODE_CHINESE, |handle| {
+        mode_to_c(handle.session.mode())
+    })
 }
 
 /// 互译用核心的翻译器（Linux 外壳）；NULL 表示没有翻译器。翻译器要比会话活得久，
@@ -1003,14 +1010,21 @@ pub unsafe extern "C" fn archtype_recent_emoji_path(path: *const c_char) {
 /// 最近用过的 emoji，最近的在前；用 archtype_candidates_* 读取并释放。（1.10 起）
 #[no_mangle]
 pub extern "C" fn archtype_recent_emoji_list() -> *mut crate::ffi::ArchtypeCandidates {
-    let texts: Vec<CString> = crate::recent_emoji::list().iter().map(|t| to_c(t)).collect();
+    let texts: Vec<CString> = crate::recent_emoji::list()
+        .iter()
+        .map(|t| to_c(t))
+        .collect();
     let scores = vec![0.0; texts.len()];
-    Box::into_raw(Box::new(crate::ffi::ArchtypeCandidates::plain(texts, scores)))
+    Box::into_raw(Box::new(crate::ffi::ArchtypeCandidates::plain(
+        texts, scores,
+    )))
 }
 
 /// 攒着的原文（互译），没有是空串。在同一个会话下一次调用前有效。（1.10 起）
 #[no_mangle]
-pub unsafe extern "C" fn archtype_session_translate_source(session: *mut ArchtypeSession) -> *const c_char {
+pub unsafe extern "C" fn archtype_session_translate_source(
+    session: *mut ArchtypeSession,
+) -> *const c_char {
     let Some(handle) = (unsafe { session.as_mut() }) else {
         return EMPTY.as_ptr();
     };
@@ -1046,7 +1060,9 @@ pub unsafe extern "C" fn archtype_session_input(session: *mut ArchtypeSession) -
 
 /// 还没选词的那部分原始输入。
 #[no_mangle]
-pub unsafe extern "C" fn archtype_session_remaining(session: *mut ArchtypeSession) -> *const c_char {
+pub unsafe extern "C" fn archtype_session_remaining(
+    session: *mut ArchtypeSession,
+) -> *const c_char {
     let Some(handle) = (unsafe { session.as_mut() }) else {
         return ptr::null();
     };

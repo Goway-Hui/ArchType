@@ -156,7 +156,11 @@ pub fn to_i16(samples: &[f32]) -> Vec<i16> {
 /// 同 [`to_i16`]，写进调用方复用的缓冲。
 pub fn to_i16_into(samples: &[f32], out: &mut Vec<i16>) {
     out.clear();
-    out.extend(samples.iter().map(|v| (v.clamp(-1.0, 1.0) * 32767.0) as i16));
+    out.extend(
+        samples
+            .iter()
+            .map(|v| (v.clamp(-1.0, 1.0) * 32767.0) as i16),
+    );
 }
 
 /// 多声道取平均转单声道
@@ -174,7 +178,11 @@ pub fn downmix_into(interleaved: &[f32], channels: u16, out: &mut Vec<f32>) {
         return;
     }
     let ch = channels as usize;
-    out.extend(interleaved.chunks(ch).map(|frame| frame.iter().sum::<f32>() / ch as f32));
+    out.extend(
+        interleaved
+            .chunks(ch)
+            .map(|frame| frame.iter().sum::<f32>() / ch as f32),
+    );
 }
 
 /// 固定帧长切分器

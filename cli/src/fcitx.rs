@@ -76,20 +76,32 @@ fn parse_group_info(reply: &str) -> (String, String, Vec<(String, String)>) {
 /// 只取 `[` 与 `]` 之间的 `('name', 'layout')` 对。以前从 reply 开头找 `('`，命中的是外层
 /// `('Default', 'us', ...)`，解析出脏数据，回写时 `SetInputMethodGroupInfo` 必然失败。
 fn parse_items(reply: &str) -> Vec<(String, String)> {
-    let Some(open) = reply.find('[') else { return Vec::new() };
-    let Some(close) = reply[open..].find(']') else { return Vec::new() };
+    let Some(open) = reply.find('[') else {
+        return Vec::new();
+    };
+    let Some(close) = reply[open..].find(']') else {
+        return Vec::new();
+    };
     let inner = &reply[open + 1..open + close];
     let mut items = Vec::new();
     let mut at = 0;
     while let Some(start) = inner[at..].find("('") {
         let start = at + start;
-        let Some((name, after_name)) = read_quoted(inner, start + 1) else { break };
+        let Some((name, after_name)) = read_quoted(inner, start + 1) else {
+            break;
+        };
         // 跳过 `,` 与空白，读布局字符串
         let mut j = after_name;
-        while inner.as_bytes().get(j).is_some_and(|b| *b == b' ' || *b == b',') {
+        while inner
+            .as_bytes()
+            .get(j)
+            .is_some_and(|b| *b == b' ' || *b == b',')
+        {
             j += 1;
         }
-        let Some((item_layout, after_layout)) = read_quoted(inner, j) else { break };
+        let Some((item_layout, after_layout)) = read_quoted(inner, j) else {
+            break;
+        };
         if !name.is_empty() {
             items.push((name, item_layout));
         }
@@ -152,7 +164,13 @@ pub fn system_keyboard_layout() -> String {
         let Some((key, value)) = line.trim().split_once(':') else {
             continue;
         };
-        let value = value.trim().split(',').next().unwrap_or("").trim().to_string();
+        let value = value
+            .trim()
+            .split(',')
+            .next()
+            .unwrap_or("")
+            .trim()
+            .to_string();
         match key {
             "X11 Layout" => layout = value,
             "X11 Variant" => variant = value,
@@ -190,7 +208,9 @@ pub fn profile_add_archtype() -> Result<String, String> {
                  [GroupOrder]\n0=Default\n"
             );
             std::fs::write(&path, body).map_err(|error| format!("建不了 {path}：{error}"))?;
-            return Ok(format!("新建了 fcitx5 输入法列表：键盘 {layout} + ArchType"));
+            return Ok(format!(
+                "新建了 fcitx5 输入法列表：键盘 {layout} + ArchType"
+            ));
         }
         Err(error) => return Err(format!("读不了 {path}：{error}")),
     };
@@ -221,7 +241,9 @@ pub fn profile_add_archtype() -> Result<String, String> {
     };
     let first = lookup("GroupOrder", "0");
     if first.is_empty() {
-        return Err(format!("看不懂 {path}，请在 fcitx5 配置里手动添加 ArchType"));
+        return Err(format!(
+            "看不懂 {path}，请在 fcitx5 配置里手动添加 ArchType"
+        ));
     }
     let index = sections
         .iter()
@@ -324,7 +346,10 @@ mod tests {
     fn keeps_item_layouts_and_escapes() {
         let reply = "('Default', 'us', [('keyboard-us', 'us'), ('archtype', 'de-nodeadkeys')])";
         let (_, _, items) = parse_group_info(reply);
-        assert_eq!(items[1], ("archtype".to_string(), "de-nodeadkeys".to_string()));
+        assert_eq!(
+            items[1],
+            ("archtype".to_string(), "de-nodeadkeys".to_string())
+        );
 
         let reply = "('Default', 'us', [('it\\'s', '')])";
         let (_, _, items) = parse_group_info(reply);

@@ -40,7 +40,9 @@ impl Runtime {
         let config = Config::load(&layout.config_path().to_string_lossy());
         let stamp = modified(&layout.config_path());
         let translator = TranslatorStore::new();
-        translator.get().configure(translate_config(&config, &layout));
+        translator
+            .get()
+            .configure(translate_config(&config, &layout));
         let stats = Stats::new(
             &crate::stats::stats_path(&layout.support_dir),
             config.typing_stats,

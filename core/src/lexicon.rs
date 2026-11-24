@@ -20,6 +20,7 @@ use anyhow::{anyhow, bail, Context, Result};
 
 use crate::lexstore::{rare_last, Arr, Blob, FpSet, IdTable, Postings, MAX_IDS};
 use crate::syllable::{Syllable, SyllableId, SyllableQuery};
+use crate::sync::write_lock;
 
 /// 词库快照的魔数与格式版本。格式一变就改版本号，旧快照自动失效。
 ///
@@ -762,7 +763,7 @@ impl MemoryLexicon {
         let mut at = header;
         for s in &sections {
             offsets.push(at);
-            at = (at + s.len() + 7) / 8 * 8;
+            at = (at + s.len()).div_ceil(8) * 8;
         }
         let mut buf: Vec<u8> = vec![0; at];
         for (s, &off) in sections.iter().zip(&offsets) {
@@ -2043,7 +2044,7 @@ pub fn split_syllables(text: &str) -> Option<String> {
                 continue;
             }
             if let Some((count, _)) = best[i + len] {
-                if best[i].map_or(true, |(c, _)| count + 1 < c) {
+                if best[i].is_none_or(|(c, _)| count + 1 < c) {
                     best[i] = Some((count + 1, len));
                 }
             }
@@ -2148,7 +2149,7 @@ pub fn guess_pinyin(lexicon: &[u8], word: &str) -> Option<String> {
             .ok()
             .and_then(|f| f.trim().parse::<f64>().ok())
             .unwrap_or(0.0);
-        if best[slot].map_or(true, |(old, _)| freq > old) {
+        if best[slot].is_none_or(|(old, _)| freq > old) {
             best[slot] = Some((freq, reading));
         }
     }
@@ -2894,7 +2895,7 @@ mod tests {
         // 都要和以前每次从头建的一样
         let syllables = ["ni", "hao", "shi", "si", "zhi", "zi", "an", "ang"];
         let mut queries: Vec<Vec<SyllableQuery>> = Vec::new();
-        let letters = [b'n', b'h', b's', b'z', b'a'];
+        let letters = *b"nhsza";
         for a in syllables {
             queries.push(full(a));
             for b in syllables {

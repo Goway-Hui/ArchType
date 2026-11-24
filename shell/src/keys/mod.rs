@@ -404,21 +404,20 @@ pub fn voice_wave(levels: &[i32]) -> String {
     out
 }
 
-
 // 两个键表都是纯 Rust，所有平台都编译（测试在 Linux 上也跑）；导出按平台选。
 pub mod macos;
 pub mod win;
 
-#[cfg(target_os = "windows")]
-pub use win::{translate_key_down, virtual_key, VoiceKey};
 #[cfg(not(target_os = "windows"))]
 pub use macos::{translate_key_down, virtual_key, VoiceKey};
+#[cfg(target_os = "windows")]
+pub use win::{translate_key_down, virtual_key, VoiceKey};
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
-#[test]
+    #[test]
     fn cocoa_flags_to_modifiers() {
         let m = Modifiers::from_cocoa((1 << 17) | (1 << 18) | (1 << 20));
         assert_eq!(
@@ -430,7 +429,7 @@ mod tests {
         assert!(!m.contains(Modifiers::ALT));
     }
 
-#[test]
+    #[test]
     fn shortcut_parse_and_name_round_trip() {
         let s = Shortcut::parse("Control+period").unwrap();
         assert_eq!(s.keysym, 0x2e);
@@ -450,7 +449,7 @@ mod tests {
         assert!(Shortcut::parse("Control+").is_none());
     }
 
-#[test]
+    #[test]
     fn shortcut_matches_ignores_caps_and_case() {
         let s = Shortcut::parse("Control+Shift+E").unwrap();
         let key = KeyInput::new(
@@ -476,14 +475,14 @@ mod tests {
         assert!(!s.matches(key));
     }
 
-#[test]
+    #[test]
     fn voice_wave_always_has_six_bars() {
         assert_eq!(voice_wave(&[]), "▁▁▁▁▁▁");
         assert_eq!(voice_wave(&[100]), "▁▁▁▁▁█");
         assert_eq!(voice_wave(&[0, 50, 100]).chars().count(), 6);
     }
 
-#[test]
+    #[test]
     fn shortcut_label_uses_mac_names() {
         assert_eq!(Shortcut::EMOJI_DEFAULT.label(), "Control + .");
         let s = Shortcut::parse("Control+Shift+space").unwrap();

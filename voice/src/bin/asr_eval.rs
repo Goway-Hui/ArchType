@@ -106,7 +106,7 @@ fn main() {
         let r = normalize(reference);
         total += r.len();
         items += 1;
-        let mut row = format!("{name}");
+        let mut row = name.to_string();
         for (k, (_, prev)) in partials.iter().enumerate() {
             let mut st = Stream::new(model.clone());
             let mut shown: Vec<char> = Vec::new();

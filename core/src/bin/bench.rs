@@ -58,10 +58,9 @@ fn main() {
             "--nnlm" => nnlm_path = Some(value(&args, &mut i, "--nnlm")),
             "--fuzzy" => {
                 let raw = value(&args, &mut i, "--fuzzy");
-                fuzzy_groups = raw.strip_prefix("0x").map_or_else(
-                    || raw.parse().ok(),
-                    |hex| u32::from_str_radix(hex, 16).ok(),
-                );
+                fuzzy_groups = raw
+                    .strip_prefix("0x")
+                    .map_or_else(|| raw.parse().ok(), |hex| u32::from_str_radix(hex, 16).ok());
                 if fuzzy_groups.is_none() {
                     eprintln!("--fuzzy 要一个数（或 0x 开头的十六进制）");
                     std::process::exit(2);
@@ -161,7 +160,9 @@ fn main() {
     config.traditional = s2t_path.is_some();
     let mut engine = Engine::new(lex, lm).with_config(config);
     if let Some(path) = &domain_lm_path {
-        engine.set_domain_lm(Some(archtype_core::lm::load_lm(path).expect("载入领域模型")));
+        engine.set_domain_lm(Some(
+            archtype_core::lm::load_lm(path).expect("载入领域模型"),
+        ));
     }
     if let Some(path) = &s2t_path {
         let started = Instant::now();
@@ -260,7 +261,11 @@ fn dump_candidates(engine: &Engine, path: &str, out: &str) {
                 let prefix = &input[..end];
                 let _ = writeln!(text, "## {prefix}\t{ctx}");
                 for c in engine.input_at(prefix, 0).iter().take(50) {
-                    let _ = writeln!(text, "{}\t{}\t{}\t{:.9}", c.text, c.pinyin, c.consumed, c.score);
+                    let _ = writeln!(
+                        text,
+                        "{}\t{}\t{}\t{:.9}",
+                        c.text, c.pinyin, c.consumed, c.score
+                    );
                 }
             }
         }
@@ -287,7 +292,10 @@ fn wubi_latency(engine: &Engine, path: &str) {
         .collect();
     cases.extend(["znihao", "zwoshizhongguoren", "zshurufa", "zriqi"].map(String::from));
     let mut session = Session::with_engine(engine);
-    session.configure(Config { wubi: true, ..Config::default() });
+    session.configure(Config {
+        wubi: true,
+        ..Config::default()
+    });
     let mut samples: Vec<(f64, String)> = Vec::new();
     for code in &cases {
         let mut prefix = String::new();

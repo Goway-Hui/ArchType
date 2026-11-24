@@ -53,7 +53,10 @@ pub unsafe extern "C" fn archtype_stats_free(stats: *mut ArchtypeStats) {
 
 /// 打开（非 0）或关上（0）统计。关上时丢掉内存里还没交出去的计数，以后什么都不记。
 #[no_mangle]
-pub unsafe extern "C" fn archtype_stats_set_enabled(stats: *mut ArchtypeStats, enabled: c_int) -> c_int {
+pub unsafe extern "C" fn archtype_stats_set_enabled(
+    stats: *mut ArchtypeStats,
+    enabled: c_int,
+) -> c_int {
     let Some(stats) = (unsafe { stats.as_mut() }) else {
         set_last_error("stats is null");
         return -1;
@@ -114,9 +117,14 @@ pub unsafe extern "C" fn archtype_stats_commit(
     };
     let source = unsafe { cstr(source) }.unwrap_or_default();
     let scheme = unsafe { cstr(scheme) }.unwrap_or_default();
-    stats
-        .recorder
-        .commit(&text, &source, &scheme, cand_index.max(0) as u32, flags, now_ms);
+    stats.recorder.commit(
+        &text,
+        &source,
+        &scheme,
+        cand_index.max(0) as u32,
+        flags,
+        now_ms,
+    );
     0
 }
 
@@ -192,7 +200,15 @@ mod tests {
         let source = CString::new("quanpin").unwrap();
         let now = archtype_stats_now_ms();
         let commit = |flags| unsafe {
-            archtype_stats_commit(stats, text.as_ptr(), source.as_ptr(), std::ptr::null(), 1, flags, now)
+            archtype_stats_commit(
+                stats,
+                text.as_ptr(),
+                source.as_ptr(),
+                std::ptr::null(),
+                1,
+                flags,
+                now,
+            )
         };
         assert_eq!(commit(0), 0);
         assert_eq!(unsafe { archtype_stats_flush(stats, now) }, 0);
@@ -205,7 +221,10 @@ mod tests {
         assert_eq!(commit(ARCHTYPE_STATS_SENSITIVE), 0);
         // 键码超过 63 的（这里 8 + 464 = Fn）不出错
         assert_eq!(unsafe { archtype_stats_key(stats, 0, 472, 1, 0, now) }, 0);
-        assert_eq!(unsafe { archtype_stats_key(stats, 0, 100_000, 1, 0, now) }, 0);
+        assert_eq!(
+            unsafe { archtype_stats_key(stats, 0, 100_000, 1, 0, now) },
+            0
+        );
         assert_eq!(unsafe { archtype_stats_flush(stats, now) }, 0);
         assert_eq!(unsafe { archtype_stats_wait(stats, 5_000) }, 0);
         let document = stats::Document::load(&file).unwrap();

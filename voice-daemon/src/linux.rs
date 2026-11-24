@@ -5,12 +5,12 @@
 
 use crate::Options;
 use anyhow::{anyhow, Context, Result};
-use std::sync::mpsc::{channel, Sender};
-use std::time::{Duration, Instant};
 use archtype_voice::{
     asr::{MockChannel, MultiChannel, ProcessChannel},
     ClipboardSink, CommandSink, TextSink, VoiceSession,
 };
+use std::sync::mpsc::{channel, Sender};
+use std::time::{Duration, Instant};
 
 #[derive(Debug, Clone, Copy)]
 pub enum KeyMsg {
@@ -69,7 +69,7 @@ pub fn run(opt: Options) -> Result<()> {
 }
 
 fn stops(actions: &[archtype_voice::Action]) -> bool {
-    actions.iter().any(|a| *a == archtype_voice::Action::Stop)
+    actions.contains(&archtype_voice::Action::Stop)
 }
 
 fn log_actions(actions: &[archtype_voice::Action]) {
@@ -262,13 +262,15 @@ fn hotkey_init(name: &str) -> Result<(x11rb::rust_connection::RustConnection, u8
 
     // 只抓这个键本身、锁定修饰（CapsLock/NumLock）组合，以及它作为 Mod1 按下的情况：
     // AnyModifier 会把 Ctrl+Alt_R、AltGr 组合字符一起抢走
-    for modifiers in [
-        ModMask::from(0u16),
-        ModMask::LOCK,
-        ModMask::M2,
-        ModMask::M1,
-    ] {
-        conn.grab_key(true, root, modifiers, keycode, GrabMode::ASYNC, GrabMode::ASYNC)?;
+    for modifiers in [ModMask::from(0u16), ModMask::LOCK, ModMask::M2, ModMask::M1] {
+        conn.grab_key(
+            true,
+            root,
+            modifiers,
+            keycode,
+            GrabMode::ASYNC,
+            GrabMode::ASYNC,
+        )?;
     }
     conn.flush()?;
     println!("已占用 X11 键位 keycode={keycode} ");

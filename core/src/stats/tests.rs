@@ -111,7 +111,11 @@ fn switched_off_counts_nothing_and_writes_nothing() {
     drop(recorder);
     assert!(!path.exists(), "关着时不建文件");
     assert!(!clear_marker_path(&path).exists());
-    assert_eq!(fs::read_dir(path.parent().unwrap()).unwrap().count(), 0, "目录里什么都没有");
+    assert_eq!(
+        fs::read_dir(path.parent().unwrap()).unwrap().count(),
+        0,
+        "目录里什么都没有"
+    );
 }
 
 #[test]
@@ -165,7 +169,10 @@ fn only_aggregates_are_written() {
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
-        assert_eq!(fs::metadata(&path).unwrap().permissions().mode() & 0o777, 0o600);
+        assert_eq!(
+            fs::metadata(&path).unwrap().permissions().mode() & 0o777,
+            0o600
+        );
     }
 }
 
@@ -301,7 +308,10 @@ fn many_commits_are_handed_to_the_writer_without_explicit_flush() {
     }
     assert!(recorder.pending.is_empty(), "攒够了交给写文件线程");
     recorder.wait(None).unwrap();
-    assert_eq!(Document::load(&path).unwrap().days[&local_day(now)].chars, FLUSH_COMMITS as u64);
+    assert_eq!(
+        Document::load(&path).unwrap().days[&local_day(now)].chars,
+        FLUSH_COMMITS as u64
+    );
 }
 
 #[test]
@@ -387,7 +397,10 @@ fn damaged_or_oversized_file_is_moved_aside() {
     recorder.commit("字", "quanpin", "", 0, 0, now + 1);
     let document = saved(&mut recorder, &path, now + 1);
     assert_eq!(document.days[&local_day(now)].chars, 1);
-    assert_eq!(fs::metadata(bad_path(&path)).unwrap().len(), big.len() as u64);
+    assert_eq!(
+        fs::metadata(bad_path(&path)).unwrap().len(),
+        big.len() as u64
+    );
     clear(&path).unwrap();
     assert!(!bad_path(&path).exists(), "清空也删掉挪开的那份");
 }
@@ -402,12 +415,19 @@ fn oversized_output_drops_oldest_days() {
     let one = day.to_json().to_string().len();
     let needed = MAX_FILE_BYTES / one + 10;
     for i in 0..needed {
-        document.days.insert(format!("{:04}-01-01", 1000 + i), day.clone());
+        document
+            .days
+            .insert(format!("{:04}-01-01", 1000 + i), day.clone());
     }
     let bytes = document.take_bytes_capped();
     assert!(bytes.len() <= MAX_FILE_BYTES);
-    assert!(!document.days.contains_key("1000-01-01"), "从最早的一天删起");
-    assert!(document.days.contains_key(&format!("{:04}-01-01", 1000 + needed - 1)));
+    assert!(
+        !document.days.contains_key("1000-01-01"),
+        "从最早的一天删起"
+    );
+    assert!(document
+        .days
+        .contains_key(&format!("{:04}-01-01", 1000 + needed - 1)));
 }
 
 #[test]

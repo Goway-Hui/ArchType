@@ -21,6 +21,6 @@ pub mod runtime;
 pub mod stats;
 pub mod translate;
 pub mod update;
-pub mod voice;
 pub mod view;
+pub mod voice;
 pub mod window_mode;

@@ -419,7 +419,11 @@ pub unsafe extern "C" fn archtype_engine_save_user_dict_async(
     engine: *mut ArchtypeEngineHandle,
     path: *const c_char,
 ) -> c_int {
-    unsafe { save_async(engine, path, |engine, path| engine.save_user_dict_async(path)) }
+    unsafe {
+        save_async(engine, path, |engine, path| {
+            engine.save_user_dict_async(path)
+        })
+    }
 }
 
 /// 在后台存用户输入习惯（1.11），同 [`archtype_engine_save_user_dict_async`]。
@@ -465,7 +469,9 @@ pub unsafe extern "C" fn archtype_engine_save_wait(
         set_last_error("engine is null");
         return -1;
     };
-    let timeout = u64::try_from(timeout_ms).ok().map(std::time::Duration::from_millis);
+    let timeout = u64::try_from(timeout_ms)
+        .ok()
+        .map(std::time::Duration::from_millis);
     match handle.engine.save_wait(timeout) {
         crate::saver::SaveStatus::Done => 0,
         crate::saver::SaveStatus::Pending => 1,
@@ -1321,7 +1327,11 @@ mod tests {
         let missing = CString::new("/nonexistent/nlrgpt2_nnlm.bin").unwrap();
         assert_eq!(unsafe { archtype_nnlm_check(missing.as_ptr()) }, -1);
         // 别的文件（词库）不是模型
-        let lexicon = CString::new(concat!(env!("CARGO_MANIFEST_DIR"), "/data/demo_lexicon.tsv")).unwrap();
+        let lexicon = CString::new(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/data/demo_lexicon.tsv"
+        ))
+        .unwrap();
         assert_eq!(unsafe { archtype_nnlm_check(lexicon.as_ptr()) }, -1);
     }
 }

@@ -134,7 +134,10 @@ impl Day {
     fn merge(&mut self, other: &Self) {
         self.chars = add_count(self.chars, other.chars);
         self.kinds.merge(&other.kinds);
-        self.active_ms = self.active_ms.saturating_add(other.active_ms).min(DAY_MS as u64);
+        self.active_ms = self
+            .active_ms
+            .saturating_add(other.active_ms)
+            .min(DAY_MS as u64);
         merge_map(&mut self.keys, &other.keys);
         merge_map(&mut self.sources, &other.sources);
         merge_map(&mut self.schemes, &other.schemes);
@@ -216,7 +219,8 @@ impl Document {
         if metadata.len() > MAX_FILE_BYTES as u64 {
             return Err(LoadError::Bad("统计文件超过 16 MB".to_string()));
         }
-        let bytes = fs::read(path).map_err(|error| LoadError::Io(format!("读统计文件失败：{error}")))?;
+        let bytes =
+            fs::read(path).map_err(|error| LoadError::Io(format!("读统计文件失败：{error}")))?;
         Self::from_bytes(&bytes).map_err(LoadError::Bad)
     }
 
@@ -288,7 +292,10 @@ pub fn clear_marker_path(path: &Path) -> PathBuf {
 
 /// 坏了的统计文件挪到这里（`stats.json.bad`），只留最近的一份。
 pub fn bad_path(path: &Path) -> PathBuf {
-    let mut name = path.file_name().map(|n| n.to_os_string()).unwrap_or_default();
+    let mut name = path
+        .file_name()
+        .map(|n| n.to_os_string())
+        .unwrap_or_default();
     name.push(".bad");
     path.with_file_name(name)
 }
@@ -470,7 +477,13 @@ impl Recorder {
         if day.is_empty() {
             return;
         }
-        let slot = self.pending.entry(day).or_default().keys.entry(id.to_string()).or_default();
+        let slot = self
+            .pending
+            .entry(day)
+            .or_default()
+            .keys
+            .entry(id.to_string())
+            .or_default();
         *slot = add_count(*slot, 1);
         if now_ms - self.last_submit_ms >= FLUSH_INTERVAL_MS {
             self.flush(now_ms);
@@ -523,11 +536,16 @@ impl Recorder {
         }
         let gap = now_ms - self.last_commit_ms;
         if self.last_commit_ms > 0 && gap > 0 && gap <= ACTIVE_GAP_MS {
-            entry.active_ms = entry.active_ms.saturating_add(gap as u64).min(DAY_MS as u64);
+            entry.active_ms = entry
+                .active_ms
+                .saturating_add(gap as u64)
+                .min(DAY_MS as u64);
         }
         self.last_commit_ms = now_ms;
         self.pending_commits += 1;
-        if self.pending_commits >= FLUSH_COMMITS || now_ms - self.last_submit_ms >= FLUSH_INTERVAL_MS {
+        if self.pending_commits >= FLUSH_COMMITS
+            || now_ms - self.last_submit_ms >= FLUSH_INTERVAL_MS
+        {
             self.flush(now_ms);
         }
     }
@@ -615,7 +633,9 @@ impl Writer {
             return Err("写打字统计的线程已经退出".to_string());
         }
         let result = match timeout {
-            None => answer.recv().map_err(|_| "写打字统计的线程已经退出".to_string()),
+            None => answer
+                .recv()
+                .map_err(|_| "写打字统计的线程已经退出".to_string()),
             Some(timeout) => answer
                 .recv_timeout(timeout)
                 .map_err(|_| "等写打字统计超时".to_string()),
@@ -689,7 +709,8 @@ impl WriterState {
                 // 坏了、太大（不是我们写的）：挪开留一份，从空的重新记
                 let bad = bad_path(&self.path);
                 eprintln!("archtype: {reason}，挪到 {} 重新记", bad.display());
-                fs::rename(&self.path, &bad).map_err(|error| format!("挪开坏的统计文件失败：{error}"))?;
+                fs::rename(&self.path, &bad)
+                    .map_err(|error| format!("挪开坏的统计文件失败：{error}"))?;
                 Document::default()
             }
         };
@@ -1070,7 +1091,12 @@ pub fn local_day(now_ms: i64) -> String {
     if unsafe { libc::localtime_r(&time, &mut tm) }.is_null() {
         return String::new();
     }
-    format!("{:04}-{:02}-{:02}", tm.tm_year + 1900, tm.tm_mon + 1, tm.tm_mday)
+    format!(
+        "{:04}-{:02}-{:02}",
+        tm.tm_year + 1900,
+        tm.tm_mon + 1,
+        tm.tm_mday
+    )
 }
 
 /// Windows：取本地时间（调用时 `now_ms` 就是当前时间，统计只关心「今天」）。
@@ -1143,7 +1169,11 @@ fn map_of_numbers(value: Option<&Value>) -> BTreeMap<String, u64> {
 }
 
 fn map_json(map: &BTreeMap<String, u64>) -> Value {
-    Value::Object(map.iter().map(|(key, value)| (key.clone(), json!(value))).collect())
+    Value::Object(
+        map.iter()
+            .map(|(key, value)| (key.clone(), json!(value)))
+            .collect(),
+    )
 }
 
 /// 原子写，文件只给自己读写（0600）：同目录临时文件写完、刷到盘上再 rename。
@@ -1152,7 +1182,10 @@ fn write_private(path: &Path, bytes: &[u8]) -> Result<(), String> {
         return Err("统计文件没有目录".to_string());
     };
     fs::create_dir_all(parent).map_err(|error| format!("建统计目录失败：{error}"))?;
-    let name = path.file_name().and_then(|name| name.to_str()).unwrap_or("stats.json");
+    let name = path
+        .file_name()
+        .and_then(|name| name.to_str())
+        .unwrap_or("stats.json");
     let temporary = parent.join(format!(".{name}.{}.tmp", std::process::id()));
     let result = (|| -> std::io::Result<()> {
         let mut file = {

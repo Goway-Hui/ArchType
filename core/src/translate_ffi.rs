@@ -187,7 +187,9 @@ pub unsafe extern "C" fn archtype_translate_poll(handle: *mut ArchtypeTranslator
 
 /// 快照里到目前的译文（状态是 RUNNING 时可能还没写完；没有就是空串）。
 #[no_mangle]
-pub unsafe extern "C" fn archtype_translate_text(handle: *const ArchtypeTranslator) -> *const c_char {
+pub unsafe extern "C" fn archtype_translate_text(
+    handle: *const ArchtypeTranslator,
+) -> *const c_char {
     unsafe { handle.as_ref() }.map_or(empty(), |h| h.text.as_ptr())
 }
 

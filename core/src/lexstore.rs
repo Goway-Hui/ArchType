@@ -93,7 +93,7 @@ unsafe impl Sync for Blob {}
 impl Blob {
     /// 复制一份字节（测试、读不了映射的平台用）。
     pub(crate) fn from_bytes(data: &[u8]) -> Blob {
-        let mut heap = vec![0u64; (data.len() + 7) / 8];
+        let mut heap = vec![0u64; data.len().div_ceil(8)];
         // 安全：heap 至少 data.len() 字节
         unsafe {
             std::ptr::copy_nonoverlapping(
@@ -117,7 +117,7 @@ impl Blob {
             use std::os::unix::io::AsRawFd;
             let file = std::fs::File::open(path)?;
             let len = usize::try_from(file.metadata()?.len())
-                .map_err(|_| std::io::Error::new(std::io::ErrorKind::Other, "快照太大"))?;
+                .map_err(|_| std::io::Error::other("快照太大"))?;
             if len == 0 {
                 return Ok(Blob::from_bytes(&[]));
             }
@@ -154,8 +154,8 @@ impl Blob {
         use std::io::Read;
         let mut file = std::fs::File::open(path)?;
         let len = usize::try_from(file.metadata()?.len())
-            .map_err(|_| std::io::Error::new(std::io::ErrorKind::Other, "快照太大"))?;
-        let mut heap = vec![0u64; (len + 7) / 8];
+            .map_err(|_| std::io::Error::other("快照太大"))?;
+        let mut heap = vec![0u64; len.div_ceil(8)];
         // 安全：heap 至少 len 字节，u64 任何字节都合法
         let bytes = unsafe { std::slice::from_raw_parts_mut(heap.as_mut_ptr().cast::<u8>(), len) };
         file.read_exact(bytes)?;
@@ -478,7 +478,7 @@ pub(crate) fn all_below(values: &[u32], n: usize) -> bool {
 pub(crate) fn strictly_increasing(ends: &[u32], last: usize) -> bool {
     let increasing = ends.windows(2).fold(true, |ok, w| ok & (w[0] < w[1]));
     increasing
-        && ends.first().map_or(true, |&e| e > 0)
+        && ends.first().is_none_or(|&e| e > 0)
         && ends.last().map_or(0, |&e| e as usize) == last
 }
 

@@ -146,7 +146,8 @@ mod tests {
 
     #[test]
     fn removes_stale_temps_but_not_fresh_ones() {
-        let dir = std::env::temp_dir().join(format!("archtype-fsutil-stale-{}", std::process::id()));
+        let dir =
+            std::env::temp_dir().join(format!("archtype-fsutil-stale-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
         let path = dir.join("user.tsv");
         // 两小时前被杀的进程留下的；另一个进程刚建的（正在写）；别的文件的临时文件
@@ -196,7 +197,8 @@ mod tests {
 
     #[test]
     fn read_lines_lossy_drops_only_the_bad_lines() {
-        let dir = std::env::temp_dir().join(format!("archtype-fsutil-lossy-{}", std::process::id()));
+        let dir =
+            std::env::temp_dir().join(format!("archtype-fsutil-lossy-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
         let path = dir.join("user.tsv");
         let mut data = "第一行\r\n".as_bytes().to_vec();

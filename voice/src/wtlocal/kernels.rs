@@ -1,4 +1,7 @@
 //! 数值内核：int8 动态量化矩阵乘（aarch64 sdot / x86_64 AVX2 / 标量兜底）与 f32 点积
+// MSRV 1.82：`as_chunks` 与 `is_multiple_of` 要更新的编译器，这里保持旧写法。
+#![allow(clippy::chunks_exact_to_as_chunks, clippy::manual_is_multiple_of)]
+
 use super::parallel;
 
 /// 按行动态量化到 int8（对称，每行一个 scale）
