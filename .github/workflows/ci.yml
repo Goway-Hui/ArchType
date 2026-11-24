@@ -637,9 +637,19 @@ jobs:
           export ARCHTYPE_SETTINGS_ARCHIVE="$(ls "$PWD"/dist/settings/archtype-settings-nsh-*-linux-*.tar.gz | head -1)"
           test -f "$ARCHTYPE_SETTINGS_ARCHIVE"
           set -o pipefail
+          # 先断言 settings 的真实来源是本地 artifact（本地包在 store 里叫 archtype-settings.tar.gz）
+          settings_src=$(nix eval --impure --raw ".#default.settingsSource")
+          echo "settings 来源: $settings_src"
+          case "$settings_src" in
+            */archtype-settings.tar.gz) ;;
+            *)
+              echo "settings 不是本地 artifact（$settings_src），settingsArchive 没接上" >&2
+              exit 1
+              ;;
+          esac
           nix build .#default -L --impure "${override[@]}" 2>&1 | tee /tmp/nix-build.log
           nix flake check -L --impure "${override[@]}" 2>&1 | tee -a /tmp/nix-build.log
-          # 设置界面包必须来自本地 artifact；又去发布页下载就说明 settingsArchive 没接上
+          # 再兜一层：没有从发布页下载设置界面包
           if grep -E 'downloading.*archtype-settings-nsh' /tmp/nix-build.log; then
             echo "设置界面包又去发布页下载了，本地 settingsArchive 没生效" >&2
             exit 1

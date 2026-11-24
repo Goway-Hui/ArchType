@@ -184,6 +184,8 @@ EOF
 
   passthru = {
     inherit data dataVersion;
+    # CI 用它断言设置界面包来自本轮 artifact（store 名是本地固定名），不是发布页下载的
+    settingsSource = settingsPackage;
   };
 
   meta = {
