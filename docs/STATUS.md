@@ -71,7 +71,7 @@
 
 **在两端的 CI 上验证过**：
 
-- 611 项 Rust 测试（`cargo test --workspace`，0.9.1 时；分布见 `cargo test` 输出）
+- 610 项 Rust 测试（`cargo test --workspace`，0.9.2 时；分布见 `cargo test` 输出）
 - C ABI 契约测试（`./scripts/abi-smoke.sh`，含纠错、句首词、候选拼音）
 - macOS：外壳（`macos-rs`）编译、`archtype-shell` 的 55 项测试、打包 `.app`/`.pkg`、`--selftest`、真装一遍 pkg
 

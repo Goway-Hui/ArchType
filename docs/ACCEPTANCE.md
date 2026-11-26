@@ -1,7 +1,7 @@
 # 验收记录
 
 > 本页是提交 `e6b4cf5` 的验收记录，保留用于复核当时的数字；
-> 当前测试分布（`cargo test --workspace` 611 项）见 [STATUS.md](STATUS.md)。
+> 当前测试分布（`cargo test --workspace` 610 项）见 [STATUS.md](STATUS.md)。
 
 在最后一次提交上完整跑一遍所有验证，记录结果以便复核。
 
