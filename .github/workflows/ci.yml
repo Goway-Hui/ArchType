@@ -283,6 +283,12 @@ jobs:
     steps:
       - name: 系统依赖
         run: |
+          # Ubuntu resolute 的 security 镜像偶发 pool 404（libtiff6 等被安全更新重发、索引先变）：
+          # 改用 archive 上的 security suite，索引和 pool 来自同一镜像。debian/deepin 容器里这行不生效。
+          for f in /etc/apt/sources.list /etc/apt/sources.list.d/*; do
+            [ -f "$f" ] || continue
+            sed -i 's|http://security.ubuntu.com/ubuntu|http://archive.ubuntu.com/ubuntu|g' "$f"
+          done
           apt-get update
           apt-get install -y --no-install-recommends \
             build-essential pkg-config cmake extra-cmake-modules \
