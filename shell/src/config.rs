@@ -347,7 +347,7 @@ pub struct Config {
     pub auto_pair_punct: bool,
     pub select_keys: SelectKeys,
     pub pick_char: bool,
-    /// 联想：上屏以后给出常跟在后面的词
+    /// 联想：没在打字时候选栏给出常跟在后面的词
     pub association: bool,
     pub date_time: bool,
     pub calculator: bool,

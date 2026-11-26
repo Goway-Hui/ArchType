@@ -134,7 +134,8 @@ pub const ARCHTYPE_PANEL_NORMAL: c_int = 0;
 pub const ARCHTYPE_PANEL_EXPANDED: c_int = 1;
 pub const ARCHTYPE_PANEL_EMOJI: c_int = 2;
 pub const ARCHTYPE_PANEL_TOOL: c_int = 3;
-/// 1.11 起：上屏以后的联想（`ArchtypeSessionConfig.association` 开着时才有）。
+/// 1.11 起：联想。0.9.2 起联想词直接进候选列表（普通页），这个值不再产生；
+/// 常量保留，旧外壳遇到它仍有对应的渲染逻辑。
 pub const ARCHTYPE_PANEL_ASSOCIATION: c_int = 4;
 
 pub const ARCHTYPE_TOOL_NONE: c_int = 0;

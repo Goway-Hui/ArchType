@@ -489,9 +489,10 @@ typedef struct {
     int wubi_hint;       /* 1.10 起：五笔逐码提示的候选后面显示还要打的码（ArchtypeCandidateInfo.comment），默认 1 */
     int translate_key;   /* 1.10 起：另设了进出「译」的快捷键（ARCHTYPE_KEY_ACTION_TOGGLE_TRANSLATE），
                           * 单按 Shift 只在中 ↔ 英之间切，默认 0 */
-    int association;     /* 1.11 起：上屏以后的联想（选词、整句上屏以后给出一页常跟在后面的词，
-                          * frame->panel 是 ARCHTYPE_PANEL_ASSOCIATION），默认 0：外壳要会画联想才开，
-                          * 设置里 Association 的默认值是开。五笔、「译」、密码框（KEY_HINT_NO_TRANSLATE）不出 */
+    int association;     /* 1.11 起：联想。0.9.2 起没在打字时候选栏直接给出常跟在后面的词（普通候选页，
+                          * 不是 ARCHTYPE_PANEL_ASSOCIATION；archtype_session_association 表示这批候选是不是联想），
+                          * 默认 0：外壳要会画候选才开，设置里 Association 的默认值是开。
+                          * 五笔、「译」、密码框（KEY_HINT_NO_TRANSLATE）不出 */
     int auto_pair_punct; /* 1.12 起：中文标点自动配对：全角标点下打 ( [ < { " ' 上屏成对的（）【】《》「」“”‘’，
                           * frame->cursor_delta 让外壳把光标挪到中间；在里面打完再按右半边跳过补好的那个
                           * （cursor_delta 为 +1），空的一对按退格两个一起删（frame->delete_next）。
@@ -610,9 +611,9 @@ const ArchtypeFrame *archtype_session_toggle_emoji_panel(ArchtypeSession *sessio
 const ArchtypeFrame *archtype_session_open_tool(ArchtypeSession *session, int tool);
 /* 开着的面板，ARCHTYPE_TOOL_*。 */
 int archtype_session_open_panel(const ArchtypeSession *session);
-/* 联想开着（frame->panel 是 ARCHTYPE_PANEL_ASSOCIATION）返回 1，没有是 0。不改会话，之前拿到的 frame 照样有效：
- * 外壳没在打字时据此画联想行（候选用 _candidate_total / _candidate_info 或 _candidate 取，鼠标点了用
- * _choose / _select）。（1.11） */
+/* 当前候选是联想词返回 1，没有是 0。不改会话，之前拿到的 frame 照样有效：
+ * 外壳没在打字时据此提示「这些是联想」（候选用 _candidate_total / _candidate_info 或 _candidate 取，
+ * 选了用 _choose / _select）。（1.11；0.9.2 起联想词就是普通候选列表，不再单独占一行） */
 int archtype_session_association(const ArchtypeSession *session);
 /* 最近用过的 emoji 存在这个文件（一行一个，进程内所有会话共用，最多 18 个）；NULL 或空串只记在内存里并清空。 */
 void archtype_recent_emoji_path(const char *path);

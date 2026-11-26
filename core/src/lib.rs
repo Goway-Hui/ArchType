@@ -221,6 +221,8 @@ pub struct Engine {
     pairs: RwLock<UserPairs>,
     /// 最近一次选的词的最后一个词；光标前的文本以它结尾时，下一个词和它组成搭配。
     last_word: RwLock<String>,
+    /// 上上个词的最后一个词：联想时当弱上下文（多词联想，见 [`Engine::associate`]）。
+    prev_word: RwLock<String>,
     /// 上一次 input() 给出的候选：文本 -> 分词，选词时用它知道整句是哪几个词。
     /// 分词是词库里的写法；开着繁体时显示的文本和转换前的文本都能查到。
     last_words: RwLock<HashMap<String, Vec<String>>>,
@@ -254,6 +256,7 @@ impl Engine {
             context: RwLock::new(String::new()),
             pairs: RwLock::new(UserPairs::default()),
             last_word: RwLock::new(String::new()),
+            prev_word: RwLock::new(String::new()),
             last_words: RwLock::new(HashMap::new()),
             converter: RwLock::new(Arc::new(Converter::new())),
             english: RwLock::new(Arc::new(HashMap::new())),
@@ -488,8 +491,15 @@ impl Engine {
         }
         if let (Ok(mut last), Some(tail)) = (self.last_word.write(), words.last()) {
             if *last != *tail {
+                let previous = std::mem::replace(&mut *last, tail.clone());
+                // 多词联想：记住再上一个词（同一句里连续选词时更新）
+                if !previous.is_empty() && previous != *tail {
+                    if let Ok(mut prev) = self.prev_word.write() {
+                        *prev = previous.clone();
+                    }
+                }
                 changes.push(learn::Change::LastWord {
-                    before: std::mem::replace(&mut *last, tail.clone()),
+                    before: previous,
                     after: tail.clone(),
                 });
             }
@@ -1092,43 +1102,49 @@ impl Engine {
     /// 上屏以后的联想（会话用）：before 是光标前已上屏的字（末尾是刚上屏的 just），返回最多 limit 个
     /// 常跟在后面的词（词库里的写法）。
     ///
-    /// 按上文末尾的词查 [`Engine::predict_next`]：先试最近一次选的词（光标前正好以它结尾），再试末尾 4、3、2、1 个字，
-    /// 用第一个查得到的（短的字查出来的多半接不上，不拿来凑数）。去掉标点、符号、单个字母，和刚上屏的一样的。
+    /// 上下文按强弱分三级：最近一次选的词（主）、再上一个词（弱，多词上下文）、
+    /// 末尾 4、3、2、1 个字（只在前面都查不到时兜底，短的字查出来的多半接不上）。
+    /// 去掉标点、符号、单个字母，和刚上屏的一样的。
     pub fn associate(&self, before: &str, just: &str, limit: usize) -> Vec<String> {
-        let mut keys: Vec<String> = Vec::new();
+        let mut keys: Vec<(String, f64)> = Vec::new();
+        let mut primary: Option<String> = None;
         if let Ok(last) = self.last_word.read() {
             if !last.is_empty() && before.ends_with(&self.shown_text(&last)) {
-                keys.push(last.clone());
+                primary = Some(last.to_string());
             }
         }
-        let chars: Vec<char> = before.chars().collect();
-        for n in (1..=chars.len().min(4)).rev() {
-            let tail: String = chars[chars.len() - n..].iter().collect();
-            if !keys.contains(&tail) {
-                keys.push(tail);
+        if let Ok(prev) = self.prev_word.read() {
+            if !prev.is_empty()
+                && primary.as_deref() != Some(prev.as_str())
+                && before.ends_with(&self.shown_text(&prev))
+            {
+                // 弱上下文：分数统一压低一档，主上下文查到的词仍然在前
+                keys.push((prev.clone(), -1.0));
             }
+        }
+        if let Some(primary) = &primary {
+            keys.insert(0, (primary.clone(), 0.0));
         }
         let just_plain = self.lexicon_form(just);
         let nnlm = self.nnlm.read().ok().and_then(|m| m.clone());
-        for key in &keys {
-            // 学过的搭配按当前 key 查；以前只用 keys.first()，从第二个 key 起的学到的词会被当成没学过
-            let learned: Vec<String> = self
-                .pairs
-                .read()
-                .map(|p| p.next_words(key, now_ms()))
-                .unwrap_or_default()
-                .into_iter()
-                .filter(|(_, heat)| *heat >= learn::MIN_PICK_HEAT)
-                .map(|(w, _)| w)
-                .collect();
-            // 有字级模型时多取一些再按它重排（见 ASSOCIATE_POOL）
-            let pool = if nnlm.is_some() {
-                ASSOCIATE_POOL.max(limit)
-            } else {
-                limit.saturating_mul(2)
-            };
-            let mut out: Vec<(String, f64)> = Vec::new();
-            let mut seen: std::collections::HashSet<String> = std::collections::HashSet::new();
+        let pool = if nnlm.is_some() {
+            ASSOCIATE_POOL.max(limit)
+        } else {
+            limit.saturating_mul(2)
+        };
+        let mut out: Vec<(String, f64)> = Vec::new();
+        let mut learned: Vec<String> = Vec::new();
+        let mut seen: std::collections::HashSet<String> = std::collections::HashSet::new();
+        for (key, penalty) in &keys {
+            learned.extend(
+                self.pairs
+                    .read()
+                    .map(|p| p.next_words(key, now_ms()))
+                    .unwrap_or_default()
+                    .into_iter()
+                    .filter(|(_, heat)| *heat >= learn::MIN_PICK_HEAT)
+                    .map(|(w, _)| w),
+            );
             for (word, score) in self.predict_next(key, pool) {
                 if !associable(&word) || word == *key || word == just || word == just_plain {
                     continue;
@@ -1136,41 +1152,74 @@ impl Engine {
                 if !seen.insert(word.clone()) {
                     continue;
                 }
-                out.push((word, score));
-            }
-            if let Some(model) = &nnlm {
-                // 词级模型给的是 ln(P(词|前词) / P(词))，按它排偏向罕见的固定搭配（你好 -> 久放、谢谢 -> 抬爱）；
-                // 字级模型给的是真正的条件概率：按「光标前的字接这个词的第一个字」重排，学到的搭配照旧在前
-                // 先按第一个字的概率粗筛（一次前向，之后每个词只是一次点积），再给留下的算整词的概率
-                let context = model.context_tokens(before);
-                let mut scored: Vec<(String, f64, bool)> = out
-                    .into_iter()
-                    .map(|(w, _)| {
-                        let first = w.chars().next().unwrap_or(' ');
-                        let r = f64::from(model.next_char_logprob(&context, first));
-                        let mine = learned.contains(&w);
-                        (w, r, mine)
-                    })
-                    .filter(|(_, r, mine)| *mine || *r >= ASSOCIATE_MIN_LOGPROB)
-                    .collect();
-                scored.sort_by(|a, b| b.2.cmp(&a.2).then(b.1.total_cmp(&a.1)));
-                scored.truncate(ASSOCIATE_RESCORE);
-                // 整词的 log 概率按字数的平方根折算：不全按总和（总偏向单字）也不全按平均（总偏向长词）
-                let texts: Vec<&str> = scored.iter().map(|(w, _, _)| w.as_str()).collect();
-                let whole = model.score_many(&context, &texts);
-                for ((w, r, _), s) in scored.iter_mut().zip(whole) {
-                    let n = w.chars().count().max(1) as f64;
-                    *r = s / n.sqrt();
-                }
-                scored.sort_by(|a, b| b.2.cmp(&a.2).then(b.1.total_cmp(&a.1)));
-                out = scored.into_iter().map(|(w, r, _)| (w, r)).collect();
-            }
-            out.truncate(limit);
-            if !out.is_empty() {
-                return out.into_iter().map(|(w, _)| w).collect();
+                out.push((word, score + penalty));
             }
         }
-        Vec::new()
+        // 主、弱上下文都查不到：退回末尾 1..4 个字（原来的行为）
+        if out.is_empty() {
+            let chars: Vec<char> = before.chars().collect();
+            for n in (1..=chars.len().min(4)).rev() {
+                let tail: String = chars[chars.len() - n..].iter().collect();
+                if primary.as_deref() == Some(tail.as_str())
+                    || keys.iter().any(|(key, _)| *key == tail)
+                {
+                    continue;
+                }
+                learned.extend(
+                    self.pairs
+                        .read()
+                        .map(|p| p.next_words(&tail, now_ms()))
+                        .unwrap_or_default()
+                        .into_iter()
+                        .filter(|(_, heat)| *heat >= learn::MIN_PICK_HEAT)
+                        .map(|(w, _)| w),
+                );
+                for (word, score) in self.predict_next(&tail, pool) {
+                    if !associable(&word) || word == tail || word == just || word == just_plain {
+                        continue;
+                    }
+                    if !seen.insert(word.clone()) {
+                        continue;
+                    }
+                    out.push((word, score));
+                }
+                if !out.is_empty() {
+                    break;
+                }
+            }
+        }
+        if out.is_empty() {
+            return Vec::new();
+        }
+        if let Some(model) = &nnlm {
+            // 词级模型给的是 ln(P(词|前词) / P(词))，按它排偏向罕见的固定搭配（你好 -> 久放、谢谢 -> 抬爱）；
+            // 字级模型给的是真正的条件概率：按「光标前的字接这个词的第一个字」重排，学到的搭配照旧在前
+            // 先按第一个字的概率粗筛（一次前向，之后每个词只是一次点积），再给留下的算整词的概率
+            let context = model.context_tokens(before);
+            let mut scored: Vec<(String, f64, bool)> = out
+                .into_iter()
+                .map(|(w, _)| {
+                    let first = w.chars().next().unwrap_or(' ');
+                    let r = f64::from(model.next_char_logprob(&context, first));
+                    let mine = learned.contains(&w);
+                    (w, r, mine)
+                })
+                .filter(|(_, r, mine)| *mine || *r >= ASSOCIATE_MIN_LOGPROB)
+                .collect();
+            scored.sort_by(|a, b| b.2.cmp(&a.2).then(b.1.total_cmp(&a.1)));
+            scored.truncate(ASSOCIATE_RESCORE);
+            // 整词的 log 概率按字数的平方根折算：不全按总和（总偏向单字）也不全按平均（总偏向长词）
+            let texts: Vec<&str> = scored.iter().map(|(w, _, _)| w.as_str()).collect();
+            let whole = model.score_many(&context, &texts);
+            for ((w, r, _), s) in scored.iter_mut().zip(whole) {
+                let n = w.chars().count().max(1) as f64;
+                *r = s / n.sqrt();
+            }
+            scored.sort_by(|a, b| b.2.cmp(&a.2).then(b.1.total_cmp(&a.1)));
+            out = scored.into_iter().map(|(w, r, _)| (w, r)).collect();
+        }
+        out.truncate(limit);
+        out.into_iter().map(|(w, _)| w).collect()
     }
 
     pub fn input(&self, raw: &str) -> Vec<Candidate> {

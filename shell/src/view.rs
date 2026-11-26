@@ -13,7 +13,7 @@ pub fn page_from_frame(frame: &Frame, shown: &[Candidate], config: &Config) -> P
         Panel::Normal => (!config.horizontal, None),
         Panel::Expanded | Panel::Emoji => (false, Some(Page::GRID_COLUMNS)),
         Panel::Tool => (true, None),
-        // 联想照普通候选画；没按 Tab 进联想行时不画序号（数字照常交给应用）
+        // 联想照普通候选画（0.9.2 起联想就在候选列表里）；Panel::Association 只为旧核心保留
         Panel::Association => (!config.horizontal, None),
     };
     let labels = !(matches!(frame.panel, Panel::Association) && frame.cand_cursor.is_none());

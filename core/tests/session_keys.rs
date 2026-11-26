@@ -3795,9 +3795,10 @@ fn association_after_choosing_a_word() {
     let mut session = associating(engine);
     let frame = type_keys(&mut session, "nihao<sp>");
     assert_eq!(frame.commit.as_deref(), Some("你好"));
-    assert_eq!(frame.panel, Panel::Association);
-    assert_eq!(frame.aux, "联想：Tab 选词");
-    assert_eq!(frame.cand_cursor, None, "没进联想行：不画光标");
+    // 联想不再占独立一行：就是候选列表里的词，可以直接点/选
+    assert_eq!(frame.panel, Panel::Normal);
+    assert_eq!(frame.cand_count, 2);
+    assert_eq!(frame.cand_cursor, Some(0));
     assert!(frame.preedit.is_empty());
     assert!(!session.composing());
     assert!(session.association_open());
@@ -3812,9 +3813,10 @@ fn association_after_choosing_a_word() {
     let frame = type_keys(&mut session, "nihao<sp>");
     assert_eq!(frame.panel, Panel::Normal);
     assert_eq!(frame.cand_count, 0);
+    assert!(!session.association_open());
 }
 
-/// 联想出来以后接着打拼音、数字、标点，按空格、回车、退格、方向键：全照原来的规则，联想关掉。
+/// 联想在候选栏里，但不抢普通按键：字母开始新输入，数字、空格、回车、方向键、标点、退格、快捷键照旧。
 #[test]
 fn association_never_takes_ordinary_keys() {
     let engine = association_engine();
@@ -3824,7 +3826,7 @@ fn association_never_takes_ordinary_keys() {
         assert!(session.association_open());
         session
     };
-    // 字母：开始新的输入
+    // 字母：开始新的输入，联想被拼音候选替换
     let mut session = fresh_assoc();
     let frame = type_keys(&mut session, "shijie");
     assert_eq!(frame.preedit, "shi'jie");
@@ -3840,7 +3842,6 @@ fn association_never_takes_ordinary_keys() {
     let frame = type_keys(&mut session, "1");
     assert!(!frame.handled);
     assert_eq!(frame.commit, None);
-    assert!(!session.association_open());
     // 汉字后面补空格时会话自己连空格上屏（AutoSpaceDigits），也不选联想
     let mut session = associating(engine);
     session.configure(Config {
@@ -3862,7 +3863,6 @@ fn association_never_takes_ordinary_keys() {
         assert!(!frame.handled, "{key:#x}");
         assert_eq!(frame.commit, None);
         assert_eq!(frame.panel, Panel::Normal);
-        assert!(!session.association_open());
     }
 
     // 标点：照常换成中文标点上屏
@@ -3888,113 +3888,44 @@ fn association_never_takes_ordinary_keys() {
     assert!(!frame.handled);
     assert!(!session.association_open());
 
-    // 单按修饰键、松开不关联想；大写字母（Shift+字母）照常开始输入
+    // 大写字母（Shift+字母）照常开始输入
     let mut session = fresh_assoc();
-    session.key(&Key::press(keysym::SHIFT_L));
-    assert!(session.association_open());
     let frame = type_keys(&mut session, "A");
     assert_eq!(frame.preedit, "A");
     assert!(!session.association_open());
 
-    // Esc：关掉联想（吃掉）
+    // Esc：没有独立联想行可关，交给应用
     let mut session = fresh_assoc();
     let frame = type_keys(&mut session, "<esc>");
-    assert!(frame.handled);
-    assert!(!session.association_open());
+    assert!(!frame.handled);
     assert_eq!(frame.panel, Panel::Normal);
 }
 
-/// Tab 进联想行：空格、回车、数字选，方向键、Tab 移光标，Esc 退出；选了上屏、学习，接着联想。
+/// 联想候选在候选栏里，直接点就能上屏、学习，选完接着联想。
 #[test]
-fn tab_enters_the_association_row() {
-    let engine = association_engine();
-    let mut session = associating(engine);
-    type_keys(&mut session, "nihao<sp>");
-    let frame = type_keys(&mut session, "<tab>");
-    assert!(frame.handled);
-    assert_eq!(frame.panel, Panel::Association);
-    assert_eq!(frame.cand_cursor, Some(0));
-    assert_eq!(frame.aux, "联想：空格或数字上屏，Esc 退出");
-    assert_eq!(type_keys(&mut session, "<right>").cand_cursor, Some(1));
-    assert_eq!(
-        type_keys(&mut session, "<right>").cand_cursor,
-        Some(1),
-        "到头停住"
-    );
-    assert_eq!(type_keys(&mut session, "<left>").cand_cursor, Some(0));
-    assert_eq!(
-        type_keys(&mut session, "<tab>").cand_cursor,
-        Some(1),
-        "Tab 往后走"
-    );
-    assert_eq!(type_keys(&mut session, "<left>").cand_cursor, Some(0));
-    let frame = type_keys(&mut session, "<sp>");
-    assert_eq!(frame.commit.as_deref(), Some("世界"));
-    assert!(frame.learned);
-    assert_eq!(engine.history_count("世界"), 1, "和普通选词一样记一次");
-    // 接着联想（世界 -> 和平），回到没进联想行的样子
-    assert_eq!(frame.panel, Panel::Association);
-    assert_eq!(frame.cand_cursor, None);
-    assert_eq!(shown_texts_of(&mut session), ["和平"]);
-    // 退格：只退刚才选的联想
-    type_keys(&mut session, "<bs>");
-    assert_eq!(engine.history_count("世界"), 0);
-    assert_eq!(engine.history_count("你好"), 1);
-
-    // 数字选第几个（这一页没这么多也吃掉）；回车也选。选过的搭配以后排在前面
-    let engine = association_engine();
-    let mut session = associating(engine);
-    type_keys(&mut session, "nihao<sp><tab>");
-    let frame = type_keys(&mut session, "5");
-    assert!(frame.handled && frame.commit.is_none());
-    assert_eq!(type_keys(&mut session, "2").commit.as_deref(), Some("吗"));
-    let mut session = associating(engine);
-    type_keys(&mut session, "nihao<sp><tab>");
-    assert_eq!(
-        shown_texts_of(&mut session),
-        ["吗", "世界"],
-        "学到的搭配在前"
-    );
-    assert_eq!(
-        type_keys(&mut session, "<cr>").commit.as_deref(),
-        Some("吗")
-    );
-
-    // Esc 退出联想；字母退出联想、开始新的输入；退格退出联想、交给应用
-    let mut session = associating(engine);
-    type_keys(&mut session, "nihao<sp><tab>");
-    let frame = type_keys(&mut session, "<esc>");
-    assert!(frame.handled && !session.association_open());
-    let mut session = associating(engine);
-    type_keys(&mut session, "nihao<sp><tab>");
-    assert_eq!(type_keys(&mut session, "ma").preedit, "ma");
-    let mut session = associating(engine);
-    type_keys(&mut session, "nihao<sp><tab>");
-    let before = engine.history_count("你好");
-    assert!(!type_keys(&mut session, "<bs>").handled);
-    assert!(!session.association_open());
-    assert_eq!(
-        engine.history_count("你好"),
-        before,
-        "按过 Tab 再退格不算紧接着，不退"
-    );
-}
-
-/// 鼠标点联想（没进联想行也能点）。
-#[test]
-fn clicking_an_association() {
+fn association_candidates_are_clickable() {
     let engine = association_engine();
     let mut session = associating(engine);
     type_keys(&mut session, "nihao<sp>");
     let frame = session.select(1);
     assert!(frame.handled);
     assert_eq!(frame.commit.as_deref(), Some("吗"));
-    let mut session = associating(association_engine());
+    assert!(frame.learned, "和普通选词一样记一次");
+    assert_eq!(engine.history_count("吗"), 1);
+
+    // 点第一个，选完接着联想（世界 -> 和平）
+    let engine = association_engine();
+    let mut session = associating(engine);
     type_keys(&mut session, "nihao<sp>");
     assert_eq!(session.choose(0).commit.as_deref(), Some("世界"));
-    assert!(session.association_open(), "接着联想");
     assert!(!session.choose(5).handled, "序号不对");
-    assert!(session.association_open(), "序号不对时联想留着");
+    assert_eq!(engine.history_count("世界"), 1, "和普通选词一样记一次");
+    assert!(session.association_open());
+    assert_eq!(shown_texts_of(&mut session), ["和平"]);
+    // 退格：只退刚才选的联想
+    type_keys(&mut session, "<bs>");
+    assert_eq!(engine.history_count("世界"), 0);
+    assert_eq!(engine.history_count("你好"), 1);
 }
 
 /// 学到的搭配也拿来联想（没有词级模型时只有它）。
@@ -4008,9 +3939,11 @@ fn association_uses_learned_pairs() {
     });
     let frame = type_keys(&mut session, "nihao<sp>");
     assert_eq!(frame.panel, Panel::Normal, "没学过、没有模型：没有联想");
+    assert!(!session.association_open());
     type_keys(&mut session, "zhongguo<sp>");
     let frame = type_keys(&mut session, "nihao<sp>");
-    assert_eq!(frame.panel, Panel::Association);
+    assert_eq!(frame.panel, Panel::Normal);
+    assert!(session.association_open());
     assert_eq!(shown_texts_of(&mut session), ["中国"]);
 }
 
