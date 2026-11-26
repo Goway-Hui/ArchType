@@ -778,6 +778,8 @@ jobs:
         shell: pwsh
         run: |
           $ErrorActionPreference = "Stop"
+          # install.ps1 默认装 latest；settings-nsh 依赖 nsh-core 0.6.0，装 0.7.1 会拒绝构建
+          $env:NSH_VERSION = "v0.6.0"
           Invoke-WebRequest "https://github.com/longbridge/nsh/releases/download/v0.6.0/install.ps1" -OutFile "$env:RUNNER_TEMP\nsh-install.ps1"
           & "$env:RUNNER_TEMP\nsh-install.ps1"
           # install.ps1 装到 %LOCALAPPDATA%\nsh，bin 在 PATH 里（当前进程要手动加）
