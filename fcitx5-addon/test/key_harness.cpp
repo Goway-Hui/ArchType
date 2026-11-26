@@ -477,20 +477,15 @@ void runCases(Instance &instance) {
         send(ic.get(), Key(FcitxKey_Delete, KeyState::Ctrl));
     }
 
-    // 上屏以后的联想（Association，默认关）：没有词级模型时只有学到的搭配。你好 -> 中国 上屏一次，
-    // 再打你好：候选框是联想（中国），上方提示「联想」，不画序号；数字、字母、空格照常，Tab 进联想行再选
+    // 联想（Association，默认关）：没有词级模型时只有学到的搭配。你好 -> 中国 上屏一次，
+    // 再打你好：候选栏直接就是联想词（普通候选页，画序号、光标在第一）；数字、字母、空格、Tab 照常
     fresh(ic.get());
     type(ic.get(), "nihao<sp>zhongguo<sp>");
     {
-        const auto associations = [&]() {
-            std::vector<std::string> out = page(ic.get());
-            const std::string aux = ic->inputPanel().auxUp().toString();
-            return aux.find("联想") != std::string::npos ? out : std::vector<std::string>{};
-        };
         auto *associationAddon = instance.addonManager().addon("archtype");
         fresh(ic.get());
         type(ic.get(), "nihao<sp>");
-        check(associations().empty() && page(ic.get()).empty(), "联想默认关：上屏你好以后什么都不出");
+        check(page(ic.get()).empty(), "联想默认关：上屏你好以后什么都不出");
         setenv("ARCHTYPE_ASSOCIATION", "1", 1);
         associationAddon->reloadConfig();
         const auto hasZhongguo = [](const std::vector<std::string> &items) {
@@ -498,18 +493,16 @@ void runCases(Instance &instance) {
         };
         fresh(ic.get());
         type(ic.get(), "nihao<sp>");
-        const auto shown = associations();
         auto list = ic->inputPanel().candidateList();
-        check(ic->committed == "你好" && preedit(ic.get()).empty() && hasZhongguo(shown),
-              "上屏以后出联想（学到的 你好 -> 中国）：" + join(page(ic.get())) + " / " +
-                  ic->inputPanel().auxUp().toString());
-        check(list && list->size() > 0 && list->label(0).toString().empty() && list->cursorIndex() < 0,
-              "没进联想行：不画序号、不画光标");
+        check(ic->committed == "你好" && preedit(ic.get()).empty() && hasZhongguo(page(ic.get())),
+              "上屏以后候选栏是联想（学到的 你好 -> 中国）：" + join(page(ic.get())));
+        check(list && list->size() > 0 && !list->label(0).toString().empty() &&
+                  list->cursorIndex() == 0,
+              "联想就是普通候选：画序号、光标在第一个");
         type(ic.get(), "1");
-        check(ic->committed == "你好" && ic->passed == "1" && page(ic.get()).empty() &&
-                  ic->inputPanel().auxUp().toString().empty(),
-              "联想开着按数字：不选联想、交给应用，联想收起。上屏「" + ic->committed + "」交给应用「" + ic->passed +
-                  "」候选 " + join(page(ic.get())));
+        check(ic->committed == "你好" && ic->passed == "1" && page(ic.get()).empty(),
+              "联想开着按数字：不选联想、交给应用，候选收起。上屏「" + ic->committed + "」交给应用「" +
+                  ic->passed + "」候选 " + join(page(ic.get())));
 
         fresh(ic.get());
         type(ic.get(), "nihao<sp>");
@@ -523,26 +516,15 @@ void runCases(Instance &instance) {
         type(ic.get(), "nihao<sp>,");
         check(ic->committed == "你好，", "联想开着打标点：照常，实际 " + ic->committed);
 
+        // 联想不再占独立一行：没有 Tab 进入那套，Tab 不会上屏联想（交给框架 / 应用都行）
         fresh(ic.get());
         type(ic.get(), "nihao<sp><tab>");
-        auto *focused = dynamic_cast<CommonCandidateList *>(ic->inputPanel().candidateList().get());
-        check(focused && focused->cursorIndex() == 0 && !focused->label(0).toString().empty() && ic->passed.empty(),
-              "Tab 进联想行：光标在第一个、画序号，Tab 不交给应用");
-        const auto row = associations();
-        const auto at = std::find(row.begin(), row.end(), "中国");
-        for (auto i = row.begin(); i != at && at != row.end(); ++i) {
-            type(ic.get(), "<right>");
-        }
-        type(ic.get(), "<sp>");
-        check(ic->committed == "你好中国", "进了联想行按空格上屏联想，实际 " + ic->committed);
-        fresh(ic.get());
-        type(ic.get(), "nihao<sp><tab><esc>");
-        check(ic->committed == "你好" && page(ic.get()).empty(), "联想行里 Esc 退出");
+        check(ic->committed == "你好", "联想没有独立行：Tab 不上屏联想，实际 " + ic->committed);
 
-        // 鼠标点联想（没按 Tab 也能点）
+        // 鼠标点联想（候选本身就是联想）
         fresh(ic.get());
         type(ic.get(), "nihao<sp>");
-        const auto items = associations();
+        const auto items = page(ic.get());
         const auto hit = std::find(items.begin(), items.end(), "中国");
         if (auto clicked = ic->inputPanel().candidateList(); clicked && hit != items.end()) {
             clicked->candidate(static_cast<int>(hit - items.begin())).select(ic.get());
