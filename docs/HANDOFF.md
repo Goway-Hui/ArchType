@@ -19,7 +19,7 @@
 ## 最短上手（5 条）
 
 ```bash
-cargo test --workspace     # 599 项，应当全绿（外壳共用逻辑在 archtype-shell）
+cargo test --workspace     # 611 项，应当全绿（外壳共用逻辑在 archtype-shell）
 ./scripts/abi-smoke.sh     # C ABI 契约
 # 词库（唯一需要自己准备的数据）
 git clone --depth 1 https://github.com/iDvel/rime-ice /tmp/rime-ice
