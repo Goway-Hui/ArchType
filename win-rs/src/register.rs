@@ -22,7 +22,7 @@ fn guid_string(guid: &windows::core::GUID) -> String {
     )
 }
 
-const TIP_KEY: &str = r"SOFTWARE\Microsoft\CTF\TIP";
+const TIP_KEY: &str = r"SOFTWARE\Microsoft\CTF\TIPs";
 
 pub fn register() -> Result<(), String> {
     let dll = dll_path()?;
