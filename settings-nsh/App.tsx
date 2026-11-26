@@ -1204,6 +1204,7 @@ function App() {
         </View>
         {pages.map((p, i) => (
           <View
+            accessibilityLabel={`页面:${p}`}
             onPress={() => current.set(i)}
             style={{
               flexDirection: "row",

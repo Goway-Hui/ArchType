@@ -30,7 +30,7 @@ test("renders the settings window and the stats page", async () => {
 
 test("fuzzy groups are hidden until the master switch is on", async () => {
   const app = await open("./App.tsx");
-  await app.press("输入");
+  await app.press("label:页面:输入");
   expect(app.texts()).toContain("比如 n 和 l 不分");
   expect(app.texts()).not.toContain("z = zh");
 });

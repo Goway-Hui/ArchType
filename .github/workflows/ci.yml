@@ -114,7 +114,7 @@ jobs:
           key: nsh-cli-${{ runner.os }}-${{ matrix.arch }}-v0.6.0
       - name: nsh
         env:
-          NSH_VERSION: v0.6.0
+          NSH_VERSION: v0.7.1
         run: |
           if [ "${{ steps.nsh-cli.outputs.cache-hit }}" != "true" ]; then
             curl -fsSL https://nsh.dev/install.sh -o "$RUNNER_TEMP/nsh-install.sh"
@@ -674,7 +674,7 @@ jobs:
           path: dist/data
       - name: nsh（跨平台设置界面）
         run: |
-          curl -fsSL https://nsh.dev/install.sh | NSH_VERSION=v0.6.0 sh
+          curl -fsSL https://nsh.dev/install.sh | NSH_VERSION=v0.7.1 sh
           echo "$HOME/.nsh/bin" >> "$GITHUB_PATH"
       - name: 共用外壳逻辑测试（按键、设置、引擎、会话）
         run: cargo test -p archtype-shell
@@ -778,9 +778,9 @@ jobs:
         shell: pwsh
         run: |
           $ErrorActionPreference = "Stop"
-          # install.ps1 默认装 latest；settings-nsh 依赖 nsh-core 0.6.0，装 0.7.1 会拒绝构建
-          $env:NSH_VERSION = "v0.6.0"
-          Invoke-WebRequest "https://github.com/longbridge/nsh/releases/download/v0.6.0/install.ps1" -OutFile "$env:RUNNER_TEMP\nsh-install.ps1"
+          # install.ps1 默认装 latest；settings-nsh 依赖 nsh-core 0.7.1，版本要跟着一起走
+          $env:NSH_VERSION = "v0.7.1"
+          Invoke-WebRequest "https://github.com/longbridge/nsh/releases/download/v0.7.1/install.ps1" -OutFile "$env:RUNNER_TEMP\nsh-install.ps1"
           & "$env:RUNNER_TEMP\nsh-install.ps1"
           # install.ps1 装到 %LOCALAPPDATA%\nsh，bin 在 PATH 里（当前进程要手动加）
           $nshDir = Join-Path $env:LOCALAPPDATA "nsh"
