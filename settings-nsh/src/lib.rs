@@ -1114,6 +1114,81 @@ fn clamp_candidate_font_size(value: &str) -> String {
 #[module]
 pub struct Config;
 
+#[cfg(windows)]
+fn windows_update_install(release: String) -> bool {
+    let value: serde_json::Value = match serde_json::from_str(&release) {
+        Ok(value) => value,
+        Err(_) => return false,
+    };
+    let version = value
+        .get("version")
+        .and_then(|v| v.as_str())
+        .unwrap_or("")
+        .to_string();
+    if version.is_empty()
+        || !version
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || "._+~^-".contains(c))
+    {
+        return false;
+    }
+    let dir = std::env::temp_dir().join("archtype-update");
+    let name = format!("ArchType-{version}-x64.msi");
+    let base = format!("https://github.com/Goway-Hui/ArchType/releases/download/v{version}");
+    std::thread::spawn(move || {
+        if std::fs::create_dir_all(&dir).is_err() {
+            update_set_state("error:建不了下载目录".to_string());
+            return;
+        }
+        let msi = dir.join(&name);
+        if let Err(error) = update_download(&format!("{base}/{name}"), &msi.to_string_lossy(), 0) {
+            update_set_state(format!("error:{error}"));
+            return;
+        }
+        update_set_state("verifying".to_string());
+        let sums_url = format!("{base}/SHA256SUMS");
+        let sums = match curl(&sums_url, "", None, 30) {
+            Ok(sums) => sums,
+            Err(error) => {
+                update_set_state(format!("error:{error}"));
+                return;
+            }
+        };
+        let expected = sums.lines().find_map(|line| {
+            let mut fields = line.split_whitespace();
+            let digest = fields.next()?;
+            let file = fields.next()?.trim_start_matches('*');
+            (file == name).then(|| digest.to_lowercase())
+        });
+        let Some(expected) = expected else {
+            update_set_state(format!("error:SHA256SUMS 里没有 {name}"));
+            return;
+        };
+        match sha256_of(&msi.to_string_lossy()) {
+            Ok(actual) if actual == expected => {}
+            Ok(_) => {
+                let _ = std::fs::remove_file(&msi);
+                update_set_state("error:MSI 校验和不对，请重试".to_string());
+                return;
+            }
+            Err(error) => {
+                update_set_state(format!("error:读不了 MSI：{error}"));
+                return;
+            }
+        }
+        update_set_state("installing".to_string());
+        let status = std::process::Command::new("msiexec")
+            .args(["/i", &msi.to_string_lossy(), "/qn", "/norestart"])
+            .status();
+        match status {
+            Ok(status) if status.success() => update_set_state(format!("done:{version}")),
+            Ok(_) => update_set_state("error:MSI 安装没有完成".to_string()),
+            Err(error) => update_set_state(format!("error:启动 MSI 安装失败：{error}")),
+        }
+    });
+    true
+}
+
 #[module]
 impl Config {
     /// archtype.conf 的完整路径。
@@ -1689,6 +1764,7 @@ impl Config {
         .to_string()
     }
 
+    /// 开始下载并安装更新（后台线程）。返回是否真的开始了。
     pub fn update_install_start(release: String) -> bool {
         #[cfg(windows)]
         {
@@ -1762,84 +1838,7 @@ impl Config {
             false
         }
     }
-}
 
-#[cfg(windows)]
-fn windows_update_install(release: String) -> bool {
-    let value: serde_json::Value = match serde_json::from_str(&release) {
-        Ok(value) => value,
-        Err(_) => return false,
-    };
-    let version = value
-        .get("version")
-        .and_then(|v| v.as_str())
-        .unwrap_or("")
-        .to_string();
-    if version.is_empty()
-        || !version
-            .chars()
-            .all(|c| c.is_ascii_alphanumeric() || "._+~^-".contains(c))
-    {
-        return false;
-    }
-    let dir = std::env::temp_dir().join("archtype-update");
-    let name = format!("ArchType-{version}-x64.msi");
-    let base = format!("https://github.com/Goway-Hui/ArchType/releases/download/v{version}");
-    std::thread::spawn(move || {
-        if std::fs::create_dir_all(&dir).is_err() {
-            update_set_state("error:建不了下载目录".to_string());
-            return;
-        }
-        let msi = dir.join(&name);
-        if let Err(error) = update_download(&format!("{base}/{name}"), &msi.to_string_lossy(), 0) {
-            update_set_state(format!("error:{error}"));
-            return;
-        }
-        update_set_state("verifying".to_string());
-        let sums_url = format!("{base}/SHA256SUMS");
-        let sums = match curl(&sums_url, "", None, 30) {
-            Ok(sums) => sums,
-            Err(error) => {
-                update_set_state(format!("error:{error}"));
-                return;
-            }
-        };
-        let expected = sums.lines().find_map(|line| {
-            let mut fields = line.split_whitespace();
-            let digest = fields.next()?;
-            let file = fields.next()?.trim_start_matches('*');
-            (file == name).then(|| digest.to_lowercase())
-        });
-        let Some(expected) = expected else {
-            update_set_state(format!("error:SHA256SUMS 里没有 {name}"));
-            return;
-        };
-        match sha256_of(&msi.to_string_lossy()) {
-            Ok(actual) if actual == expected => {}
-            Ok(_) => {
-                let _ = std::fs::remove_file(&msi);
-                update_set_state("error:MSI 校验和不对，请重试".to_string());
-                return;
-            }
-            Err(error) => {
-                update_set_state(format!("error:读不了 MSI：{error}"));
-                return;
-            }
-        }
-        update_set_state("installing".to_string());
-        let status = std::process::Command::new("msiexec")
-            .args(["/i", &msi.to_string_lossy(), "/qn", "/norestart"])
-            .status();
-        match status {
-            Ok(status) if status.success() => update_set_state(format!("done:{version}")),
-            Ok(_) => update_set_state("error:MSI 安装没有完成".to_string()),
-            Err(error) => update_set_state(format!("error:启动 MSI 安装失败：{error}")),
-        }
-    });
-    true
-}
-
-impl Config {
     /// 导出自定义词到 ~/Downloads（没有就放家目录）。返回写入的路径，失败返回空串。
     pub fn custom_words_export() -> String {
         let dir = {
