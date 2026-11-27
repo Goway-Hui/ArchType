@@ -11,6 +11,7 @@ fn main() {
     match command.as_str() {
         "--register" => finish(archtype_tsf::register()),
         "--unregister" => finish(archtype_tsf::unregister()),
+        "--enable-profile" => finish(archtype_tsf::enable_profile()),
         "--version" | "-V" => println!("ArchType {}", env!("CARGO_PKG_VERSION")),
         "--selftest" => std::process::exit(if selftest() { 0 } else { 1 }),
         "--check-update" => {
@@ -55,7 +56,7 @@ fn main() {
                 "用法：archtype <--register|--unregister|--selftest|--version|\
                  --check-update|--install-update|\
                  --install-lexicon [wanxiang|文件.tar.gz]|--use-lexicon rime-ice|wanxiang|\
-                 --mode zh|en|translate|toggle>"
+                 --mode zh|en|translate|toggle|--enable-profile>"
             );
         }
     }

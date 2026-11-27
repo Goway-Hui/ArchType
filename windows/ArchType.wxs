@@ -60,6 +60,17 @@
           </RegistryKey>
         </Component>
 
+        <!-- 每个用户登录时自动把 ArchType 加进该用户的中文输入法列表
+             （Active Setup：每个用户只跑一次；Version 变了会重跑，用于升级后重启用） -->
+        <Component Id="EnableProfile" Guid="2C8A4E19-6D3F-4B57-9A20-8C1E5F3D7B64">
+          <RegistryKey Root="HKLM" Key="SOFTWARE\Microsoft\Active Setup\Installed Components\ArchTypeInputMethod">
+            <RegistryValue Name="StubPath" Type="string" Value="&quot;[INSTALLDIR]archtype.exe&quot; --enable-profile" KeyPath="yes" />
+            <RegistryValue Name="Version" Type="string" Value="$(var.Version),0" />
+            <RegistryValue Name="IsInstalled" Type="integer" Value="1" />
+            <RegistryValue Name="Locale" Type="string" Value="*" />
+          </RegistryKey>
+        </Component>
+
         <Component Id="Registration" Guid="9E4C7B15-2D6A-4F38-B05C-1A8E6F3D2C74">
           <RegistryKey Root="HKLM" Key="SOFTWARE\ArchType">
             <RegistryValue Name="InstallDir" Type="string" Value="[INSTALLDIR]" KeyPath="yes" />
@@ -89,6 +100,7 @@
       <ComponentRef Id="Registration" />
       <ComponentRef Id="InputMethod32" />
       <ComponentRef Id="Registration32" />
+      <ComponentRef Id="EnableProfile" />
       <?if $(var.SettingsExe) != "" ?><ComponentRef Id="Settings" /><?endif?>
     </Feature>
   </Package>

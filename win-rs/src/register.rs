@@ -3,13 +3,13 @@
 //! 安装程序（或 `archtype --register`）以管理员身份调用；没有管理员权限时
 //! `HKLM` 写入会失败，返回具体错误码。
 
-use windows::core::PCWSTR;
-use windows::Win32::Foundation::{ERROR_SUCCESS, WIN32_ERROR};
+use windows::core::{PCWSTR, PWSTR};
+use windows::Win32::Foundation::{ERROR_NO_MORE_ITEMS, ERROR_SUCCESS, WIN32_ERROR};
 use windows::Win32::System::LibraryLoader::{GetModuleFileNameW, GetModuleHandleW};
 use windows::Win32::System::Registry::{
-    RegCloseKey, RegCreateKeyExW, RegDeleteTreeW, RegSetValueExW, HKEY, HKEY_CLASSES_ROOT,
-    HKEY_LOCAL_MACHINE, KEY_WRITE, REG_CREATE_KEY_DISPOSITION, REG_DWORD, REG_OPTION_NON_VOLATILE,
-    REG_SZ,
+    RegCloseKey, RegCreateKeyExW, RegDeleteTreeW, RegEnumKeyExW, RegOpenKeyExW, RegSetValueExW,
+    HKEY, HKEY_CLASSES_ROOT, HKEY_CURRENT_USER, HKEY_LOCAL_MACHINE, KEY_READ, KEY_WRITE,
+    REG_CREATE_KEY_DISPOSITION, REG_DWORD, REG_OPTION_NON_VOLATILE, REG_SZ,
 };
 
 use crate::{CLSID_TEXTSERVICE, GUID_KEYBOARD_CAT, GUID_PROFILE, GUID_TEXTSERVICE_CAT};
@@ -95,6 +95,65 @@ pub fn unregister() -> Result<(), String> {
         unsafe {
             let _ = RegDeleteTreeW(root, PCWSTR(sub.as_ptr()));
         }
+    }
+    Ok(())
+}
+
+/// 把 ArchType 加进当前用户的中文输入法列表（`HKCU\Control Panel\International
+/// \User Profile\<zh 开头的语言键> 下写 `0804:{CLSID}{Profile}` 的 DWORD 1，
+/// 和微软拼音条目同一格式）。给 MSI 的 Active Setup 在每个用户登录时调用。
+pub fn enable_profile() -> Result<(), String> {
+    let clsid = guid_string(&CLSID_TEXTSERVICE);
+    let profile = guid_string(&GUID_PROFILE);
+    let value_name = format!("0804:{clsid}{profile}");
+    let base = r"Control Panel\International\User Profile";
+    let base_w = crate::paths::wide(base);
+    let mut enabled = 0;
+    unsafe {
+        let mut root = HKEY::default();
+        let err = RegOpenKeyExW::<HKEY, PCWSTR>(
+            HKEY_CURRENT_USER,
+            PCWSTR(base_w.as_ptr()),
+            0,
+            KEY_READ,
+            &mut root,
+        );
+        check(err)?;
+        for index in 0..=u32::MAX {
+            let mut name_buf = [0u16; 64];
+            let mut len = name_buf.len() as u32;
+            let err = RegEnumKeyExW(
+                root,
+                index,
+                PWSTR(name_buf.as_mut_ptr()),
+                &mut len,
+                None,
+                PWSTR::null(),
+                None,
+                None,
+            );
+            if err == ERROR_NO_MORE_ITEMS {
+                break;
+            }
+            if err != ERROR_SUCCESS {
+                let _ = RegCloseKey(root);
+                return check(err);
+            }
+            let sub = String::from_utf16_lossy(&name_buf[..len as usize]);
+            if sub.starts_with("zh") || sub.starts_with("0804") {
+                check(set_dword(
+                    HKEY_CURRENT_USER,
+                    &format!(r"{base}\{sub}"),
+                    &value_name,
+                    1,
+                ))?;
+                enabled += 1;
+            }
+        }
+        let _ = RegCloseKey(root);
+    }
+    if enabled == 0 {
+        return Err("没找到中文（zh）的语言键：请先在系统设置里添加中文语言".into());
     }
     Ok(())
 }
