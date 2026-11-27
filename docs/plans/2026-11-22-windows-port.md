@@ -236,20 +236,25 @@ TSF 没有 run loop API；建一个 `HWND_MESSAGE` 隐藏窗口，`SetTimer(50ms
 - `win-rs/`：COM in-proc DLL（`archtype-tsf.dll`）+ `archtype.exe`，独立 workspace，CI 的 `windows-latest` 任务编译。
 - 已实现：`DllGetClassObject` / `DllRegisterServer` / `DllUnregisterServer`；TSF 激活/停用与
   `ITfKeyEventSink` 注册；`ToUnicodeEx` + VK 取字符；`archtype-shell` 的 `Input` 驱动会话；
-  `ITfInsertAtSelection` 在 edit session 里上屏（只提交整词，没有编辑区）。
+  `ITfInsertAtSelection` 在 edit session 里上屏；M2a 之后由 composition 范围替换。
 - M2a：`ITfContextComposition` 在光标处开组合，`SetText` 更新编辑区；上屏时替换组合并结束；`ITfCompositionSink`
   在 TSF 外部终止组合时清状态；`Esc`/切走结束并清空。
 - M2b：Win32 弹出窗口（`WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE`）+ GDI 双缓冲自绘；布局与命中复用
-  `archtype_shell::panel`；点击 → `Input::select` → 重新应用一帧；`GetDpiForWindow` 缩放；放不下时画在光标上方。
+  `archtype_shell::panel`；点击先投递到消息窗口，再 `Input::select` 并重新应用一帧；
+  `GetDpiForWindow` 缩放；按光标所在显示器的工作区定位，放不下时画在光标上方。
 - 切走应用（`Deactivate`）时异步保存用户词库/历史并 flush 统计。
-- 全局语音热键：`WH_KEYBOARD_LL`（激活过的输入法进程里，后台也能按语音键）。
-- `archtype --mode zh|en|translate|toggle`：写 `%APPDATA%\ArchType\mode-request`，输入法 50ms 轮询切换。
+- 全局语音热键：`WH_KEYBOARD_LL` 只投递消息到同线程 message-only 窗口；语音轮询、会话
+  `wake_after_ms`（单按 Shift / 互译）也在该窗口处理，不在系统回调里直接改输入状态。
+- `archtype --mode zh|en|translate|toggle`：写 `%APPDATA%\ArchType\mode-request`，输入法轮询切换。
 - MSI：`archtype_tsf.dll`（x64）+ `archtype_tsf.dll`（x86，`Bitness="always32"`，注册到 WOW6432Node）+ `archtype.exe` +
   `ArchType 设置.exe` + 词库/语言模型；CI 装一遍再卸掉。
 - 密码框：每次按键在同步 edit session 里读 `GUID_PROP_INPUTSCOPE`，`IS_PASSWORD` 时 `Key.hints` 带
   `NO_LEARN | NO_TRANSLATE`，统计按敏感处理。
-- 更新：`archtype --check-update` / `--install-update`（下载 `ArchType-<版本>-x64.msi` 并 `msiexec`）；
-  release 任务会上传 MSI 与它的 SHA256SUMS。
+- 按键契约：传入扫描码、自动重复和单调时间；左右 Shift 的按下/松开都交给会话；Page Up/Down
+  映射为翻页动作。编辑区按 UTF-16 码元设置光标，上屏兑现 `cursor_delta` / `delete_next`。
+- 更新：设置界面与 `archtype --check-update` / `--install-update` 都下载 `ArchType-<版本>-x64.msi`，
+  按发布页 `SHA256SUMS` 校验后运行 `msiexec`；release 任务上传 MSI 与校验文件。
+- 设置界面：配置、用户词库与主题状态使用 `%APPDATA%\ArchType`；打开链接用 `ShellExecuteW`。
 - 还没做：真机交互验收。
 
 ## 8. 风险清单

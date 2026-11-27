@@ -33,7 +33,11 @@ fn main() {
             if let Some(dir) = path.parent() {
                 let _ = std::fs::create_dir_all(dir);
             }
-            std::process::exit(if std::fs::write(&path, mode).is_ok() { 0 } else { 1 });
+            std::process::exit(if std::fs::write(&path, mode).is_ok() {
+                0
+            } else {
+                1
+            });
         }
         "--install-lexicon" | "--use-lexicon" => {
             let layout = archtype_tsf::paths::layout();

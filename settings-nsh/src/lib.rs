@@ -8,15 +8,31 @@ use std::sync::{LazyLock, Mutex};
 
 /// 用系统默认程序打开文件或链接（macOS 是 `open`，Linux 是 `xdg-open`）。
 fn open_with_system(target: &str) -> bool {
-    let status = if on_windows() {
-        std::process::Command::new("cmd")
-            .args(["/C", "start", "", target])
-            .status()
-    } else {
+    #[cfg(windows)]
+    {
+        let file = windows::core::HSTRING::from(target);
+        unsafe {
+            windows::Win32::UI::Shell::ShellExecuteW(
+                None,
+                windows::core::w!("open"),
+                &file,
+                None,
+                None,
+                windows::Win32::UI::WindowsAndMessaging::SW_SHOWNORMAL,
+            )
+            .0 as usize
+                > 32
+        }
+    }
+    #[cfg(not(windows))]
+    {
         let program = if on_macos() { "open" } else { "xdg-open" };
-        std::process::Command::new(program).arg(target).status()
-    };
-    status.map(|status| status.success()).unwrap_or(false)
+        std::process::Command::new(program)
+            .arg(target)
+            .status()
+            .map(|status| status.success())
+            .unwrap_or(false)
+    }
 }
 
 /// 应用自己的 UI 集合。
@@ -151,7 +167,10 @@ fn json_set(path: &str, key: &str, value: &str) -> bool {
         .ok()
         .and_then(|v| v.as_object().cloned())
         .unwrap_or_default();
-    object.insert(key.to_string(), serde_json::Value::String(value.to_string()));
+    object.insert(
+        key.to_string(),
+        serde_json::Value::String(value.to_string()),
+    );
     let Ok(text) = serde_json::to_string_pretty(&object) else {
         return false;
     };
@@ -196,8 +215,7 @@ const LOCAL_MODEL_SIZE: u64 = 1_133_080_512;
 
 /// llama.cpp 运行程序（x86_64），与旧版 LLAMA_BUILD / LLAMA_ASSETS 一致。
 const LLAMA_BUILD: &str = "b12110";
-const LLAMA_URL: &str =
-    "https://github.com/ggml-org/llama.cpp/releases/download/b12110/llama-b12110-bin-ubuntu-x64.tar.gz";
+const LLAMA_URL: &str = "https://github.com/ggml-org/llama.cpp/releases/download/b12110/llama-b12110-bin-ubuntu-x64.tar.gz";
 const LLAMA_SHA256: &str = "368227edcc229be5f9bed16a2223d79b5e41d0ac2e19bcf5825e82291c060e55";
 const LLAMA_SIZE: u64 = 23_051_958;
 
@@ -263,7 +281,10 @@ fn language_chinese(code: &str) -> &'static str {
 }
 
 fn index_prompt(text: &str, target: &str, formal: bool) -> String {
-    let han = text.chars().filter(|c| ('\u{4e00}'..='\u{9fff}').contains(c)).count();
+    let han = text
+        .chars()
+        .filter(|c| ('\u{4e00}'..='\u{9fff}').contains(c))
+        .count();
     let other = text
         .chars()
         .filter(|c| c.is_alphabetic() && !('\u{4e00}'..='\u{9fff}').contains(c))
@@ -347,10 +368,8 @@ fn curl(url: &str, key: &str, body: Option<&str>, timeout: u32) -> Result<String
             .duration_since(std::time::UNIX_EPOCH)
             .map(|d| d.as_nanos())
             .unwrap_or(0);
-        let path = std::env::temp_dir().join(format!(
-            "archtype-curl-{}-{nanos}.hdr",
-            std::process::id()
-        ));
+        let path =
+            std::env::temp_dir().join(format!("archtype-curl-{}-{nanos}.hdr", std::process::id()));
         let mut options = fs::OpenOptions::new();
         options.write(true).create_new(true);
         #[cfg(unix)]
@@ -385,7 +404,9 @@ fn curl(url: &str, key: &str, body: Option<&str>, timeout: u32) -> Result<String
             stdin.write_all(body.as_bytes()).ok();
         }
     }
-    let output = child.wait_with_output().map_err(|error| error.to_string())?;
+    let output = child
+        .wait_with_output()
+        .map_err(|error| error.to_string())?;
     if !output.status.success() {
         let error = String::from_utf8_lossy(&output.stderr).trim().to_string();
         return Err(if error.is_empty() {
@@ -408,10 +429,8 @@ fn nnlm_model_bytes(data: &[u8]) -> Result<Vec<u8>, String> {
         return Err("文件大得不对，不装".to_string());
     }
     let model = if data.starts_with(b"PK\x03\x04") {
-        let mut archive =
-            zip::ZipArchive::new(std::io::Cursor::new(data)).map_err(|error| {
-                format!("这个压缩包打不开：{error}")
-            })?;
+        let mut archive = zip::ZipArchive::new(std::io::Cursor::new(data))
+            .map_err(|error| format!("这个压缩包打不开：{error}"))?;
         let mut found = None;
         for index in 0..archive.len() {
             let Ok(mut entry) = archive.by_index(index) else {
@@ -481,7 +500,9 @@ fn update_platform() -> (String, String, String, String) {
             ));
         };
         if machine != "x86_64" && machine != "amd64" {
-            return cannot(format!("deepin 的发布包只有 x86_64，{machine} 请从源码构建；{guide}"));
+            return cannot(format!(
+                "deepin 的发布包只有 x86_64，{machine} 请从源码构建；{guide}"
+            ));
         }
         return ("apt-get".into(), base.into(), "amd64".into(), String::new());
     }
@@ -500,7 +521,9 @@ fn update_platform() -> (String, String, String, String) {
         "x86_64" => ("amd64", "x86_64"),
         "aarch64" => ("arm64", "aarch64"),
         _ => {
-            return cannot(format!("发布包只有 x86_64 和 arm64，{machine} 请从源码构建；{guide}"));
+            return cannot(format!(
+                "发布包只有 x86_64 和 arm64，{machine} 请从源码构建；{guide}"
+            ));
         }
     };
     if distro == "ubuntu" && ["24.04", "26.04"].contains(&version.as_str()) {
@@ -512,7 +535,12 @@ fn update_platform() -> (String, String, String, String) {
         );
     }
     if distro == "debian" && (version == "13" || version.starts_with("13.")) {
-        return ("apt-get".into(), "debian13".into(), deb_arch.into(), String::new());
+        return (
+            "apt-get".into(),
+            "debian13".into(),
+            deb_arch.into(),
+            String::new(),
+        );
     }
     if distro != "ubuntu" && distro != "debian" {
         let ubuntu_codename = {
@@ -545,7 +573,12 @@ fn update_platform() -> (String, String, String, String) {
             }
         };
         if debian_codename == "trixie" {
-            return ("apt-get".into(), "debian13".into(), deb_arch.into(), String::new());
+            return (
+                "apt-get".into(),
+                "debian13".into(),
+                deb_arch.into(),
+                String::new(),
+            );
         }
     }
     let arch_family = ["arch", "archlinux", "endeavouros", "garuda", "cachyos"];
@@ -555,7 +588,12 @@ fn update_platform() -> (String, String, String, String) {
                 "Arch Linux 的发布包只有 x86_64，{machine} 请用 scripts/package-arch.sh 在本机编包；{guide}"
             ));
         }
-        return ("pacman".into(), "archlinux".into(), "x86_64".into(), String::new());
+        return (
+            "pacman".into(),
+            "archlinux".into(),
+            "x86_64".into(),
+            String::new(),
+        );
     }
     if distro == "fedora" && !version.is_empty() && version.chars().all(|c| c.is_ascii_digit()) {
         return (
@@ -567,7 +605,11 @@ fn update_platform() -> (String, String, String, String) {
     }
     cannot(format!(
         "{} 请按发行版说明从源码更新；{guide}",
-        if distro.is_empty() { "这个发行版" } else { &distro }
+        if distro.is_empty() {
+            "这个发行版"
+        } else {
+            &distro
+        }
     ))
 }
 
@@ -675,6 +717,7 @@ fn url_ok(url: &str) -> bool {
 }
 
 /// 后台线程：下载包 → 按 SHA256SUMS 校验 → 用 pkexec 交给包管理器安装。
+#[cfg(not(windows))]
 fn update_install_work(release: String) {
     let plan: serde_json::Value =
         serde_json::from_str(&Config::update_plan(release.clone())).unwrap_or_default();
@@ -797,7 +840,8 @@ fn custom_lines(path: &str) -> Vec<String> {
 
 fn write_custom_lines(path: &str, lines: &[String]) -> bool {
     let mut out = vec![
-        "# ArchType 自定义词：编码<TAB>词。编码是拼音（空格分开音节），也可以是 mail 这类字母；".to_string(),
+        "# ArchType 自定义词：编码<TAB>词。编码是拼音（空格分开音节），也可以是 mail 这类字母；"
+            .to_string(),
         "# 词里写 \\n 表示换行。由 ArchType 设置维护，也可以手动编辑。".to_string(),
     ];
     out.extend(lines.iter().cloned());
@@ -822,7 +866,8 @@ fn md5_of(path: &str) -> Result<String, String> {
 fn unzip_voice(pack: &str, folder: &str) -> Result<(), String> {
     use std::io::Read;
     let file = fs::File::open(pack).map_err(|error| error.to_string())?;
-    let mut outer = zip::ZipArchive::new(file).map_err(|error| format!("语音包格式不对：{error}"))?;
+    let mut outer =
+        zip::ZipArchive::new(file).map_err(|error| format!("语音包格式不对：{error}"))?;
     let mut inner_bytes = Vec::new();
     {
         let mut inner = outer
@@ -847,7 +892,8 @@ fn unzip_voice(pack: &str, folder: &str) -> Result<(), String> {
         if !(base.ends_with(".xnet") || base == VOICE_MODEL_DICT) {
             continue;
         }
-        let mut out = fs::File::create(format!("{staging}/{base}")).map_err(|error| error.to_string())?;
+        let mut out =
+            fs::File::create(format!("{staging}/{base}")).map_err(|error| error.to_string())?;
         std::io::copy(&mut entry, &mut out).map_err(|error| error.to_string())?;
     }
     let has_xnet = fs::read_dir(&staging)
@@ -914,7 +960,9 @@ fn download_voice_pack(pack: &str) -> Result<(), String> {
         if VOICE_CANCEL.load(std::sync::atomic::Ordering::SeqCst) {
             return Err("已取消".to_string());
         }
-        let read = reader.read(&mut buffer).map_err(|e| format!("下载中断：{e}"))?;
+        let read = reader
+            .read(&mut buffer)
+            .map_err(|e| format!("下载中断：{e}"))?;
         if read == 0 {
             break;
         }
@@ -983,7 +1031,9 @@ fn download_resumable(
         if cancel.load(std::sync::atomic::Ordering::SeqCst) {
             return Err("已取消".to_string());
         }
-        let read = reader.read(&mut buffer).map_err(|e| format!("下载中断：{e}"))?;
+        let read = reader
+            .read(&mut buffer)
+            .map_err(|e| format!("下载中断：{e}"))?;
         if read == 0 {
             break;
         }
@@ -1024,10 +1074,14 @@ fn install_voice() -> Result<(), String> {
         download_voice_pack(&pack)?;
     }
     set_voice_state("verifying");
-    let size = fs::metadata(&pack).map_err(|error| error.to_string())?.len();
+    let size = fs::metadata(&pack)
+        .map_err(|error| error.to_string())?
+        .len();
     if size != VOICE_MODEL_SIZE {
         let _ = fs::remove_file(&pack);
-        return Err(format!("语音包大小不对：{size} 字节，应该是 {VOICE_MODEL_SIZE} 字节，已删除，请重试"));
+        return Err(format!(
+            "语音包大小不对：{size} 字节，应该是 {VOICE_MODEL_SIZE} 字节，已删除，请重试"
+        ));
     }
     if md5_of(&pack)? != VOICE_MODEL_MD5 {
         let _ = fs::remove_file(&pack);
@@ -1064,7 +1118,7 @@ pub struct Config;
 impl Config {
     /// archtype.conf 的完整路径。
     pub fn config_path() -> String {
-        if on_macos() {
+        if on_macos() || on_windows() {
             format!("{}/archtype.conf", support_dir())
         } else {
             format!("{}/fcitx5/conf/archtype.conf", config_home())
@@ -1073,7 +1127,7 @@ impl Config {
 
     /// 用户数据目录（词库、模型、自定义词）。
     pub fn data_dir() -> String {
-        if on_macos() {
+        if on_macos() || on_windows() {
             support_dir()
         } else {
             format!("{}/archtype", data_home())
@@ -1112,9 +1166,9 @@ impl Config {
 
     /// 读 classicui.conf（fcitx5 经典界面主题、字体）。
     ///
-    /// macOS 上没有 fcitx5：候选框主题记在 state.json 里（键名不变），界面代码两端一样。
+    /// macOS / Windows 上没有 fcitx5：候选框主题记在 state.json 里（键名不变）。
     pub fn classicui_get(key: String) -> String {
-        if on_macos() {
+        if on_macos() || on_windows() {
             return json_get(&state_path(), &format!("classicui.{key}"));
         }
         get_key(&classicui_path(), &key)
@@ -1122,7 +1176,7 @@ impl Config {
 
     /// 写 classicui.conf。
     pub fn classicui_set(key: String, value: String) -> bool {
-        if on_macos() {
+        if on_macos() || on_windows() {
             return json_set(&state_path(), &format!("classicui.{key}"), &value);
         }
         set_key(&classicui_path(), &key, &value)
@@ -1320,7 +1374,13 @@ impl Config {
     }
 
     /// 试一次翻译服务；返回 {"ok":true,"text":"…"} 或 {"ok":false,"error":"…"}。
-    pub fn translate_test(base: String, key: String, model: String, target: String, formal: bool) -> String {
+    pub fn translate_test(
+        base: String,
+        key: String,
+        model: String,
+        target: String,
+        formal: bool,
+    ) -> String {
         let mut base = base.trim().trim_end_matches('/').to_string();
         if let Some(stripped) = base.strip_suffix("/chat/completions") {
             base = stripped.trim_end_matches('/').to_string();
@@ -1527,9 +1587,39 @@ impl Config {
     pub fn update_plan(release: String) -> String {
         let value: serde_json::Value = match serde_json::from_str(&release) {
             Ok(value) => value,
-            Err(_) => return serde_json::json!({"can_install": false, "reason": "读不懂发布信息"}).to_string(),
+            Err(_) => {
+                return serde_json::json!({"can_install": false, "reason": "读不懂发布信息"})
+                    .to_string();
+            }
         };
         let version = value["version"].as_str().unwrap_or("").to_string();
+        if on_windows() {
+            if version.is_empty()
+                || !version
+                    .chars()
+                    .all(|c| c.is_ascii_alphanumeric() || "._+~^-".contains(c))
+            {
+                return serde_json::json!({
+                    "can_install": false, "reason": "发布版本号格式无效", "version": version, "files": [],
+                })
+                .to_string();
+            }
+            let name = format!("ArchType-{version}-x64.msi");
+            let base =
+                format!("https://github.com/Goway-Hui/ArchType/releases/download/v{version}");
+            return serde_json::json!({
+                "can_install": true,
+                "manager": "msi",
+                "reason": "下载并校验后运行 MSI 安装；Windows 会请求管理员权限。",
+                "version": version,
+                "files": [{
+                    "name": name,
+                    "url": format!("{base}/{name}"),
+                    "size": 0,
+                }],
+            })
+            .to_string();
+        }
         if on_macos() {
             return serde_json::json!({
                 "can_install": false,
@@ -1599,13 +1689,19 @@ impl Config {
         .to_string()
     }
 
-    /// 开始下载并安装更新（后台线程）。返回是否真的开始了。
     pub fn update_install_start(release: String) -> bool {
-        *UPDATE_STATE.lock().unwrap() = "downloading".to_string();
-        *UPDATE_PROGRESS.lock().unwrap() = (0, 0);
-        UPDATE_CANCEL.store(false, std::sync::atomic::Ordering::SeqCst);
-        std::thread::spawn(move || update_install_work(release));
-        true
+        #[cfg(windows)]
+        {
+            return windows_update_install(release);
+        }
+        #[cfg(not(windows))]
+        {
+            *UPDATE_STATE.lock().unwrap() = "downloading".to_string();
+            *UPDATE_PROGRESS.lock().unwrap() = (0, 0);
+            UPDATE_CANCEL.store(false, std::sync::atomic::Ordering::SeqCst);
+            std::thread::spawn(move || update_install_work(release));
+            true
+        }
     }
 
     /// 下载/安装状态：idle / downloading / verifying / installing / done:版本 / error:原因。
@@ -1628,30 +1724,131 @@ impl Config {
         ok
     }
 
-    /// 重启设置界面自己：安装完更新、fcitx5 重启以后，让界面也换成新版本（版本号、界面代码都是新的）。
-    /// 起一个 shell 等这个进程退出后再 exec（避开单实例锁），然后主动退出。
+    /// 重启设置界面自己：安装完更新、fcitx5 重启以后，让界面也换成新版本。
     pub fn restart_settings() -> bool {
         let Ok(exe) = std::env::current_exe() else {
             return false;
         };
         let args: Vec<std::ffi::OsString> = std::env::args_os().skip(1).collect();
-        let mut cmd = std::process::Command::new("sh");
-        cmd.arg("-c")
-            .arg("sleep 0.8; exec \"$@\"")
-            .arg("sh")
-            .arg(&exe)
-            .args(&args);
-        if cmd.spawn().is_ok() {
-            std::process::exit(0);
+        #[cfg(windows)]
+        {
+            use std::os::windows::process::CommandExt;
+            if std::process::Command::new("cmd")
+                .args(["/D", "/S", "/C", r#"ping 127.0.0.1 -n 2 >nul & "%1" %*"#])
+                .arg(&exe)
+                .args(&args)
+                .stdin(std::process::Stdio::null())
+                .stdout(std::process::Stdio::null())
+                .stderr(std::process::Stdio::null())
+                .creation_flags(0x0800_0000)
+                .spawn()
+                .is_ok()
+            {
+                std::process::exit(0);
+            }
+            return false;
         }
-        false
+        #[cfg(not(windows))]
+        {
+            let mut cmd = std::process::Command::new("sh");
+            cmd.arg("-c")
+                .arg("sleep 0.8; exec \"$@\"")
+                .arg("sh")
+                .arg(&exe)
+                .args(&args);
+            if cmd.spawn().is_ok() {
+                std::process::exit(0);
+            }
+            false
+        }
     }
+}
 
+#[cfg(windows)]
+fn windows_update_install(release: String) -> bool {
+    let value: serde_json::Value = match serde_json::from_str(&release) {
+        Ok(value) => value,
+        Err(_) => return false,
+    };
+    let version = value
+        .get("version")
+        .and_then(|v| v.as_str())
+        .unwrap_or("")
+        .to_string();
+    if version.is_empty()
+        || !version
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || "._+~^-".contains(c))
+    {
+        return false;
+    }
+    let dir = std::env::temp_dir().join("archtype-update");
+    let name = format!("ArchType-{version}-x64.msi");
+    let base = format!("https://github.com/Goway-Hui/ArchType/releases/download/v{version}");
+    std::thread::spawn(move || {
+        if std::fs::create_dir_all(&dir).is_err() {
+            update_set_state("error:建不了下载目录".to_string());
+            return;
+        }
+        let msi = dir.join(&name);
+        if let Err(error) = update_download(&format!("{base}/{name}"), &msi.to_string_lossy(), 0) {
+            update_set_state(format!("error:{error}"));
+            return;
+        }
+        update_set_state("verifying".to_string());
+        let sums_url = format!("{base}/SHA256SUMS");
+        let sums = match curl(&sums_url, "", None, 30) {
+            Ok(sums) => sums,
+            Err(error) => {
+                update_set_state(format!("error:{error}"));
+                return;
+            }
+        };
+        let expected = sums.lines().find_map(|line| {
+            let mut fields = line.split_whitespace();
+            let digest = fields.next()?;
+            let file = fields.next()?.trim_start_matches('*');
+            (file == name).then(|| digest.to_lowercase())
+        });
+        let Some(expected) = expected else {
+            update_set_state(format!("error:SHA256SUMS 里没有 {name}"));
+            return;
+        };
+        match sha256_of(&msi.to_string_lossy()) {
+            Ok(actual) if actual == expected => {}
+            Ok(_) => {
+                let _ = std::fs::remove_file(&msi);
+                update_set_state("error:MSI 校验和不对，请重试".to_string());
+                return;
+            }
+            Err(error) => {
+                update_set_state(format!("error:读不了 MSI：{error}"));
+                return;
+            }
+        }
+        update_set_state("installing".to_string());
+        let status = std::process::Command::new("msiexec")
+            .args(["/i", &msi.to_string_lossy(), "/qn", "/norestart"])
+            .status();
+        match status {
+            Ok(status) if status.success() => update_set_state(format!("done:{version}")),
+            Ok(_) => update_set_state("error:MSI 安装没有完成".to_string()),
+            Err(error) => update_set_state(format!("error:启动 MSI 安装失败：{error}")),
+        }
+    });
+    true
+}
+
+impl Config {
     /// 导出自定义词到 ~/Downloads（没有就放家目录）。返回写入的路径，失败返回空串。
     pub fn custom_words_export() -> String {
         let dir = {
             let downloads = format!("{}/Downloads", home());
-            if Path::new(&downloads).is_dir() { downloads } else { home() }
+            if Path::new(&downloads).is_dir() {
+                downloads
+            } else {
+                home()
+            }
         };
         let path = format!("{dir}/archtype-custom-words.tsv");
         let text = read(&format!("{}/custom.tsv", Config::data_dir()));
@@ -1660,11 +1857,13 @@ impl Config {
             .filter(|line| !line.trim().is_empty() && !line.trim_start().starts_with('#'))
             .map(|line| line.to_string())
             .collect();
-        let mut out = vec![
-            "# ArchType 自定义词：编码<TAB>词".to_string(),
-        ];
+        let mut out = vec!["# ArchType 自定义词：编码<TAB>词".to_string()];
         out.extend(body);
-        if atomic_write(&path, &(out.join("\n") + "\n")) { path } else { String::new() }
+        if atomic_write(&path, &(out.join("\n") + "\n")) {
+            path
+        } else {
+            String::new()
+        }
     }
 
     /// 从 ~/Downloads/archtype-custom-words.tsv 导入（没有就读家目录的）。
@@ -1672,7 +1871,11 @@ impl Config {
     pub fn custom_words_import() -> String {
         let dir = {
             let downloads = format!("{}/Downloads", home());
-            if Path::new(&downloads).is_dir() { downloads } else { home() }
+            if Path::new(&downloads).is_dir() {
+                downloads
+            } else {
+                home()
+            }
         };
         let path = format!("{dir}/archtype-custom-words.tsv");
         let Ok(raw) = fs::read_to_string(&path) else {
@@ -1734,11 +1937,19 @@ impl Config {
     pub fn diagnostics_export() -> String {
         let dir = {
             let downloads = format!("{}/Downloads", home());
-            if Path::new(&downloads).is_dir() { downloads } else { home() }
+            if Path::new(&downloads).is_dir() {
+                downloads
+            } else {
+                home()
+            }
         };
         let path = format!("{dir}/archtype-log.txt");
         let text = build_diagnostics();
-        if atomic_write(&path, &text) { path } else { String::new() }
+        if atomic_write(&path, &text) {
+            path
+        } else {
+            String::new()
+        }
     }
 
     /// 用系统默认程序打开自定义词表；没有就先建一个空的。
@@ -1816,8 +2027,8 @@ impl Config {
     /// 状态文件里记录的已让出 Shift 列表，非空表示开关应为开。空串表示没有让出。
     pub fn shift_free_state() -> String {
         let state_path = format!("{}/archtype/state.json", state_home());
-        let state: serde_json::Value = serde_json::from_str(&read(&state_path))
-            .unwrap_or_else(|_| serde_json::json!({}));
+        let state: serde_json::Value =
+            serde_json::from_str(&read(&state_path)).unwrap_or_else(|_| serde_json::json!({}));
         match state.get("fcitx_shift_freed").and_then(|v| v.as_array()) {
             Some(list) if !list.is_empty() => list.len().to_string(),
             _ => String::new(),
@@ -1836,14 +2047,21 @@ impl Config {
         let mut by_option: std::collections::BTreeMap<String, Vec<String>> = Default::default();
         for line in conflicts.lines() {
             if let Some((option, key)) = line.split_once('=') {
-                by_option.entry(option.to_string()).or_default().push(key.to_string());
+                by_option
+                    .entry(option.to_string())
+                    .or_default()
+                    .push(key.to_string());
             }
         }
         let mut freed: Vec<(String, String)> = Vec::new();
         let mut updates: Vec<(String, Vec<String>)> = Vec::new();
         for (option, removed) in &by_option {
             let current = fcitx_option_keys(option);
-            let kept: Vec<String> = current.iter().filter(|k| !removed.contains(k)).cloned().collect();
+            let kept: Vec<String> = current
+                .iter()
+                .filter(|k| !removed.contains(k))
+                .cloned()
+                .collect();
             for key in removed {
                 freed.push((option.clone(), key.clone()));
             }
@@ -1859,19 +2077,23 @@ impl Config {
             .map(|(option, key)| serde_json::json!([option, key]))
             .collect();
         let state_path = format!("{}/archtype/state.json", state_home());
-        let mut state: serde_json::Value = serde_json::from_str(&read(&state_path))
-            .unwrap_or_else(|_| serde_json::json!({}));
+        let mut state: serde_json::Value =
+            serde_json::from_str(&read(&state_path)).unwrap_or_else(|_| serde_json::json!({}));
         state["fcitx_shift_freed"] = serde_json::Value::Array(freed_json);
         let _ = atomic_write(&state_path, &state.to_string());
-        if persisted { "memory".to_string() } else { "ok".to_string() }
+        if persisted {
+            "memory".to_string()
+        } else {
+            "ok".to_string()
+        }
     }
 
     /// 关闭时加回：把状态文件里记下的 Shift 按键加回 fcitx5。返回 "ok" 或错误文字。
     /// 对应旧版 on_shift_free_toggled（关闭分支）。
     pub fn shift_free_off() -> String {
         let state_path = format!("{}/archtype/state.json", state_home());
-        let state: serde_json::Value = serde_json::from_str(&read(&state_path))
-            .unwrap_or_else(|_| serde_json::json!({}));
+        let state: serde_json::Value =
+            serde_json::from_str(&read(&state_path)).unwrap_or_else(|_| serde_json::json!({}));
         let freed: Vec<(String, String)> = state
             .get("fcitx_shift_freed")
             .and_then(|v| v.as_array())
@@ -1890,7 +2112,10 @@ impl Config {
         }
         let mut by_option: std::collections::BTreeMap<String, Vec<String>> = Default::default();
         for (option, key) in &freed {
-            by_option.entry(option.clone()).or_default().push(key.clone());
+            by_option
+                .entry(option.clone())
+                .or_default()
+                .push(key.clone());
         }
         let mut updates: Vec<(String, Vec<String>)> = Vec::new();
         for (option, keys) in by_option {
@@ -2048,7 +2273,10 @@ impl Config {
             match result {
                 Ok(version) => {
                     set_lexicon_state(&format!("done:{version}"));
-                    Config::set("Lexicon".to_string(), wanxiang_lexicon_path().to_string_lossy().to_string());
+                    Config::set(
+                        "Lexicon".to_string(),
+                        wanxiang_lexicon_path().to_string_lossy().to_string(),
+                    );
                     Config::restart_fcitx();
                 }
                 Err(error) => set_lexicon_state(&format!("error:{error}")),
@@ -2177,7 +2405,9 @@ impl Config {
     /// 已经下到的 .part 字节数（没有 .part 时是 0），用来显示「可以接着下」。
     pub fn voice_partial_bytes() -> String {
         let part = format!("{}/wtlocal.apk.part", Config::data_dir());
-        fs::metadata(part).map(|m| m.len().to_string()).unwrap_or_else(|_| "0".to_string())
+        fs::metadata(part)
+            .map(|m| m.len().to_string())
+            .unwrap_or_else(|_| "0".to_string())
     }
 
     /// 语音模型下载状态：idle / downloading / verifying / extracting / done / error:…
@@ -2252,16 +2482,18 @@ impl Config {
     }
 }
 
-
 /// 诊断信息正文（纯文本，隐私约束同旧版 collect_diagnostics）。
 fn build_diagnostics() -> String {
     let mut out: Vec<String> = Vec::new();
     out.push("# ArchType 诊断信息".to_string());
-    out.push(format!("导出时间：{}", std::process::Command::new("date")
-        .arg("+%Y-%m-%d %H:%M:%S %z")
-        .output()
-        .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
-        .unwrap_or_default()));
+    out.push(format!(
+        "导出时间：{}",
+        std::process::Command::new("date")
+            .arg("+%Y-%m-%d %H:%M:%S %z")
+            .output()
+            .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
+            .unwrap_or_default()
+    ));
     out.push("不含你打过的字、自定义词和输入习惯的内容（只有条数和大小）。".to_string());
     out.push(String::new());
 
@@ -2274,10 +2506,7 @@ fn build_diagnostics() -> String {
         .map(|v| v.trim_matches('"').to_string())
         .unwrap_or_default();
     out.push(format!("系统：{pretty}"));
-    out.push(format!(
-        "架构：{}",
-        std::env::consts::ARCH
-    ));
+    out.push(format!("架构：{}", std::env::consts::ARCH));
     for key in [
         "XDG_CURRENT_DESKTOP",
         "XDG_SESSION_TYPE",
@@ -2307,7 +2536,10 @@ fn build_diagnostics() -> String {
         }
     }
     let key_set = !translate_key_text().is_empty();
-    out.push(format!("互译 Key：{}", if key_set { "已设置" } else { "没设置" }));
+    out.push(format!(
+        "互译 Key：{}",
+        if key_set { "已设置" } else { "没设置" }
+    ));
     out.push(String::new());
 
     out.push("## 数据文件".to_string());
@@ -2315,9 +2547,12 @@ fn build_diagnostics() -> String {
         .ok()
         .filter(|p| !p.is_empty())
         .or_else(|| {
-            [format!("{}/lexicon.tsv", Config::data_dir()), "/usr/share/archtype/lexicon.tsv".to_string()]
-                .into_iter()
-                .find(|p| Path::new(p).exists())
+            [
+                format!("{}/lexicon.tsv", Config::data_dir()),
+                "/usr/share/archtype/lexicon.tsv".to_string(),
+            ]
+            .into_iter()
+            .find(|p| Path::new(p).exists())
         });
     match lexicon {
         Some(path) => out.push(format!("  词库：{}", path)),
@@ -2328,7 +2563,9 @@ fn build_diagnostics() -> String {
         .filter(|line| !line.trim().is_empty() && !line.trim_start().starts_with('#'))
         .count();
     out.push(format!("  自定义词：{custom_count} 条"));
-    let learned = read(&format!("{}/user.tsv", Config::data_dir())).lines().count();
+    let learned = read(&format!("{}/user.tsv", Config::data_dir()))
+        .lines()
+        .count();
     out.push(format!("  自动学到的词：{learned} 条"));
     out.push(String::new());
 
@@ -2371,7 +2608,6 @@ fn translate_key_text() -> String {
     read(&translate_key_path()).trim().to_string()
 }
 
-
 /// fcitx5 里的快捷键选项，与旧版 FCITX_OPTION_NAMES 一致。冲突扫描只看这几项。
 const FCITX_KEY_OPTIONS: [&str; 8] = [
     "AltTriggerKeys",
@@ -2389,9 +2625,14 @@ const FCITX_KEY_OPTIONS: [&str; 8] = [
 fn fcitx_global_hotkey() -> Option<Vec<(String, Vec<String>)>> {
     let output = std::process::Command::new("gdbus")
         .args([
-            "call", "--session", "--dest", "org.fcitx.Fcitx5",
-            "--object-path", "/controller",
-            "--method", "org.fcitx.Fcitx.Controller1.GetConfig",
+            "call",
+            "--session",
+            "--dest",
+            "org.fcitx.Fcitx5",
+            "--object-path",
+            "/controller",
+            "--method",
+            "org.fcitx.Fcitx.Controller1.GetConfig",
             "fcitx://config/global",
         ])
         .output()
@@ -2483,7 +2724,6 @@ fn bare_shift(key: &str) -> String {
     }
 }
 
-
 /// 冲突行（"选项=按键" 每行一条）的内部版本，供 shift_free_on 用。
 fn shift_conflicts_lines() -> String {
     Config::shift_conflicts()
@@ -2517,9 +2757,14 @@ fn fcitx_set_hotkeys(updates: &[(String, Vec<String>)]) -> bool {
     let payload = format!("<{{'Hotkey': <{hotkey}>}}>");
     let output = std::process::Command::new("gdbus")
         .args([
-            "call", "--session", "--dest", "org.fcitx.Fcitx5",
-            "--object-path", "/controller",
-            "--method", "org.fcitx.Fcitx.Controller1.SetConfig",
+            "call",
+            "--session",
+            "--dest",
+            "org.fcitx.Fcitx5",
+            "--object-path",
+            "/controller",
+            "--method",
+            "org.fcitx.Fcitx.Controller1.SetConfig",
             "fcitx://config/global",
             &payload,
         ])
@@ -2540,7 +2785,10 @@ fn fcitx_file_hotkey_has_shift_conflict() -> bool {
         if line.is_empty() || line.starts_with('#') {
             continue;
         }
-        if let Some(section) = line.strip_prefix("[Hotkey/").and_then(|r| r.strip_suffix(']')) {
+        if let Some(section) = line
+            .strip_prefix("[Hotkey/")
+            .and_then(|r| r.strip_suffix(']'))
+        {
             current_option = Some(section.to_string());
             continue;
         }
@@ -2564,10 +2812,13 @@ fn fcitx_file_hotkey_has_shift_conflict() -> bool {
     false
 }
 
-
 /// 离线翻译模型所在路径：~/.local/share/archtype/models/HY-MT1.5-1.8B-Q4_K_M.gguf
 fn local_model_path() -> std::path::PathBuf {
-    std::path::PathBuf::from(format!("{}/models/{}", Config::data_dir(), LOCAL_MODEL_FILE))
+    std::path::PathBuf::from(format!(
+        "{}/models/{}",
+        Config::data_dir(),
+        LOCAL_MODEL_FILE
+    ))
 }
 
 /// llama.cpp 运行程序目录：~/.local/share/archtype/llama
@@ -2577,7 +2828,9 @@ fn local_llama_dir() -> std::path::PathBuf {
 
 /// llama-server 可执行文件路径（解压后位于 llama-<build>/llama-server）
 fn llama_server_path() -> std::path::PathBuf {
-    local_llama_dir().join(format!("llama-{LLAMA_BUILD}")).join("llama-server")
+    local_llama_dir()
+        .join(format!("llama-{LLAMA_BUILD}"))
+        .join("llama-server")
 }
 
 /// 下载 → 校验 SHA256 → 才改名。校验不过删掉 .part（同旧版），不留坏文件。
@@ -2648,13 +2901,14 @@ fn install_llama() -> Result<(), String> {
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
-        let mut perms = fs::metadata(&server).map_err(|e| e.to_string())?.permissions();
+        let mut perms = fs::metadata(&server)
+            .map_err(|e| e.to_string())?
+            .permissions();
         perms.set_mode(0o755);
         fs::set_permissions(&server, perms).map_err(|e| e.to_string())?;
     }
     Ok(())
 }
-
 
 /// 离线翻译下载状态（字符串，供轮询）。
 static LOCAL_STATE: LazyLock<Mutex<String>> = LazyLock::new(|| Mutex::new("idle".to_string()));
@@ -2668,7 +2922,12 @@ fn set_local_state(state: &str) {
 /// 后台线程里做的事：先模型，后运行程序；每步都校验。
 fn local_download_work() -> Result<(), String> {
     if !local_model_path().is_file() {
-        fetch_and_verify(LOCAL_MODEL_URL, &local_model_path(), LOCAL_MODEL_SIZE, LOCAL_MODEL_SHA256)?;
+        fetch_and_verify(
+            LOCAL_MODEL_URL,
+            &local_model_path(),
+            LOCAL_MODEL_SIZE,
+            LOCAL_MODEL_SHA256,
+        )?;
     }
     if !llama_server_path().is_file() {
         set_local_state("installing");
@@ -2676,7 +2935,6 @@ fn local_download_work() -> Result<(), String> {
     }
     Ok(())
 }
-
 
 const RELEASE_API: &str = "https://api.github.com/repos/Goway-Hui/ArchType/releases/latest";
 
@@ -2697,12 +2955,21 @@ fn lexicon_pack_version() -> Option<String> {
     let version = fs::read_to_string(wanxiang_dir().join("VERSION"))
         .map(|v| v.trim().to_string())
         .unwrap_or_else(|_| "?".to_string());
-    Some(if version.is_empty() { "?".to_string() } else { version })
+    Some(if version.is_empty() {
+        "?".to_string()
+    } else {
+        version
+    })
 }
 
 /// 版本号文字 → 数字元组（同旧版 parse_version）。
 fn version_tuple(text: &str) -> Vec<u64> {
-    let cleaned = text.trim().trim_start_matches(['v', 'V']).split('-').next().unwrap_or("");
+    let cleaned = text
+        .trim()
+        .trim_start_matches(['v', 'V'])
+        .split('-')
+        .next()
+        .unwrap_or("");
     cleaned
         .split(|c: char| !c.is_ascii_digit())
         .filter(|part| !part.is_empty())
@@ -2713,8 +2980,14 @@ fn version_tuple(text: &str) -> Vec<u64> {
 /// GitHub 最新发布里找万象词库资产：(文件名, 版本, 地址)。没有返回 None。
 fn latest_lexicon_asset() -> Option<(String, String, String)> {
     let output = std::process::Command::new("curl")
-        .args(["-sL", "--max-time", "20", "-A", &format!("ArchType/{}", Config::version()),
-               RELEASE_API])
+        .args([
+            "-sL",
+            "--max-time",
+            "20",
+            "-A",
+            &format!("ArchType/{}", Config::version()),
+            RELEASE_API,
+        ])
         .output()
         .ok()?;
     if !output.status.success() {
@@ -2739,7 +3012,9 @@ fn latest_lexicon_asset() -> Option<(String, String, String)> {
         found.push((version_tuple(version), version.to_string(), name, url));
     }
     found.sort();
-    found.last().map(|(_, version, name, url)| (name.clone(), version.clone(), url.clone()))
+    found
+        .last()
+        .map(|(_, version, name, url)| (name.clone(), version.clone(), url.clone()))
 }
 
 /// 万象词库下载状态。
@@ -2771,7 +3046,14 @@ fn lexicon_download_work() -> Result<String, String> {
     // SHA256SUMS 里这个文件的校验值
     let sums_url = latest_sha256_sums_url()?;
     let sums_output = std::process::Command::new("curl")
-        .args(["-sL", "--max-time", "20", "-A", &format!("ArchType/{}", Config::version()), &sums_url])
+        .args([
+            "-sL",
+            "--max-time",
+            "20",
+            "-A",
+            &format!("ArchType/{}", Config::version()),
+            &sums_url,
+        ])
         .output()
         .map_err(|e| format!("跑不了 curl：{e}"))?;
     if !sums_output.status.success() {
@@ -2837,7 +3119,9 @@ fn lexicon_download_work() -> Result<String, String> {
         let mut buffer = vec![0u8; 1 << 16];
         loop {
             let read = existing.read(&mut buffer).map_err(|e| e.to_string())?;
-            if read == 0 { break; }
+            if read == 0 {
+                break;
+            }
             digest.update(&buffer[..read]);
         }
     }
@@ -2854,8 +3138,12 @@ fn lexicon_download_work() -> Result<String, String> {
         if LEXICON_CANCEL.load(std::sync::atomic::Ordering::SeqCst) {
             return Err("已取消".to_string());
         }
-        let read = reader.read(&mut buffer).map_err(|e| format!("下载中断：{e}"))?;
-        if read == 0 { break; }
+        let read = reader
+            .read(&mut buffer)
+            .map_err(|e| format!("下载中断：{e}"))?;
+        if read == 0 {
+            break;
+        }
         out.write_all(&buffer[..read]).map_err(|e| e.to_string())?;
         Digest::update(&mut digest, &buffer[..read]);
         done += read as u64;
@@ -2880,15 +3168,28 @@ fn lexicon_download_work() -> Result<String, String> {
 /// SHA256SUMS 资产的地址（与词库包同属最新发布）。
 fn latest_sha256_sums_url() -> Result<String, String> {
     let output = std::process::Command::new("curl")
-        .args(["-sL", "--max-time", "20", "-A", &format!("ArchType/{}", Config::version()),
-               RELEASE_API])
+        .args([
+            "-sL",
+            "--max-time",
+            "20",
+            "-A",
+            &format!("ArchType/{}", Config::version()),
+            RELEASE_API,
+        ])
         .output()
         .map_err(|e| format!("跑不了 curl：{e}"))?;
     if !output.status.success() {
         return Err("下不了发布信息".to_string());
     }
-    let data: serde_json::Value = serde_json::from_slice(&output.stdout).ok().ok_or("看不懂发布信息")?;
-    for asset in data.get("assets").and_then(|v| v.as_array()).into_iter().flatten() {
+    let data: serde_json::Value = serde_json::from_slice(&output.stdout)
+        .ok()
+        .ok_or("看不懂发布信息")?;
+    for asset in data
+        .get("assets")
+        .and_then(|v| v.as_array())
+        .into_iter()
+        .flatten()
+    {
         if asset.get("name").and_then(|v| v.as_str()) == Some("SHA256SUMS") {
             return Ok(asset
                 .get("browser_download_url")
@@ -3048,7 +3349,9 @@ fn load_lexicon() -> Option<std::sync::Arc<String>> {
         }
     }
     let candidates = [
-        std::env::var("ARCHTYPE_LEXICON").ok().filter(|p| !p.is_empty()),
+        std::env::var("ARCHTYPE_LEXICON")
+            .ok()
+            .filter(|p| !p.is_empty()),
         Some(format!("{}/lexicon.tsv", Config::data_dir())),
         Some("/usr/share/archtype/lexicon.tsv".to_string()),
     ];

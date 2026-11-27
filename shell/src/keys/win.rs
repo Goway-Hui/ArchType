@@ -21,6 +21,8 @@ pub mod virtual_key {
     pub const RIGHT: u16 = 0x27;
     pub const DOWN: u16 = 0x28;
     pub const DELETE: u16 = 0x2e;
+    pub const LSHIFT: u16 = 0xa0;
+    pub const RSHIFT: u16 = 0xa1;
     pub const LWIN: u16 = 0x5b;
     pub const RWIN: u16 = 0x5c;
     pub const LCONTROL: u16 = 0xa2;
@@ -165,5 +167,40 @@ mod tests {
         for (_, name) in VoiceKey::PRESETS {
             assert!(VoiceKey::parse(name).is_some(), "{name} 解析不了");
         }
+    }
+
+    #[test]
+    fn editing_and_navigation_keys_keep_their_core_meanings() {
+        for (vk, expected) in [
+            (virtual_key::BACK, keysym::BACKSPACE),
+            (virtual_key::DELETE, keysym::DELETE),
+            (virtual_key::LEFT, keysym::LEFT),
+            (virtual_key::RIGHT, keysym::RIGHT),
+            (virtual_key::UP, keysym::UP),
+            (virtual_key::DOWN, keysym::DOWN),
+            (virtual_key::HOME, keysym::HOME),
+            (virtual_key::END, keysym::END),
+            (virtual_key::PRIOR, keysym::PAGE_UP),
+            (virtual_key::NEXT, keysym::PAGE_DOWN),
+        ] {
+            assert_eq!(
+                translate_key_down(vk, None, Modifiers::NONE)
+                    .unwrap()
+                    .keysym,
+                expected,
+                "VK {vk:#04x}"
+            );
+        }
+    }
+
+    #[test]
+    fn return_key_still_maps_when_unicode_reports_carriage_return() {
+        assert_eq!(virtual_key::RETURN, 0x0d);
+        assert_eq!(
+            translate_key_down(virtual_key::RETURN, Some("\r"), Modifiers::NONE)
+                .unwrap()
+                .keysym,
+            keysym::RETURN
+        );
     }
 }

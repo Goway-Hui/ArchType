@@ -5,8 +5,8 @@
 
 #![cfg(windows)]
 
-pub mod paths;
 mod candidate_window;
+pub mod paths;
 pub mod register;
 mod text_service;
 
@@ -15,7 +15,7 @@ pub use text_service::Factory;
 
 use std::ffi::c_void;
 
-use windows::core::{GUID, HRESULT, Interface};
+use windows::core::{Interface, GUID, HRESULT};
 use windows::Win32::Foundation::{CLASS_E_CLASSNOTAVAILABLE, E_INVALIDARG, S_FALSE, S_OK};
 use windows::Win32::System::Com::IClassFactory;
 

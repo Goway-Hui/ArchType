@@ -41,7 +41,7 @@ checksum = "330a5ed07fa54e4702c9d6c4174f74427fc0ef6e214bbd677ae50a5099946470"
 
 [[package]]
 name = "archtype-core"
-version = "0.8.0"
+version = "0.9.2"
 dependencies = [
  "anyhow",
  "archtype-voice",
@@ -51,15 +51,23 @@ dependencies = [
 ]
 
 [[package]]
+name = "archtype-lexicon"
+version = "0.9.2"
+dependencies = [
+ "archtype-net",
+ "serde_json",
+]
+
+[[package]]
 name = "archtype-net"
-version = "0.8.0"
+version = "0.9.2"
 dependencies = [
  "sha2",
 ]
 
 [[package]]
 name = "archtype-shell"
-version = "0.8.0"
+version = "0.9.2"
 dependencies = [
  "archtype-core",
  "archtype-net",
@@ -67,9 +75,10 @@ dependencies = [
 
 [[package]]
 name = "archtype-tsf"
-version = "0.8.0"
+version = "0.9.2"
 dependencies = [
  "archtype-core",
+ "archtype-lexicon",
  "archtype-shell",
  "windows 0.58.0",
  "windows-core 0.58.0",
@@ -77,7 +86,7 @@ dependencies = [
 
 [[package]]
 name = "archtype-voice"
-version = "0.8.0"
+version = "0.9.2"
 dependencies = [
  "anyhow",
  "cpal",

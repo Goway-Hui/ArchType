@@ -3,38 +3,39 @@
 //! M1 只做骨架：激活后把键交给 `archtype_shell::input::Input`，有整词固定的结果
 //! （`Frame.commit`）就插入；编辑区（composition / preedit）留给 M2。没有 preedit 时
 //! 会话「还没上屏的拼音」不会显示，`handled` 的键要放给应用，避免吞键。
-
 use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
 use std::rc::Rc;
 use std::sync::{LazyLock, Once};
 
-use archtype_core::session::{key_hints, Frame, Key, Mode};
+use archtype_core::session::{key_hints, Frame, KeyAction, Mode};
 use archtype_shell::input::Input;
-use archtype_shell::keys::win::VoiceKey;
+use archtype_shell::keys::win::{translate_key_down, virtual_key, VoiceKey};
+use archtype_shell::keys::{keysym, Modifiers};
 use archtype_shell::panel::Page;
-use archtype_shell::view::page_from_frame;
-use archtype_shell::voice::{
-    Voice, VOICE_ERROR, VOICE_LISTENING, VOICE_RECOGNIZING, VOICE_RESULT,
-};
-use archtype_shell::keys::{translate_key_down, Modifiers};
 use archtype_shell::runtime::Runtime;
-use windows::core::{implement, Interface, Result, PCWSTR};
+use archtype_shell::view::page_from_frame;
+use archtype_shell::voice::{Voice, VOICE_ERROR, VOICE_LISTENING, VOICE_RECOGNIZING, VOICE_RESULT};
+use windows::core::{implement, w, Interface, Result, PCWSTR};
 use windows::Win32::Foundation::{BOOL, FALSE, HWND, LPARAM, LRESULT, RECT, TRUE, WPARAM};
-use windows::Win32::UI::WindowsAndMessaging::{
-    CallNextHookEx, KillTimer, SetTimer, SetWindowsHookExW, UnhookWindowsHookEx, HHOOK,
-    KBDLLHOOKSTRUCT, WH_KEYBOARD_LL, WM_KEYDOWN, WM_KEYUP, WM_SYSKEYDOWN, WM_SYSKEYUP,
-};
-use windows::Win32::UI::Input::KeyboardAndMouse::{
-    GetKeyboardLayout, GetKeyboardState, GetKeyState, ToUnicodeEx,
-};
 use windows::Win32::System::Com::CoTaskMemFree;
+use windows::Win32::System::SystemInformation::GetTickCount;
+use windows::Win32::UI::Input::KeyboardAndMouse::{
+    GetKeyState, GetKeyboardLayout, GetKeyboardState, MapVirtualKeyW, ToUnicodeEx, MAPVK_VK_TO_VSC,
+};
 use windows::Win32::UI::TextServices::{
-    InputScope, ITfComposition, ITfCompositionSink, ITfCompositionSink_Impl, ITfContext,
-    ITfContextComposition, ITfEditSession, ITfEditSession_Impl, ITfInputScope,
-    ITfInsertAtSelection, ITfKeyEventSink, ITfKeyEventSink_Impl, ITfKeystrokeMgr, ITfRange, ITfTextInputProcessorEx, ITfTextInputProcessorEx_Impl, ITfTextInputProcessor_Impl,
-    ITfThreadMgr, GUID_PROP_INPUTSCOPE, IS_PASSWORD, TF_CONTEXT_EDIT_CONTEXT_FLAGS, TF_ES_READ,
-    TF_ES_READWRITE, TF_ES_SYNC, TF_IAS_NOQUERY, TF_SELECTION,
+    ITfComposition, ITfCompositionSink, ITfCompositionSink_Impl, ITfContext, ITfContextComposition,
+    ITfEditSession, ITfEditSession_Impl, ITfInputScope, ITfInsertAtSelection, ITfKeyEventSink,
+    ITfKeyEventSink_Impl, ITfKeystrokeMgr, ITfRange, ITfTextInputProcessorEx,
+    ITfTextInputProcessorEx_Impl, ITfTextInputProcessor_Impl, ITfThreadMgr, InputScope,
+    GUID_PROP_INPUTSCOPE, IS_PASSWORD, TF_AE_NONE, TF_ANCHOR_END, TF_ANCHOR_START,
+    TF_CONTEXT_EDIT_CONTEXT_FLAGS, TF_ES_READ, TF_ES_READWRITE, TF_ES_SYNC, TF_IAS_NOQUERY,
+    TF_SELECTION, TF_SELECTIONSTYLE,
+};
+use windows::Win32::UI::WindowsAndMessaging::{
+    CallNextHookEx, GetForegroundWindow, GetWindowThreadProcessId, PostMessageW, SetWindowsHookExW,
+    UnhookWindowsHookEx, HHOOK, HWND_MESSAGE, KBDLLHOOKSTRUCT, WH_KEYBOARD_LL, WM_ACTIVATEAPP,
+    WM_KEYDOWN, WM_KEYUP, WM_QUIT, WM_SYSKEYDOWN, WM_SYSKEYUP,
 };
 
 /// 进程级：配置、引擎、翻译器、统计（DLL 在每个宿主进程里各一份，和 fcitx5 插件一样）。
@@ -48,6 +49,8 @@ pub fn runtime() -> &'static Runtime {
 }
 
 thread_local! {
+    /// 当前 TSF 线程的文本服务；消息-only 窗口用它转发布局。
+    static SERVICE: RefCell<Option<Rc<State>>> = RefCell::new(None);
     /// 定时器回调要拿到当前输入法对象（同一个 TSF 线程）
     static VOICE_STATE: RefCell<Option<Rc<State>>> = RefCell::new(None);
 }
@@ -74,6 +77,12 @@ pub struct State {
     hook: Cell<isize>,
     /// 当前输入框是不是密码框（探测结果，下一次按键用）
     password: Cell<bool>,
+    /// message-only 窗口；TSF 回调、低级键盘钩子和定时器都投递到它
+    message_window: Cell<HWND>,
+    /// 当前正在等 wake_after_ms 的输入框
+    active_context: RefCell<Option<ITfContext>>,
+    wake_deadline_ms: Cell<u64>,
+    voice_context: Cell<bool>,
 }
 
 impl State {
@@ -92,8 +101,204 @@ impl State {
             hint_shown: Cell::new(false),
             hook: Cell::new(0),
             password: Cell::new(false),
+            message_window: Cell::new(HWND::default()),
+            active_context: RefCell::new(None),
+            wake_deadline_ms: Cell::new(0),
+            voice_context: Cell::new(false),
         }
     }
+
+    fn schedule(&self, context: &ITfContext, wake_after_ms: u32) {
+        let tid = self.tid.get();
+        self.active_context.borrow_mut().replace(context.clone());
+        self.wake_deadline_ms
+            .set(now_ms().saturating_add(u64::from(wake_after_ms)));
+        unsafe {
+            let _ = PostMessageW(
+                self.message_window.get(),
+                WM_ARCHTYPE_WAKE,
+                WPARAM(tid as usize),
+                LPARAM(wake_after_ms as isize),
+            );
+        }
+    }
+
+    fn schedule_voice(&self) {
+        let tid = self.tid.get();
+        unsafe {
+            let _ = PostMessageW(
+                self.message_window.get(),
+                WM_ARCHTYPE_VOICE,
+                WPARAM(tid as usize),
+                LPARAM::default(),
+            );
+        }
+    }
+}
+
+const WM_ARCHTYPE_VOICE: u32 = 0x8000 + 1;
+const WM_ARCHTYPE_WAKE: u32 = 0x8000 + 2;
+const WM_ARCHTYPE_HOOK: u32 = 0x8000 + 3;
+
+fn now_ms() -> u64 {
+    unsafe { GetTickCount() as u64 }
+}
+
+fn context_key(context: &ITfContext) -> isize {
+    Interface::as_raw(context) as isize
+}
+
+unsafe extern "system" fn message_wndproc(
+    hwnd: HWND,
+    msg: u32,
+    wparam: WPARAM,
+    lparam: LPARAM,
+) -> LRESULT {
+    match msg {
+        WM_ARCHTYPE_VOICE => {
+            if let Some(state) = SERVICE.with(|slot| slot.borrow().clone()) {
+                if state.tid.get() as usize == wparam.0 {
+                    voice_timer(hwnd, msg, 0, 0);
+                }
+            }
+            LRESULT(0)
+        }
+        WM_ARCHTYPE_WAKE => {
+            if let Some(state) = SERVICE.with(|slot| slot.borrow().clone()) {
+                if state.tid.get() as usize == wparam.0 {
+                    tick_context(&state);
+                }
+            }
+            LRESULT(0)
+        }
+        WM_ARCHTYPE_HOOK => {
+            if wparam.0 == 0 {
+                return LRESULT(0);
+            }
+            if let Some(state) = SERVICE.with(|slot| slot.borrow().clone()) {
+                let down = lparam.0 & 1 != 0;
+                let voice = state.voice.borrow();
+                let Some(voice) = voice.as_ref() else {
+                    return LRESULT(0);
+                };
+                if down {
+                    voice.key_down();
+                } else {
+                    voice.key_up();
+                }
+                state.voice_context.set(true);
+                state.schedule_voice();
+            }
+            LRESULT(0)
+        }
+        WM_ACTIVATEAPP => {
+            if let Some(state) = SERVICE.with(|slot| slot.borrow().clone()) {
+                if wparam.0 == 0 {
+                    crate::candidate_window::hide();
+                    state.clear_compositions();
+                }
+            }
+            LRESULT(0)
+        }
+        WM_QUIT => LRESULT(0),
+        _ => windows::Win32::UI::WindowsAndMessaging::DefWindowProcW(hwnd, msg, wparam, lparam),
+    }
+}
+
+fn create_message_window() -> HWND {
+    unsafe {
+        let Ok(instance) = windows::Win32::System::LibraryLoader::GetModuleHandleW(PCWSTR::null())
+        else {
+            return HWND::default();
+        };
+        let name = windows::core::w!("ArchTypeTSFMessages");
+        let class = windows::Win32::UI::WindowsAndMessaging::WNDCLASSW {
+            lpfnWndProc: Some(message_wndproc),
+            hInstance: windows::Win32::Foundation::HINSTANCE(instance.0),
+            lpszClassName: name,
+            ..Default::default()
+        };
+        let _ = windows::Win32::UI::WindowsAndMessaging::RegisterClassW(&class);
+        windows::Win32::UI::WindowsAndMessaging::CreateWindowExW(
+            windows::Win32::UI::WindowsAndMessaging::WINDOW_EX_STYLE::default(),
+            name,
+            w!("ArchType TSF"),
+            windows::Win32::UI::WindowsAndMessaging::WINDOW_STYLE::default(),
+            0,
+            0,
+            0,
+            0,
+            HWND_MESSAGE,
+            None,
+            windows::Win32::Foundation::HINSTANCE(instance.0),
+            None,
+        )
+        .map(|hwnd| hwnd)
+        .unwrap_or_default()
+    }
+}
+
+impl State {
+    fn clear_compositions(self: Rc<Self>) {
+        let keys: Vec<isize> = self.compositions.borrow().keys().copied().collect();
+        for key in keys {
+            let Some(context) = self.active_context.borrow().clone() else {
+                continue;
+            };
+            if context_key(&context) != key {
+                continue;
+            }
+            let Some(frame) = self
+                .input
+                .borrow_mut()
+                .as_mut()
+                .map(|input| input.reset(false))
+            else {
+                continue;
+            };
+            apply_frame(
+                &context,
+                self.tid.get(),
+                Rc::clone(&self),
+                key,
+                &frame,
+                None,
+            );
+        }
+    }
+}
+
+fn tick_context(state: &Rc<State>) {
+    let now = now_ms();
+    let Some(context) = state.active_context.borrow().clone() else {
+        return;
+    };
+    if now < state.wake_deadline_ms.get() {
+        return;
+    }
+    state.wake_deadline_ms.set(0);
+    let (frame, page) = {
+        let mut input = state.input.borrow_mut();
+        let Some(input) = input.as_mut() else {
+            return;
+        };
+        let frame = input.tick(now);
+        let config = input.config().clone();
+        let page = page_from_frame(&frame, input.shown(), &config);
+        (frame, page)
+    };
+    if frame.wake_after_ms > 0 {
+        state.schedule(&context, frame.wake_after_ms);
+    }
+    let page = (!page.is_empty()).then_some(page);
+    apply_frame(
+        &context,
+        state.tid.get(),
+        Rc::clone(state),
+        context_key(&context),
+        &frame,
+        page,
+    );
 }
 
 /// 文本服务本体：只管激活/停用；键事件由单独的 [`KeySink`] 接（便于 Advise/Unadvise）。
@@ -104,7 +309,9 @@ pub struct TextService {
 
 impl TextService {
     pub fn new() -> Self {
-        Self { state: Rc::new(State::new()) }
+        Self {
+            state: Rc::new(State::new()),
+        }
     }
 
     fn activate(&self, thread_mgr: Option<&ITfThreadMgr>, tid: u32) -> Result<()> {
@@ -124,13 +331,21 @@ impl TextService {
         }
         *self.state.keystroke.borrow_mut() = Some(keystroke);
         *self.state.sink.borrow_mut() = Some(sink);
-        // 50ms 轮询语音状态（听音量、等识别结果）
-        unsafe {
-            SetTimer(None, 0, 50, Some(voice_timer));
+        // 同线程 message-only 窗口：定时器、低级键盘钩子和 TSF 回调都转到这里，
+        // 不在系统回调里直接改 Input / COM 对象。
+        let hwnd = self.state.message_window.get();
+        if hwnd.is_invalid() {
+            let hwnd = create_message_window();
+            self.state.message_window.set(hwnd);
         }
-        // 全局语音热键：输入法在后台时也能按（低级键盘钩子，只在自己的消息线程里回调）
+        SERVICE.with(|slot| *slot.borrow_mut() = Some(Rc::clone(&self.state)));
+        VOICE_STATE.with(|slot| *slot.borrow_mut() = Some(Rc::clone(&self.state)));
+        self.state.schedule_voice();
+        // 全局语音热键：输入法在后台时也能按。钩子只投递消息。
         if self.state.hook.get() == 0 {
-            if let Ok(module) = unsafe { windows::Win32::System::LibraryLoader::GetModuleHandleW(PCWSTR::null()) } {
+            if let Ok(module) =
+                unsafe { windows::Win32::System::LibraryLoader::GetModuleHandleW(PCWSTR::null()) }
+            {
                 if let Ok(hook) = unsafe {
                     SetWindowsHookExW(
                         WH_KEYBOARD_LL,
@@ -143,7 +358,6 @@ impl TextService {
                 }
             }
         }
-        VOICE_STATE.with(|slot| *slot.borrow_mut() = Some(Rc::clone(&self.state)));
         Ok(())
     }
 
@@ -156,9 +370,14 @@ impl TextService {
         }
         *self.state.sink.borrow_mut() = None;
         *self.state.thread_mgr.borrow_mut() = None;
-        unsafe {
-            let _ = KillTimer(None, 0);
+        let hwnd = self.state.message_window.replace(HWND::default());
+        if !hwnd.is_invalid() {
+            unsafe {
+                let _ = windows::Win32::UI::WindowsAndMessaging::DestroyWindow(hwnd);
+            }
         }
+        SERVICE.with(|slot| *slot.borrow_mut() = None);
+        VOICE_STATE.with(|slot| *slot.borrow_mut() = None);
         let hook = self.state.hook.replace(0);
         if hook != 0 {
             unsafe {
@@ -208,6 +427,8 @@ impl KeySink {
         if runtime().engine().is_none() {
             return Ok(FALSE);
         }
+        self.state.active_context.borrow_mut().replace(pic.clone());
+        cancel_voice_hint(&self.state);
         // 设置窗口改了 archtype.conf：输入法这边跟着重读（不用重启宿主）
         if let Some(config) = runtime().reload_config_if_changed() {
             let available =
@@ -220,6 +441,24 @@ impl KeySink {
             crate::candidate_window::hide();
         }
         let vk = (wparam.0 & 0xffff) as u16;
+        if let Some(symbol) = shift_keysym(vk) {
+            let key = archtype_shell::input::make_key(
+                symbol,
+                0,
+                false,
+                None,
+                None,
+                0,
+                ((lparam.0 >> 16) & 0xff) as u32,
+                lparam.0 & (1 << 30) != 0,
+                now_ms(),
+            );
+            if let Some(input) = self.state.input.borrow_mut().as_mut() {
+                let frame = input.key(&key);
+                self.state.schedule(pic, frame.wake_after_ms);
+            }
+            return Ok(FALSE);
+        }
         // 密码框：探测一次（同步 edit session），这次按键不学习、不进统计
         let sensitive = probe_password(pic, &self.state);
         // 自动重复不算按键统计
@@ -236,7 +475,9 @@ impl KeySink {
                         voice.key_down();
                     }
                     self.state.last_context.borrow_mut().replace(pic.clone());
-                    VOICE_STATE.with(|slot| *slot.borrow_mut() = Some(Rc::clone(&self.state)));
+                    self.state.active_context.borrow_mut().replace(pic.clone());
+                    self.state.voice_context.set(true);
+                    self.state.schedule_voice();
                     return Ok(TRUE);
                 }
             }
@@ -245,18 +486,41 @@ impl KeySink {
         let characters = key_characters(vk, lparam);
         let Some(translated) = translate_key_down(vk, characters.as_deref(), current_modifiers())
         else {
-            return Ok(FALSE);
+            // 打字途中遇到翻译不出来的键先吃掉，避免应用把光标挪出 composition。
+            let composing = self
+                .state
+                .input
+                .borrow()
+                .as_ref()
+                .is_some_and(Input::composing);
+            return Ok(BOOL::from(composing));
         };
         let (frame, page) = {
             let mut input = self.state.input.borrow_mut();
             let Some(input) = input.as_mut() else {
                 return Ok(FALSE);
             };
-            let mut key = Key::default();
-            key.keysym = translated.keysym;
-            key.modifiers = translated.modifiers.0;
-            if sensitive {
-                key.hints = key_hints::NO_LEARN | key_hints::NO_TRANSLATE;
+            let repeat = lparam.0 & (1 << 30) != 0;
+            let scan = ((lparam.0 >> 16) & 0xff) as u32;
+            let mut key = archtype_shell::input::make_key(
+                translated.keysym,
+                translated.modifiers.0,
+                false,
+                None,
+                None,
+                if sensitive {
+                    key_hints::NO_LEARN | key_hints::NO_TRANSLATE
+                } else {
+                    0
+                },
+                if repeat { 0 } else { scan },
+                repeat,
+                now_ms(),
+            );
+            if key.keysym == keysym::PAGE_UP {
+                key.action = KeyAction::PrevPage;
+            } else if key.keysym == keysym::PAGE_DOWN {
+                key.action = KeyAction::NextPage;
             }
             let frame = input.key(&key);
             if let Some(text) = &frame.commit {
@@ -272,15 +536,19 @@ impl KeySink {
             let page = page_from_frame(&frame, input.shown(), &config);
             (frame, page)
         };
-        let page = (!page.is_empty()).then_some(page);
-        let context_key = Interface::as_raw(pic) as isize;
+        if frame.wake_after_ms > 0 {
+            self.state.schedule(pic, frame.wake_after_ms);
+        } else {
+            self.state.wake_deadline_ms.set(0);
+        }
+        let key = context_key(pic);
         apply_frame(
             pic,
             self.state.tid.get(),
             Rc::clone(&self.state),
-            context_key,
+            key,
             &frame,
-            page,
+            (!page.is_empty()).then_some(page),
         );
         Ok(BOOL::from(frame.handled))
     }
@@ -297,9 +565,7 @@ impl ITfKeyEventSink_Impl for KeySink_Impl {
         _wparam: WPARAM,
         _lparam: LPARAM,
     ) -> Result<BOOL> {
-        Ok(BOOL::from(
-            pic.is_some() && runtime().engine().is_some(),
-        ))
+        Ok(BOOL::from(pic.is_some() && runtime().engine().is_some()))
     }
 
     fn OnTestKeyUp(
@@ -315,21 +581,40 @@ impl ITfKeyEventSink_Impl for KeySink_Impl {
         self.this.handle(pic, wparam, lparam)
     }
 
-    fn OnKeyUp(
-        &self,
-        _pic: Option<&ITfContext>,
-        wparam: WPARAM,
-        _lparam: LPARAM,
-    ) -> Result<BOOL> {
+    fn OnKeyUp(&self, pic: Option<&ITfContext>, wparam: WPARAM, lparam: LPARAM) -> Result<BOOL> {
+        let vk = (wparam.0 & 0xffff) as u16;
         let config = runtime().config();
         if config.voice {
             if let Some(voice_key) = VoiceKey::parse(&config.voice_key) {
-                if (wparam.0 & 0xffff) as u16 == voice_key.vk {
+                if vk == voice_key.vk {
                     if let Some(voice) = self.state.voice.borrow().as_ref() {
                         voice.key_up();
                     }
                     return Ok(TRUE);
                 }
+            }
+        }
+        let Some(pic) = pic else {
+            return Ok(FALSE);
+        };
+        let Some(symbol) = shift_keysym(vk) else {
+            return Ok(FALSE);
+        };
+        let key = archtype_shell::input::make_key(
+            symbol,
+            0,
+            true,
+            None,
+            None,
+            0,
+            ((lparam.0 >> 16) & 0xff) as u32,
+            false,
+            now_ms(),
+        );
+        if let Some(input) = self.state.input.borrow_mut().as_mut() {
+            let frame = input.key(&key);
+            if frame.handled {
+                self.state.schedule(pic, frame.wake_after_ms);
             }
         }
         Ok(FALSE)
@@ -363,11 +648,15 @@ fn ensure_input(state: &State) {
 
 enum EditKind {
     /// 编辑区（组合）显示还没选的字
-    Preedit(Vec<u16>),
+    Preedit(Vec<u16>, usize),
     /// 上屏：替换组合，或直接插到光标处
-    Commit(Vec<u16>),
+    Commit(Vec<u16>, i32, bool),
     /// 丢掉组合（取消、切走）
     Cancel,
+}
+
+fn utf16_len(text: &str) -> usize {
+    text.encode_utf16().count()
 }
 
 /// 把一帧排到 TSF 的 edit session 里执行（TSF 只允许在 edit session 里改文本）。
@@ -383,9 +672,20 @@ fn apply_frame(
         if commit.is_empty() {
             return;
         }
-        EditKind::Commit(commit.encode_utf16().collect())
+        EditKind::Commit(
+            commit.encode_utf16().collect(),
+            frame.cursor_delta,
+            frame.delete_next,
+        )
     } else if !frame.preedit.is_empty() {
-        EditKind::Preedit(frame.preedit.encode_utf16().collect())
+        let mut boundary = frame.preedit_cursor.min(frame.preedit.len());
+        while boundary > 0 && !frame.preedit.is_char_boundary(boundary) {
+            boundary -= 1;
+        }
+        EditKind::Preedit(
+            frame.preedit.encode_utf16().collect(),
+            utf16_len(&frame.preedit[..boundary]),
+        )
     } else {
         EditKind::Cancel
     };
@@ -418,12 +718,13 @@ impl ITfEditSession_Impl for FrameEditSession_Impl {
     fn DoEditSession(&self, ec: u32) -> Result<()> {
         let this = &self.this;
         match &this.kind {
-            EditKind::Preedit(text) => {
+            EditKind::Preedit(text, caret) => {
                 let existing = this.state.compositions.borrow().get(&this.key).cloned();
                 let composition = match existing {
                     Some(composition) => composition,
                     None => {
-                        let composition = start_composition(&this.context, &this.state, this.key, ec)?;
+                        let composition =
+                            start_composition(&this.context, &this.state, this.key, ec)?;
                         this.state
                             .compositions
                             .borrow_mut()
@@ -434,11 +735,26 @@ impl ITfEditSession_Impl for FrameEditSession_Impl {
                 let range = unsafe { composition.GetRange() }?;
                 unsafe {
                     range.SetText(ec, 0, text)?;
+                    range.Collapse(ec, TF_ANCHOR_END)?;
+                    let mut moved = 0i32;
+                    let delta = (*caret as i32 - text.len() as i32).min(0);
+                    if delta != 0 {
+                        range.ShiftEnd(ec, delta, &mut moved, std::ptr::null())?;
+                    }
+                    let selection = TF_SELECTION {
+                        range: std::mem::ManuallyDrop::new(Some(range)),
+                        style: TF_SELECTIONSTYLE {
+                            ase: TF_AE_NONE,
+                            fInterimChar: FALSE,
+                        },
+                    };
+                    this.context.SetSelection(ec, &[selection])?;
                 }
             }
-            EditKind::Commit(text) => {
+            EditKind::Commit(text, delta, delete_next) => {
                 let composition = this.state.compositions.borrow_mut().remove(&this.key);
                 this.state.composition_sinks.borrow_mut().remove(&this.key);
+                let selection;
                 match composition {
                     Some(composition) => {
                         let range = unsafe { composition.GetRange() }?;
@@ -446,11 +762,43 @@ impl ITfEditSession_Impl for FrameEditSession_Impl {
                             range.SetText(ec, 0, text)?;
                             composition.EndComposition(ec)?;
                         }
+                        selection = Some(range);
                     }
                     None => unsafe {
                         let insert: ITfInsertAtSelection = this.context.cast()?;
                         insert.InsertTextAtSelection(ec, TF_IAS_NOQUERY, text)?;
+                        let mut fetched = [TF_SELECTION::default(); 1];
+                        let mut count = 0u32;
+                        this.context.GetSelection(ec, 0, &mut fetched, &mut count)?;
+                        selection = std::mem::ManuallyDrop::into_inner(fetched[0].range.clone());
                     },
+                }
+                if *delete_next || *delta != 0 {
+                    if let Some(range) = selection {
+                        unsafe {
+                            let mut changed = 0i32;
+                            if *delete_next {
+                                range.Collapse(ec, TF_ANCHOR_END)?;
+                                let mut changed = 0i32;
+                                range.ShiftEnd(ec, 1, &mut changed, std::ptr::null())?;
+                                if changed != 0 {
+                                    range.SetText(ec, 0, &[])?;
+                                }
+                                range.Collapse(ec, TF_ANCHOR_START)?;
+                            }
+                            if *delta != 0 {
+                                range.ShiftEnd(ec, *delta, &mut changed, std::ptr::null())?;
+                            }
+                            let selection = TF_SELECTION {
+                                range: std::mem::ManuallyDrop::new(Some(range)),
+                                style: TF_SELECTIONSTYLE {
+                                    ase: TF_AE_NONE,
+                                    fInterimChar: FALSE,
+                                },
+                            };
+                            this.context.SetSelection(ec, &[selection])?;
+                        }
+                    }
                 }
             }
             EditKind::Cancel => {
@@ -497,6 +845,9 @@ fn click_candidate(state: &Rc<State>, context: &ITfContext, tid: u32, key: isize
         let page = page_from_frame(&frame, input.shown(), &config);
         (frame, page)
     };
+    if frame.wake_after_ms > 0 {
+        state.schedule(context, frame.wake_after_ms);
+    }
     let page = (!page.is_empty()).then_some(page);
     apply_frame(context, tid, Rc::clone(state), key, &frame, page);
 }
@@ -507,10 +858,9 @@ fn caret_rect(context: &ITfContext, ec: u32) -> Result<windows::Win32::Foundatio
         let mut selection: [TF_SELECTION; 1] = std::mem::zeroed();
         let mut fetched = 0u32;
         context.GetSelection(ec, 0, &mut selection, &mut fetched)?;
-        let range = selection[0]
-            .range
-            .as_ref()
-            .ok_or_else(|| windows::core::Error::from_hresult(windows::Win32::Foundation::E_FAIL))?;
+        let range = selection[0].range.as_ref().ok_or_else(|| {
+            windows::core::Error::from_hresult(windows::Win32::Foundation::E_FAIL)
+        })?;
         let view = context.GetActiveView()?;
         let mut rect = windows::Win32::Foundation::RECT::default();
         let mut clipped = windows::Win32::Foundation::BOOL::default();
@@ -531,10 +881,9 @@ fn start_composition(
         let mut selection: [TF_SELECTION; 1] = std::mem::zeroed();
         let mut fetched = 0u32;
         context.GetSelection(ec, 0, &mut selection, &mut fetched)?;
-        let range = selection[0]
-            .range
-            .as_ref()
-            .ok_or_else(|| windows::core::Error::from_hresult(windows::Win32::Foundation::E_FAIL))?;
+        let range = selection[0].range.as_ref().ok_or_else(|| {
+            windows::core::Error::from_hresult(windows::Win32::Foundation::E_FAIL)
+        })?;
 
         let sink: ITfCompositionSink = CompositionSink {
             state: Rc::clone(state),
@@ -563,9 +912,12 @@ impl ITfEditSession_Impl for ProbePassword_Impl {
         unsafe {
             let mut selection: [TF_SELECTION; 1] = std::mem::zeroed();
             let mut fetched = 0u32;
-            this.context.GetSelection(ec, 0, &mut selection, &mut fetched)?;
+            this.context
+                .GetSelection(ec, 0, &mut selection, &mut fetched)?;
             if let Some(range) = selection[0].range.as_ref() {
-                this.state.password.set(input_scope_password(&this.context, ec, range));
+                this.state
+                    .password
+                    .set(input_scope_password(&this.context, ec, range));
             }
         }
         Ok(())
@@ -623,7 +975,7 @@ fn mode_request_path() -> std::path::PathBuf {
     crate::paths::support_dir().join("mode-request")
 }
 
-/// 低级键盘钩子：匹配语音键时按/松交给语音句柄，并吃掉这个键。
+/// 低级键盘钩子：只把语音键事件投递到同线程消息窗口，不在钩子里碰 Voice。
 unsafe extern "system" fn keyboard_hook(code: i32, wparam: WPARAM, lparam: LPARAM) -> LRESULT {
     if code >= 0 {
         let info = &*(lparam.0 as *const KBDLLHOOKSTRUCT);
@@ -634,15 +986,19 @@ unsafe extern "system" fn keyboard_hook(code: i32, wparam: WPARAM, lparam: LPARA
             if config.voice {
                 if let Some(key) = VoiceKey::parse(&config.voice_key) {
                     if info.vkCode as u16 == key.vk {
-                        VOICE_STATE.with(|slot| {
+                        SERVICE.with(|slot| {
                             if let Some(state) = slot.borrow().as_ref() {
-                                if let Some(voice) = state.voice.borrow().as_ref() {
-                                    if down {
-                                        voice.key_down();
-                                    } else {
-                                        voice.key_up();
-                                    }
-                                }
+                                let foreground = GetForegroundWindow();
+                                let mut process = 0u32;
+                                let tid = GetWindowThreadProcessId(foreground, Some(&mut process));
+                                let own_process = std::process::id();
+                                let background = process == own_process && tid != state.tid.get();
+                                let _ = PostMessageW(
+                                    state.message_window.get(),
+                                    WM_ARCHTYPE_HOOK,
+                                    WPARAM(if background { 1 } else { 0 }),
+                                    LPARAM(if down { 1 } else { 0 }),
+                                );
                             }
                         });
                         return LRESULT(1);
@@ -700,9 +1056,19 @@ unsafe extern "system" fn voice_timer(_hwnd: HWND, _msg: u32, _id: usize, _time:
                         None => return,
                     }
                 };
+                if frame.wake_after_ms > 0 {
+                    state.schedule(&context, frame.wake_after_ms);
+                }
                 let page = (!page.is_empty()).then_some(page);
                 let key = Interface::as_raw(&context) as isize;
-                apply_frame(&context, state.tid.get(), Rc::clone(&state), key, &frame, page);
+                apply_frame(
+                    &context,
+                    state.tid.get(),
+                    Rc::clone(&state),
+                    key,
+                    &frame,
+                    page,
+                );
             }
         }
     }
@@ -747,16 +1113,33 @@ unsafe extern "system" fn voice_timer(_hwnd: HWND, _msg: u32, _id: usize, _time:
                 .as_ref()
                 .map(|voice| voice.text())
                 .unwrap_or_default();
+            show_hint(&state, &text);
             if let Some(voice) = state.voice.borrow().as_ref() {
                 voice.cancel();
             }
-            show_hint(&state, &text);
         }
         _ => {
             if state.hint_shown.get() {
                 hide_hint(&state);
             }
         }
+    }
+    if !state.voice_context.get()
+        || !matches!(
+            phase,
+            VOICE_LISTENING | VOICE_RECOGNIZING | VOICE_RESULT | VOICE_ERROR
+        )
+    {
+        state.schedule_voice();
+    }
+}
+
+fn cancel_voice_hint(state: &State) {
+    if !matches!(
+        state.voice.borrow().as_ref().map(Voice::poll),
+        Some(VOICE_LISTENING | VOICE_RECOGNIZING)
+    ) {
+        hide_hint(state);
     }
 }
 
@@ -782,7 +1165,14 @@ fn commit_voice(state: &Rc<State>, text: &str) {
         handled: true,
         ..Default::default()
     };
-    apply_frame(&context, state.tid.get(), Rc::clone(state), key, &frame, None);
+    apply_frame(
+        &context,
+        state.tid.get(),
+        Rc::clone(state),
+        key,
+        &frame,
+        None,
+    );
 }
 
 /// 组合被 TSF 结束（用户点别处、切走）：把记着的状态清掉。
@@ -828,20 +1218,30 @@ fn current_modifiers() -> Modifiers {
 }
 
 /// `ToUnicodeEx` 取这次按键打出的字符（考虑 Shift 和键盘布局）。
-fn key_characters(vk: u16, lparam: LPARAM) -> Option<String> {
+fn key_characters(vk: u16, _lparam: LPARAM) -> Option<String> {
     let mut state = [0u8; 256];
     let mut buf = [0u16; 8];
     unsafe {
         if GetKeyboardState(&mut state).is_err() {
             return None;
         }
-        let layout = GetKeyboardLayout(0);
-        let scan = ((lparam.0 >> 16) & 0xff) as u32;
+        let layout = GetKeyboardLayout(
+            SERVICE.with(|slot| slot.borrow().as_ref().map_or(0, |state| state.tid.get())),
+        );
+        let scan = MapVirtualKeyW(u32::from(vk), MAPVK_VK_TO_VSC) as u32;
         let count = ToUnicodeEx(vk as u32, scan, &state, &mut buf, 0, layout);
-        if count <= 0 {
+        if count < 0 {
             return None;
         }
         Some(String::from_utf16_lossy(&buf[..count as usize]))
+    }
+}
+
+fn shift_keysym(vk: u16) -> Option<u32> {
+    match vk {
+        virtual_key::LSHIFT => Some(keysym::SHIFT_L),
+        virtual_key::RSHIFT => Some(keysym::SHIFT_R),
+        _ => None,
     }
 }
 

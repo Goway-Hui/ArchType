@@ -12,19 +12,26 @@ use windows::core::{w, PCWSTR};
 use windows::Win32::Foundation::{BOOL, COLORREF, HWND, LPARAM, LRESULT, RECT, WPARAM};
 use windows::Win32::Graphics::Gdi::{
     BeginPaint, BitBlt, CreateCompatibleBitmap, CreateCompatibleDC, CreateFontW, CreatePen,
-    CreateSolidBrush, DeleteDC, DeleteObject, EndPaint, GetTextExtentPoint32W,
-    SelectObject, SetBkMode, SetTextAlign, SetTextColor, TextOutW, RoundRect, CLEARTYPE_QUALITY,
+    CreateSolidBrush, DeleteDC, DeleteObject, EndPaint, GetTextExtentPoint32W, RoundRect,
+    SelectObject, SetBkMode, SetTextAlign, SetTextColor, TextOutW, CLEARTYPE_QUALITY,
     DEFAULT_CHARSET, DEFAULT_PITCH, FF_DONTCARE, FW_NORMAL, HDC, HFONT, HGDIOBJ,
     OUT_DEFAULT_PRECIS, PAINTSTRUCT, PS_SOLID, SRCCOPY, TA_LEFT, TA_TOP, TRANSPARENT,
 };
-use windows::Win32::UI::HiDpi::GetDpiForWindow;
 use windows::Win32::Graphics::Gdi::{GetDC, InvalidateRect, ReleaseDC};
-use windows::Win32::UI::WindowsAndMessaging::{
-    CreateWindowExW, DefWindowProcW, GetClientRect, RegisterClassW, SetWindowPos, ShowWindow,
-    CS_HREDRAW, CS_VREDRAW, HWND_TOPMOST, SWP_NOACTIVATE, SWP_SHOWWINDOW, SW_HIDE, WM_LBUTTONDOWN,
-    WM_PAINT, WNDCLASSW, WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW, WS_POPUP,
+use windows::Win32::Graphics::Gdi::{
+    GetMonitorInfoW, MonitorFromRect, MONITORINFO, MONITOR_DEFAULTTONEAREST,
 };
-use windows::Win32::UI::WindowsAndMessaging::{GetSystemMetrics, SM_CYVIRTUALSCREEN};
+use windows::Win32::UI::HiDpi::GetDpiForWindow;
+use windows::Win32::UI::WindowsAndMessaging::{
+    CreateWindowExW, DefWindowProcW, GetClientRect, PostMessageW, RegisterClassW, SetWindowPos,
+    ShowWindow, CS_HREDRAW, CS_VREDRAW, HWND_TOPMOST, SWP_NOACTIVATE, SWP_SHOWWINDOW, SW_HIDE,
+    WM_APP, WM_LBUTTONDOWN, WM_PAINT, WNDCLASSW, WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW, WS_POPUP,
+};
+use windows::Win32::UI::WindowsAndMessaging::{
+    GetSystemMetrics, SM_CXVIRTUALSCREEN, SM_CYVIRTUALSCREEN, SM_XVIRTUALSCREEN, SM_YVIRTUALSCREEN,
+};
+
+const WM_ARCHTYPE_CLICK: u32 = WM_APP + 1;
 
 const CLASS_NAME: PCWSTR = w!("ArchTypeCandidate");
 
@@ -40,7 +47,6 @@ struct CandidateWindow {
     on_click: Option<Box<dyn Fn(usize)>>,
 }
 
-/// 显示一页候选；`caret` 是光标在屏幕上的矩形（物理像素）。
 pub fn show(page: &Page, caret: RECT, on_click: Box<dyn Fn(usize)>) {
     WINDOW.with(|slot| {
         let mut slot = slot.borrow_mut();
@@ -72,24 +78,38 @@ pub fn show(page: &Page, caret: RECT, on_click: Box<dyn Fn(usize)>) {
             }
         };
         let measurer = GdiMeasurer { scale };
-        let computed = layout(page, &measurer);
         window.page = page.clone();
-        window.layout = computed;
+        window.layout = layout(page, &measurer);
         window.scale = scale;
         window.on_click = Some(on_click);
 
         let width = (window.layout.size.0 * scale).ceil().max(1.0) as i32;
         let height = (window.layout.size.1 * scale).ceil().max(1.0) as i32;
         let gap = (6.0 * scale) as i32;
-        let x = caret.left;
+        let (left, top, right, bottom) = unsafe {
+            let monitor = MonitorFromRect(&caret, MONITOR_DEFAULTTONEAREST);
+            let mut info = MONITORINFO {
+                cbSize: std::mem::size_of::<MONITORINFO>() as u32,
+                ..Default::default()
+            };
+            if GetMonitorInfoW(monitor, &mut info).as_bool() {
+                let work = info.rcWork;
+                (work.left, work.top, work.right, work.bottom)
+            } else {
+                (
+                    GetSystemMetrics(SM_XVIRTUALSCREEN),
+                    GetSystemMetrics(SM_YVIRTUALSCREEN),
+                    GetSystemMetrics(SM_CXVIRTUALSCREEN),
+                    GetSystemMetrics(SM_CYVIRTUALSCREEN),
+                )
+            }
+        };
+        let x = caret.left.clamp(left, (right - width).max(left));
         let mut y = caret.bottom + gap;
-        let screen_bottom = unsafe { GetSystemMetrics(SM_CYVIRTUALSCREEN) };
-        if y + height > screen_bottom {
+        if y + height > bottom {
             y = caret.top - height - gap;
         }
-        if y < 0 {
-            y = 0;
-        }
+        let y = y.clamp(top, (bottom - height).max(top));
         unsafe {
             let _ = SetWindowPos(
                 window.hwnd,
@@ -117,7 +137,8 @@ pub fn hide() {
 
 fn create_window() -> Option<HWND> {
     unsafe {
-        let instance = windows::Win32::System::LibraryLoader::GetModuleHandleW(PCWSTR::null()).ok()?;
+        let instance =
+            windows::Win32::System::LibraryLoader::GetModuleHandleW(PCWSTR::null()).ok()?;
         let class = WNDCLASSW {
             style: CS_HREDRAW | CS_VREDRAW,
             lpfnWndProc: Some(wndproc),
@@ -160,23 +181,42 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
             LRESULT(0)
         }
         WM_LBUTTONDOWN => {
-            let x = (lparam.0 & 0xffff) as i16 as f64;
-            let y = ((lparam.0 >> 16) & 0xffff) as i16 as f64;
-            WINDOW.with(|slot| {
+            let x = (lparam.0 & 0xffff) as i16 as isize;
+            let y = ((lparam.0 >> 16) & 0xffff) as i16 as isize;
+            let _ = PostMessageW(
+                hwnd,
+                WM_ARCHTYPE_CLICK,
+                WPARAM(x as usize),
+                LPARAM(y as isize),
+            );
+            LRESULT(0)
+        }
+        WM_ARCHTYPE_CLICK => {
+            let index = WINDOW.with(|slot| {
                 let slot = slot.borrow();
-                if let Some(window) = slot.as_ref() {
-                    if window.hwnd == hwnd {
-                        let measurer = GdiMeasurer { scale: window.scale };
-                        let lx = x / window.scale;
-                        let ly = y / window.scale;
-                        if let Some(index) = clicked_index(&window.page, &measurer, lx, ly) {
-                            if let Some(on_click) = &window.on_click {
-                                on_click(index);
-                            }
-                        }
-                    }
+                let Some(window) = slot.as_ref() else {
+                    return None;
+                };
+                if window.hwnd != hwnd {
+                    return None;
                 }
+                let measurer = GdiMeasurer {
+                    scale: window.scale,
+                };
+                clicked_index(
+                    &window.page,
+                    &measurer,
+                    wparam.0 as f64 / window.scale,
+                    lparam.0 as f64 / window.scale,
+                )
             });
+            if let Some(index) = index {
+                let callback =
+                    WINDOW.with(|slot| slot.borrow_mut().as_mut().and_then(|w| w.on_click.take()));
+                if let Some(callback) = callback {
+                    callback(index);
+                }
+            }
             LRESULT(0)
         }
         _ => DefWindowProcW(hwnd, msg, wparam, lparam),
@@ -259,7 +299,12 @@ fn paint(window: &CandidateWindow) {
                     let (w, _) = measure_with(mem, main_font, text);
                     let old = SelectObject(mem, HGDIOBJ(label_font.0));
                     let _ = SetTextColor(mem, COLORREF(0x0060_7570));
-                    let _ = TextOutW(mem, (x + w + 4.0 * scale) as i32, top as i32, &utf16(comment));
+                    let _ = TextOutW(
+                        mem,
+                        (x + w + 4.0 * scale) as i32,
+                        top as i32,
+                        &utf16(comment),
+                    );
                     let _ = SelectObject(mem, old);
                 }
             }
@@ -271,7 +316,12 @@ fn paint(window: &CandidateWindow) {
             let font = font_for(label_size, FW_NORMAL.0 as i32);
             let old = SelectObject(mem, HGDIOBJ(font.0));
             let _ = SetTextColor(mem, COLORREF(0x0060_7570));
-            let _ = TextOutW(mem, (PADDING_X * scale) as i32, (PADDING_Y * scale) as i32, &utf16(text));
+            let _ = TextOutW(
+                mem,
+                (PADDING_X * scale) as i32,
+                (PADDING_Y * scale) as i32,
+                &utf16(text),
+            );
             let _ = SelectObject(mem, old);
             let _ = DeleteObject(HGDIOBJ(font.0));
         }
@@ -348,17 +398,4 @@ fn font_for(size: f64, weight: i32) -> HFONT {
 
 fn utf16(text: &str) -> Vec<u16> {
     text.encode_utf16().collect()
-}
-
-/// 点一下候选（给窗口过程外的地方复用，测试/调试）。
-#[allow(dead_code)]
-pub fn click_for_test(index: usize) {
-    WINDOW.with(|slot| {
-        let slot = slot.borrow();
-        if let Some(window) = slot.as_ref() {
-            if let Some(on_click) = &window.on_click {
-                on_click(index);
-            }
-        }
-    });
 }
