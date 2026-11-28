@@ -2,8 +2,11 @@
 <!--
   ArchType 的 Windows 安装包（WiX v4）。
 
-  MSI 自己写注册表（COM + CTF TIP），不用 CustomAction 调 DllRegisterServer：
+  COM + CTF TIP 由 MSI 直接写注册表，不用 CustomAction 调 DllRegisterServer：
   卸载时 MSI 会按组件回滚，不会留半截注册项。
+
+  用户输入法列表按用户存：安装后给当前用户跑一次 enable-profile，其余用户在
+  下次登录时由 Active Setup 补上；卸载前给当前用户跑 disable-profile，撤掉条目。
 
   构建：wix build -arch x64 -o ArchType.msi -d Version=0.8.0 -d SourceDir=... -d DataDir=... ArchType.wxs
 -->
@@ -13,6 +16,19 @@
            Scope="perMachine" Compressed="yes">
     <MajorUpgrade DowngradeErrorMessage="已经装了更新的 ArchType。" />
     <MediaTemplate EmbedCab="yes" />
+
+    <!-- 当前用户的输入法条目：安装后立刻写，卸载前删掉。
+         UserSID 是 SYSTEM 时（无人值守的机器级安装）跳过，不然会写到 SYSTEM 自己的 HKCU。 -->
+    <CustomAction Id="EnableProfileNow" FileRef="archtype_exe" ExeCommand="--enable-profile"
+                  Execute="immediate" Impersonate="yes" Return="ignore" />
+    <CustomAction Id="DisableProfile" FileRef="archtype_exe" ExeCommand="--disable-profile"
+                  Execute="immediate" Impersonate="yes" Return="ignore" />
+    <InstallExecuteSequence>
+      <Custom Action="EnableProfileNow" After="InstallFiles"
+              Condition="NOT Installed AND NOT REMOVE AND UserSID &lt;&gt; &quot;S-1-5-18&quot;" />
+      <Custom Action="DisableProfile" Before="RemoveFiles"
+              Condition="REMOVE~=&quot;ALL&quot; AND UserSID &lt;&gt; &quot;S-1-5-18&quot;" />
+    </InstallExecuteSequence>
 
     <StandardDirectory Id="ProgramFiles64Folder">
       <Directory Id="INSTALLDIR" Name="ArchType">
@@ -60,7 +76,7 @@
           </RegistryKey>
         </Component>
 
-        <!-- 每个用户登录时自动把 ArchType 加进该用户的中文输入法列表
+        <!-- 其余用户登录时自动把 ArchType 加进该用户的中文输入法列表
              （Active Setup：每个用户只跑一次；Version 变了会重跑，用于升级后重启用） -->
         <Component Id="EnableProfile" Guid="2C8A4E19-6D3F-4B57-9A20-8C1E5F3D7B64">
           <RegistryKey Root="HKLM" Key="SOFTWARE\Microsoft\Active Setup\Installed Components\ArchTypeInputMethod">

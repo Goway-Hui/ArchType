@@ -9,9 +9,10 @@ use archtype_shell::input::{make_key, Input};
 fn main() {
     let command = std::env::args().nth(1).unwrap_or_default();
     match command.as_str() {
-        "--register" => finish(archtype_tsf::register()),
+        "--register" => finish(register_for_current_user()),
         "--unregister" => finish(archtype_tsf::unregister()),
         "--enable-profile" => finish(archtype_tsf::enable_profile()),
+        "--disable-profile" => finish(archtype_tsf::disable_profile()),
         "--version" | "-V" => println!("ArchType {}", env!("CARGO_PKG_VERSION")),
         "--selftest" => std::process::exit(if selftest() { 0 } else { 1 }),
         "--check-update" => {
@@ -56,10 +57,20 @@ fn main() {
                 "用法：archtype <--register|--unregister|--selftest|--version|\
                  --check-update|--install-update|\
                  --install-lexicon [wanxiang|文件.tar.gz]|--use-lexicon rime-ice|wanxiang|\
-                 --mode zh|en|translate|toggle|--enable-profile>"
+                 --mode zh|en|translate|toggle|--enable-profile|--disable-profile>"
             );
         }
     }
+}
+
+/// 注册 HKLM 之后顺手把当前用户加进输入法列表：手动/源码安装也不用再去语言设置里添加。
+/// 没装中文语言时只提示，不把注册判失败（MSI 的 Active Setup 会在各用户登录时再试）。
+fn register_for_current_user() -> Result<(), String> {
+    archtype_tsf::register()?;
+    if let Err(error) = archtype_tsf::enable_profile() {
+        eprintln!("ArchType: {error}；装好中文语言后运行 archtype --enable-profile");
+    }
+    Ok(())
 }
 
 fn finish(result: Result<(), String>) {

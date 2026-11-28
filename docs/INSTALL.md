@@ -349,6 +349,28 @@ curl -fsSL https://raw.githubusercontent.com/Goway-Hui/ArchType/pre-release/inst
   合并就行。这要在仓库设置 Actions → General 里勾上「Allow GitHub Actions to create and approve pull requests」；
   没勾时退回开 issue，issue 里有开 PR 的链接。Actions 开的 PR 不会自动跑 CI，要跑就关掉再重新打开。
 
+## Windows 10 1809+ / Windows 11
+
+- 下载 `ArchType-<版本>-x64.msi` 安装（每台机器一份，需要管理员）。x86 应用用同一个包里的 32 位 DLL。
+- 安装会立刻把「ArchType 拼音」加进**当前用户**的中文输入法列表；其他用户下次登录时由
+  Active Setup 自动添加，升级后也会重跑一次。
+- 没有装中文语言的账户：先到「设置 → 时间和语言」添加中文（简体），再运行
+  `archtype --enable-profile`，或者注销重新登录。
+- 用 `Win` + `Space` 或任务栏的语言按钮切到「ArchType 拼音」。新条目在语言列表里出现前
+  可能需要注销再登录。
+- 卸载会撤掉 COM / CTF 注册和**运行卸载的那个用户**的输入法条目。其他账户里的条目要
+  各自清掉（卸载前分别登录运行 `"C:\Program Files\ArchType\archtype.exe" --disable-profile`，
+  或者之后在语言设置里删除）。
+- 常用命令：
+
+  | 命令 | 作用 |
+  |---|---|
+  | `archtype --register` | 手动注册（管理员）：COM + CTF TIP + 当前用户的输入法条目 |
+  | `archtype --unregister` | 撤销注册，并清掉当前用户的输入法条目 |
+  | `archtype --enable-profile` | 只把当前用户加进中文输入法列表（可重复执行） |
+  | `archtype --disable-profile` | 只删当前用户的输入法条目（没装过也算成功） |
+  | `archtype --selftest` | 用安装目录里的词库打 `nihao`，验证引擎与数据 |
+
 ## macOS
 
 需要 macOS 12 或更新（Apple 芯片和 Intel 都行；安装包是通用二进制）。

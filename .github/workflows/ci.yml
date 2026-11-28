@@ -750,6 +750,8 @@ jobs:
           rustup target add i686-pc-windows-msvc
           cargo build --release --manifest-path win-rs/Cargo.toml
           cargo build --release --target i686-pc-windows-msvc --manifest-path win-rs/Cargo.toml
+      - name: 外壳单元测试（输入法列表的值名与 LCID）
+        run: cargo test --release --manifest-path win-rs/Cargo.toml --lib
       - name: 自检（载入词库打 nihao）
         shell: pwsh
         run: |
@@ -776,6 +778,9 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw '卸载失败' }
           reg query $clsid *> $null
           if ($LASTEXITCODE -eq 0) { throw '卸载后 CLSID 还在' }
+          # 没有中文语言（runner 是英文）时也要算成功，Active Setup 会在用户登录时再试
+          & $exe --disable-profile
+          if ($LASTEXITCODE -ne 0) { throw '没有中文语言时 --disable-profile 应该算成功' }
           # 最后一条 reg query 的失败码别带出这个步骤（GitHub Actions 的 pwsh 会 exit $LASTEXITCODE）
           exit 0
 
@@ -829,8 +834,18 @@ jobs:
           $PSNativeCommandUseErrorActionPreference = $false
           $msi = Get-ChildItem dist/windows/*.msi | Select-Object -First 1
           $log = "$env:RUNNER_TEMP\msi-install.log"
+          # 先造一个中文语言键：安装时应该自动把 ArchType 加进这个用户（CustomAction）
+          $profileKey = 'HKCU:\Control Panel\International\User Profile\zh-Hans-CN'
+          $profileValue = '0804:{6F2D3C1A-7B4E-4C2D-9E31-2A5B8F0C7D11}{4A8B2C6D-1F3E-4A9B-8C7D-2E5F6A7B8C9D}'
+          New-Item -Path $profileKey -Force | Out-Null
+          function Get-ProfileValue {
+            $props = Get-ItemProperty -Path $profileKey -ErrorAction SilentlyContinue
+            if ($null -eq $props) { return $null }
+            return $props.PSObject.Properties[$profileValue].Value
+          }
           $p = Start-Process msiexec.exe -ArgumentList @("/i", "`"$($msi.FullName)`"", "/qn", "/norestart", "/l*v", "`"$log`"") -Wait -PassThru
           if ($p.ExitCode -ne 0) { Get-Content $log -Tail 40; throw "msiexec 安装失败：$($p.ExitCode)" }
+          if ((Get-ProfileValue) -ne 1) { throw "安装后当前用户的输入法条目没写进去" }
           foreach ($f in @("archtype_tsf.dll", "archtype.exe", "lexicon.tsv", "words.lm")) {
             if (-not (Test-Path "C:\Program Files\ArchType\$f")) { throw "$f 没装进去" }
           }
@@ -839,11 +854,27 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw "COM 注册没写进去" }
           reg query "HKLM\SOFTWARE\Microsoft\CTF\TIP\{6F2D3C1A-7B4E-4C2D-9E31-2A5B8F0C7D11}"
           if ($LASTEXITCODE -ne 0) { throw "CTF TIP 没写进去" }
+          $activeSetup = 'HKLM\SOFTWARE\Microsoft\Active Setup\Installed Components\ArchTypeInputMethod'
+          reg query $activeSetup
+          if ($LASTEXITCODE -ne 0) { throw "Active Setup 没写进去" }
+          $stub = (Get-ItemProperty -Path "Registry::$activeSetup").StubPath
+          if ($stub -notlike '*--enable-profile*') { throw "StubPath 不对：$stub" }
           reg query "HKCR\CLSID\{6F2D3C1A-7B4E-4C2D-9E31-2A5B8F0C7D11}\InprocServer32" /reg:32
           if ($LASTEXITCODE -ne 0) { throw "32 位 COM 注册没写进去" }
+          # 命令行往返：删得掉、写得回（卸载前需要有条目，用来验证卸载会清掉它）
+          $exe = 'C:\Program Files\ArchType\archtype.exe'
+          & $exe --disable-profile
+          if ($LASTEXITCODE -ne 0) { throw "--disable-profile 失败" }
+          if ($null -ne (Get-ProfileValue)) { throw "--disable-profile 没删掉条目" }
+          & $exe --enable-profile
+          if ($LASTEXITCODE -ne 0) { throw "--enable-profile 失败" }
+          if ((Get-ProfileValue) -ne 1) { throw "--enable-profile 没写回条目" }
           $p = Start-Process msiexec.exe -ArgumentList @("/x", "`"$($msi.FullName)`"", "/qn", "/norestart") -Wait -PassThru
           if ($p.ExitCode -ne 0) { throw "msiexec 卸载失败：$($p.ExitCode)" }
           if (Test-Path "C:\Program Files\ArchType\archtype_tsf.dll") { throw "卸载后 DLL 还在" }
+          if ($null -ne (Get-ProfileValue)) { throw "卸载后当前用户的输入法条目还在" }
+          reg query $activeSetup *> $null
+          if ($LASTEXITCODE -eq 0) { throw "卸载后 Active Setup 还在" }
           reg query "HKCR\CLSID\{6F2D3C1A-7B4E-4C2D-9E31-2A5B8F0C7D11}" *> $null
           if ($LASTEXITCODE -eq 0) { throw "卸载后 COM 注册还在" }
           exit 0
