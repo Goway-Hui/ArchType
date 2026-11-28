@@ -952,13 +952,15 @@ jobs:
           cat > notes.md <<EOF
           ## 这一版要注意
 
-          - **联想进了候选栏**：没在打字时，候选栏直接给出常跟在后面的词（不用再按 Tab 进联想行）；直接点选，和普通选词一样学，选完接着给下一轮。
-          - **联想看两个词**：除了刚上屏的词，还把上上个词当弱上下文合并进来（分数压低一档），都查不到才退回末尾几个字——更接近手机输入法的「下一词」。
-          - **设置界面底层升级**：nsh 0.6 → 0.7.1（打包与交互跟上游更新，设置项和界面不变）。
-          - **兼容**：联想原来占独立一行（\`ARCHTYPE_PANEL_ASSOCIATION\`），现在就是普通候选；旧的 ABI 值保留但不再产生，外壳不用改。
-          - 工程：CI 固定 nsh 版本（Windows 端也用 \`NSH_VERSION\`）；联想行为由 610 项 Rust 测试和 fcitx5 按键 harness 覆盖。
+          - **Windows 安装即用**：MSI 装好就把「ArchType 拼音」加进当前用户的中文输入法列表，不用再去语言设置里手动添加；其他账户下次登录时由 Active Setup 自动补上。
+          - **卸载会清干净**：卸载（或 \`archtype --unregister\`）删掉当前用户的输入法条目；新增 \`archtype --enable-profile\` / \`--disable-profile\` 单独开关，\`--register\` 也会顺带启用。
+          - **繁体中文用自己的 LCID**：\`zh-Hant-TW\` / \`zh-HK\` / \`zh-MO\` 分别写 0404 / 0C04 / 1404，不再一律按简体的 0804。
+          - **设置界面修复**：nsh 只扫描一个 \`#[module]\` impl，之前拆分后导出丢失、设置界面的类型检查全部失败；现在合并回一个模块，全部导出恢复。
+          - 工程：Windows CI 增加输入法列表的安装/卸载/命令行往返断言与单元测试；Windows 相关文件恢复 LF 行尾。
 
-          ## 安装（Ubuntu / Debian、deepin、Arch Linux、Fedora、NixOS）
+          ## 安装（Windows、Ubuntu / Debian、deepin、Arch Linux、Fedora、NixOS）
+
+          Windows 10 1809+ / 11：下载 \`ArchType-<版本>-x64.msi\` 安装，x64 和 32 位应用共用这一个包；装完语言列表里就有「ArchType 拼音」，没有中文语言的话先在系统设置里加中文（简体）。
 
           一行命令（下载对应发行版的安装包、装好、加进 fcitx5 输入法列表）：
 

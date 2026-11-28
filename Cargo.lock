@@ -41,7 +41,7 @@ checksum = "330a5ed07fa54e4702c9d6c4174f74427fc0ef6e214bbd677ae50a5099946470"
 
 [[package]]
 name = "archtype-config-cli"
-version = "0.9.2"
+version = "0.9.3"
 dependencies = [
  "archtype-lexicon",
  "archtype-net",
@@ -51,7 +51,7 @@ dependencies = [
 
 [[package]]
 name = "archtype-core"
-version = "0.9.2"
+version = "0.9.3"
 dependencies = [
  "anyhow",
  "archtype-voice",
@@ -62,7 +62,7 @@ dependencies = [
 
 [[package]]
 name = "archtype-lexicon"
-version = "0.9.2"
+version = "0.9.3"
 dependencies = [
  "archtype-net",
  "serde_json",
@@ -70,14 +70,14 @@ dependencies = [
 
 [[package]]
 name = "archtype-net"
-version = "0.9.2"
+version = "0.9.3"
 dependencies = [
  "sha2",
 ]
 
 [[package]]
 name = "archtype-shell"
-version = "0.9.2"
+version = "0.9.3"
 dependencies = [
  "archtype-core",
  "archtype-net",
@@ -86,7 +86,7 @@ dependencies = [
 
 [[package]]
 name = "archtype-voice"
-version = "0.9.2"
+version = "0.9.3"
 dependencies = [
  "anyhow",
  "cpal",
@@ -94,7 +94,7 @@ dependencies = [
 
 [[package]]
 name = "archtype-voiced"
-version = "0.9.2"
+version = "0.9.3"
 dependencies = [
  "anyhow",
  "archtype-voice",

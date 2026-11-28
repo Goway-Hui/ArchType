@@ -1,6 +1,6 @@
 [package]
 name = "archtype-tsf"
-version = "0.9.2"
+version = "0.9.3"
 edition = "2021"
 publish = false
 description = "ArchType 的 Windows 输入法外壳：TSF 文本服务（COM in-proc DLL）+ ArchType.exe"
