@@ -18,11 +18,13 @@
     <MediaTemplate EmbedCab="yes" />
 
     <!-- 当前用户的输入法条目：安装后立刻写，卸载前删掉。
+         必须是 deferred：Type 18（exe 来自安装目录）的立即执行版本只能在 InstallFinalize
+         之后跑（首次安装时文件还没落地），而且只有 deferred 动作能真正以用户身份运行。
          UserSID 是 SYSTEM 时（无人值守的机器级安装）跳过，不然会写到 SYSTEM 自己的 HKCU。 -->
     <CustomAction Id="EnableProfileNow" FileRef="archtype_exe" ExeCommand="--enable-profile"
-                  Execute="immediate" Impersonate="yes" Return="ignore" />
+                  Execute="deferred" Impersonate="yes" Return="ignore" />
     <CustomAction Id="DisableProfile" FileRef="archtype_exe" ExeCommand="--disable-profile"
-                  Execute="immediate" Impersonate="yes" Return="ignore" />
+                  Execute="deferred" Impersonate="yes" Return="ignore" />
     <InstallExecuteSequence>
       <Custom Action="EnableProfileNow" After="InstallFiles"
               Condition="NOT Installed AND NOT REMOVE AND UserSID &lt;&gt; &quot;S-1-5-18&quot;" />

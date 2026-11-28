@@ -845,7 +845,7 @@ jobs:
           }
           $p = Start-Process msiexec.exe -ArgumentList @("/i", "`"$($msi.FullName)`"", "/qn", "/norestart", "/l*v", "`"$log`"") -Wait -PassThru
           if ($p.ExitCode -ne 0) { Get-Content $log -Tail 40; throw "msiexec 安装失败：$($p.ExitCode)" }
-          if ((Get-ProfileValue) -ne 1) { throw "安装后当前用户的输入法条目没写进去" }
+          if ((Get-ProfileValue) -ne 1) { Get-Content $log -Tail 40; throw "安装后当前用户的输入法条目没写进去" }
           foreach ($f in @("archtype_tsf.dll", "archtype.exe", "lexicon.tsv", "words.lm")) {
             if (-not (Test-Path "C:\Program Files\ArchType\$f")) { throw "$f 没装进去" }
           }
