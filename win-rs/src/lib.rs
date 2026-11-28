@@ -10,7 +10,7 @@ pub mod paths;
 pub mod register;
 mod text_service;
 
-pub use register::{register, unregister};
+pub use register::{enable_profile, register, unregister};
 pub use text_service::Factory;
 
 use std::ffi::c_void;
